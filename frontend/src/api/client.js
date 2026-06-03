@@ -16,11 +16,19 @@ export const api = {
     fd.append('file', file)
     return client.post('/upload', fd).then((r) => r.data)
   },
-  getRows: () => client.get('/rows').then((r) => r.data),
+  getRows: ({ sortBy = 'created_at', sortDir = 'desc' } = {}) =>
+    client
+      .get('/rows', { params: { sort_by: sortBy, sort_dir: sortDir } })
+      .then((r) => r.data),
   recordClick: (rowId) => client.post(`/rows/${rowId}/click`).then((r) => r.data),
   getPreferences: () => client.get('/preferences').then((r) => r.data),
-  setPreferences: (hidden) =>
-    client.put('/preferences', { hidden_columns: hidden }).then((r) => r.data),
+  setPreferences: ({ hiddenColumns, columnOrder }) =>
+    client
+      .put('/preferences', {
+        hidden_columns: hiddenColumns,
+        column_order: columnOrder,
+      })
+      .then((r) => r.data),
 }
 
 export default client
