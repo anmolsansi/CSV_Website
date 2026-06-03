@@ -10,6 +10,7 @@ class Settings:
         "postgresql+psycopg2://postgres:postgres@localhost:5432/csvapp",
     )
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
