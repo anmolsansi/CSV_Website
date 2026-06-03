@@ -25,8 +25,8 @@ CSV_COLUMNS = [
     "location_evidence", "sponsorship_status", "positive_sponsorship_matches",
     "negative_sponsorship_matches", "sponsorship_evidence_snippet",
     "positive_sponsorship_evidence_snippet", "clearance_matches",
-    "clearance_evidence_snippet", "jd_text_length", "extraction_method",
-    "retry_attempted", "error", "resume_match_score",
+    "clearance_evidence_snippet", "jd_text_length", "jd_text",
+    "extraction_method", "retry_attempted", "error", "resume_match_score",
 ]
 
 
@@ -106,6 +106,7 @@ class CsvRow(Base):
     clearance_matches = Column(Text)
     clearance_evidence_snippet = Column(Text)
     jd_text_length = Column(Text)
+    jd_text = Column(Text)
     extraction_method = Column(Text)
     retry_attempted = Column(Text)
     error = Column(Text)
@@ -124,5 +125,6 @@ class ColumnPreference(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
                      primary_key=True)
     hidden_columns = Column(JSONB, default=list, nullable=False)
+    column_order = Column(JSONB, default=list, nullable=False)
 
     user = relationship("User", back_populates="preference")
