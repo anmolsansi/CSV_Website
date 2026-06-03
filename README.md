@@ -12,7 +12,9 @@ by `url`. Users can show/hide columns, and the preference is saved.
 - **Frontend:** React (Vite) + TanStack Table
 - **Backend:** FastAPI + SQLAlchemy + APScheduler (cleanup job)
 - **Database:** PostgreSQL
-- **Auth:** OAuth 2.0 via Authlib (Google included; extensible to others)
+- **Auth:** OAuth 2.0 via Authlib (Google, Microsoft, Apple). OAuth-only (no
+  passwords). Accounts are linked by email, so signing in with any provider
+  that shares your email resolves to the same account.
 
 ## Setup
 
@@ -73,10 +75,23 @@ npm run dev
   `clicked_at < now() - 2 days`. Unvisited (blue) rows are never auto-deleted.
 - **Column visibility:** stored per user in `column_preferences.hidden_columns`.
 
-## Adding more OAuth providers
+## OAuth providers
 
-Register another client in `backend/app/auth.py` (e.g. GitHub) and add matching
-login/callback routes in `backend/app/routers/auth_router.py`.
+Google, Microsoft, and Apple are supported via generic
+`/auth/login/{provider}` and `/auth/callback/{provider}` routes.
+
+Configure credentials in `backend/.env`:
+
+- **Google / Microsoft:** standard client id + secret. Add the redirect URI
+  `http://localhost:8000/auth/callback/<provider>`.
+- **Apple:** requires an Apple Developer account. Create a Services ID
+  (`APPLE_CLIENT_ID`), note your `APPLE_TEAM_ID` and `APPLE_KEY_ID`, and download
+  the `.p8` private key. Mount it into the backend and point
+  `APPLE_PRIVATE_KEY_PATH` at it. The client secret is generated automatically
+  as a signed ES256 JWT at request time.
+
+To add another provider, register it in `backend/app/auth.py` and add its name
+to `SUPPORTED_PROVIDERS`.
 
 ## Add new CSV columns
 

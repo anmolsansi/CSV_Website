@@ -34,19 +34,35 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
+    # Email is the account identity: multiple OAuth providers with the same
+    # email link to the same user.
     email = Column(String(320), unique=True, nullable=False, index=True)
-    oauth_provider = Column(String(50), nullable=False)
-    provider_id = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    identities = relationship(
+        "OAuthIdentity", back_populates="user", cascade="all, delete-orphan"
+    )
     rows = relationship("CsvRow", back_populates="user", cascade="all, delete-orphan")
     preference = relationship(
         "ColumnPreference", back_populates="user", uselist=False,
         cascade="all, delete-orphan",
     )
 
+
+class OAuthIdentity(Base):
+    __tablename__ = "oauth_identities"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    provider = Column(String(50), nullable=False)  # google | microsoft | apple
+    provider_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="identities")
+
     __table_args__ = (
-        UniqueConstraint("oauth_provider", "provider_id", name="uq_provider"),
+        UniqueConstraint("provider", "provider_id", name="uq_provider_identity"),
     )
 
 

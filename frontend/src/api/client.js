@@ -8,7 +8,7 @@ const client = axios.create({
 })
 
 export const api = {
-  loginGoogleUrl: () => `${API_URL}/auth/login/google`,
+  loginUrl: (provider) => `${API_URL}/auth/login/${provider}`,
   me: () => client.get('/auth/me').then((r) => r.data),
   logout: () => client.post('/auth/logout'),
   uploadCsv: (file) => {
