@@ -5,7 +5,21 @@ import {
 } from '@tanstack/react-table'
 import { useMemo } from 'react'
 
-export default function DataTable({ columns, rows, hidden, onUrlClick }) {
+function sortIndicator(columnId, sort) {
+  if (!sort || sort.sortBy !== columnId) {
+    return ''
+  }
+  return sort.sortDir === 'asc' ? ' ↑' : ' ↓'
+}
+
+export default function DataTable({
+  columns,
+  rows,
+  hidden,
+  sort,
+  onSortChange,
+  onUrlClick,
+}) {
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hidden.includes(c)),
     [columns, hidden]
@@ -39,6 +53,15 @@ export default function DataTable({ columns, rows, hidden, onUrlClick }) {
     getCoreRowModel: getCoreRowModel(),
   })
 
+  const handleHeaderClick = (columnId) => {
+    if (!onSortChange) {
+      return
+    }
+    const nextDirection =
+      sort?.sortBy === columnId && sort?.sortDir === 'asc' ? 'desc' : 'asc'
+    onSortChange(columnId, nextDirection)
+  }
+
   return (
     <div className="table-wrap">
       <table>
@@ -47,7 +70,15 @@ export default function DataTable({ columns, rows, hidden, onUrlClick }) {
             <tr key={hg.id}>
               {hg.headers.map((h) => (
                 <th key={h.id}>
-                  {flexRender(h.column.columnDef.header, h.getContext())}
+                  <button
+                    className="table-header-button"
+                    type="button"
+                    onClick={() => handleHeaderClick(h.column.id)}
+                    title={`Sort by ${h.column.id}`}
+                  >
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                    {sortIndicator(h.column.id, sort)}
+                  </button>
                 </th>
               ))}
             </tr>
