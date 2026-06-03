@@ -1,5 +1,6 @@
 # CSV URL Tracker
 
+<!-- scaffold -->
 A per-user web app where authenticated users upload CSVs that render as a table.
 The `url` column appears as a button: **blue** when unvisited, **green** after a
 click (which opens the URL in a new tab). Rows are auto-deleted **2 days** after
