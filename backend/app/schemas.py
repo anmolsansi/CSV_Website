@@ -23,10 +23,12 @@ class RowOut(BaseModel):
 
 class ColumnPrefOut(BaseModel):
     hidden_columns: List[str]
+    column_order: List[str]
 
 
 class ColumnPrefIn(BaseModel):
     hidden_columns: List[str]
+    column_order: List[str] = []
 
 
 ALL_COLUMNS = CSV_COLUMNS
