@@ -24,6 +24,15 @@ def _client(provider: str):
     return getattr(oauth, provider)
 
 
+def _cookie_options() -> dict:
+    is_production = settings.ENVIRONMENT == "production"
+    return {
+        "httponly": True,
+        "secure": is_production,
+        "samesite": "none" if is_production else "lax",
+    }
+
+
 @router.get("/login/{provider}")
 async def login(provider: str, request: Request):
     client = _client(provider)
@@ -60,8 +69,10 @@ async def callback(provider: str, request: Request, db: Session = Depends(get_db
     jwt_token = create_token(user)
     resp = RedirectResponse(settings.FRONTEND_URL)
     resp.set_cookie(
-        "session_token", jwt_token, httponly=True, samesite="lax",
+        "session_token",
+        jwt_token,
         max_age=60 * 60 * 24 * 7,
+        **_cookie_options(),
     )
     return resp
 
@@ -74,5 +85,5 @@ def me(user: User = Depends(get_current_user)):
 @router.post("/logout")
 def logout():
     resp = RedirectResponse(settings.FRONTEND_URL, status_code=303)
-    resp.delete_cookie("session_token")
+    resp.delete_cookie("session_token", **_cookie_options())
     return resp
