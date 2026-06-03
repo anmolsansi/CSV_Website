@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from authlib.integrations.starlette_client import OAuth
@@ -36,7 +37,7 @@ oauth.register(
 def _apple_client_secret() -> str:
     """Apple requires the client secret to be a short-lived signed JWT."""
     with open(settings.APPLE_PRIVATE_KEY_PATH, "r") as f:
-        private_key = f.read()
+        key_contents = f.read()
     now = int(time.time())
     return jwt.encode(
         {
@@ -46,7 +47,7 @@ def _apple_client_secret() -> str:
             "aud": "https://appleid.apple.com",
             "sub": settings.APPLE_CLIENT_ID,
         },
-        private_key,
+        key_contents,
         algorithm="ES256",
         headers={"kid": settings.APPLE_KEY_ID},
     )
@@ -85,8 +86,13 @@ def get_or_create_user(
 
 
 def create_token(user: User) -> str:
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     return jwt.encode(
-        {"sub": str(user.id), "email": user.email},
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "exp": expires_at,
+        },
         settings.SECRET_KEY,
         algorithm="HS256",
     )
