@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -11,16 +13,45 @@ from ..schemas import ColumnPrefIn
 router = APIRouter(tags=["rows"])
 
 
+def _clean_columns(columns: list[str]) -> list[str]:
+    seen = set()
+    cleaned = []
+    for col in columns:
+        if col in CSV_COLUMNS and col not in seen:
+            cleaned.append(col)
+            seen.add(col)
+    return cleaned
+
+
+def _safe_sort_column(sort_by: str):
+    if sort_by == "created_at":
+        return CsvRow.created_at
+    if sort_by == "clicked_at":
+        return CsvRow.clicked_at
+    if sort_by not in CSV_COLUMNS:
+        raise HTTPException(400, "Invalid sort column")
+    return getattr(CsvRow, sort_by)
+
+
 @router.get("/rows")
-def list_rows(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_rows(
+    sort_by: str = Query("created_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    sort_column = _safe_sort_column(sort_by)
+    order_func = asc if sort_dir == "asc" else desc
     rows = (
         db.query(CsvRow)
         .filter_by(user_id=user.id)
-        .order_by(CsvRow.created_at.desc())
+        .order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
         .all()
     )
     return {
         "columns": CSV_COLUMNS,
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
         "rows": [
             {
                 "id": row.id,
@@ -54,7 +85,12 @@ def get_preferences(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     pref = db.get(ColumnPreference, user.id)
-    return {"hidden_columns": pref.hidden_columns if pref else []}
+    hidden_columns = pref.hidden_columns if pref else []
+    column_order = pref.column_order if pref else []
+    return {
+        "hidden_columns": _clean_columns(hidden_columns),
+        "column_order": _clean_columns(column_order),
+    }
 
 
 @router.put("/preferences")
@@ -63,12 +99,18 @@ def set_preferences(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    hidden = [c for c in payload.hidden_columns if c in CSV_COLUMNS]
+    hidden = _clean_columns(payload.hidden_columns)
+    column_order = _clean_columns(payload.column_order)
     pref = db.get(ColumnPreference, user.id)
     if pref:
         pref.hidden_columns = hidden
+        pref.column_order = column_order
     else:
-        pref = ColumnPreference(user_id=user.id, hidden_columns=hidden)
+        pref = ColumnPreference(
+            user_id=user.id,
+            hidden_columns=hidden,
+            column_order=column_order,
+        )
         db.add(pref)
     db.commit()
-    return {"hidden_columns": hidden}
+    return {"hidden_columns": hidden, "column_order": column_order}
