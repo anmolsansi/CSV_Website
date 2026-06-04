@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, desc, func
+from sqlalchemy import Float, asc, case, cast, desc, func
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -11,6 +11,13 @@ from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, User
 from ..schemas import ColumnPrefIn
 
 router = APIRouter(tags=["rows"])
+
+NUMERIC_SORT_COLUMNS = {
+    "page_number",
+    "posted_age_days",
+    "jd_text_length",
+    "resume_match_score",
+}
 
 
 def _clean_columns(columns: list[str]) -> list[str]:
@@ -23,6 +30,15 @@ def _clean_columns(columns: list[str]) -> list[str]:
     return cleaned
 
 
+def _numeric_sort_expression(column):
+    """Sort text-backed numeric columns as numbers, not strings."""
+    cleaned = func.nullif(func.regexp_replace(column, r"[%,$,\s]", "", "g"), "")
+    return case(
+        (cleaned.op("~")(r"^-?\d+(\.\d+)?$"), cast(cleaned, Float)),
+        else_=None,
+    )
+
+
 def _safe_sort_column(sort_by: str):
     if sort_by == "created_at":
         return CsvRow.created_at
@@ -30,7 +46,11 @@ def _safe_sort_column(sort_by: str):
         return CsvRow.clicked_at
     if sort_by not in CSV_COLUMNS:
         raise HTTPException(400, "Invalid sort column")
-    return getattr(CsvRow, sort_by)
+
+    column = getattr(CsvRow, sort_by)
+    if sort_by in NUMERIC_SORT_COLUMNS:
+        return _numeric_sort_expression(column)
+    return column
 
 
 def _ats_group_values(db: Session, user_id: int) -> list[str]:
