@@ -16,9 +16,15 @@ export const api = {
     fd.append('file', file)
     return client.post('/upload', fd).then((r) => r.data)
   },
-  getRows: ({ sortBy = 'created_at', sortDir = 'desc' } = {}) =>
+  getRows: ({ sortBy = 'created_at', sortDir = 'desc', atsGroup = '' } = {}) =>
     client
-      .get('/rows', { params: { sort_by: sortBy, sort_dir: sortDir } })
+      .get('/rows', {
+        params: {
+          sort_by: sortBy,
+          sort_dir: sortDir,
+          ...(atsGroup ? { ats_group: atsGroup } : {}),
+        },
+      })
       .then((r) => r.data),
   recordClick: (rowId) => client.post(`/rows/${rowId}/click`).then((r) => r.data),
   getPreferences: () => client.get('/preferences').then((r) => r.data),
