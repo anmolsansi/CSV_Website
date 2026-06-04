@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -33,18 +33,34 @@ def _safe_sort_column(sort_by: str):
     return getattr(CsvRow, sort_by)
 
 
+def _ats_group_values(db: Session, user_id: int) -> list[str]:
+    values = (
+        db.query(CsvRow.ats_group)
+        .filter(CsvRow.user_id == user_id, CsvRow.ats_group.isnot(None), CsvRow.ats_group != "")
+        .distinct()
+        .order_by(CsvRow.ats_group.asc())
+        .all()
+    )
+    return [value for (value,) in values if value]
+
+
 @router.get("/rows")
 def list_rows(
     sort_by: str = Query("created_at"),
     sort_dir: Literal["asc", "desc"] = Query("desc"),
+    ats_group: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     sort_column = _safe_sort_column(sort_by)
     order_func = asc if sort_dir == "asc" else desc
+
+    query = db.query(CsvRow).filter_by(user_id=user.id)
+    if ats_group:
+        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
+
     rows = (
-        db.query(CsvRow)
-        .filter_by(user_id=user.id)
+        query
         .order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
         .all()
     )
@@ -52,6 +68,8 @@ def list_rows(
         "columns": CSV_COLUMNS,
         "sort_by": sort_by,
         "sort_dir": sort_dir,
+        "filters": {"ats_group": ats_group or ""},
+        "filter_options": {"ats_groups": _ats_group_values(db, user.id)},
         "rows": [
             {
                 "id": row.id,
