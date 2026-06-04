@@ -4,6 +4,7 @@ import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
+const DEFAULT_FILTERS = { atsGroup: '' }
 
 function mergeColumnOrder(savedOrder, columns) {
   const validSaved = savedOrder.filter((col) => columns.includes(col))
@@ -17,6 +18,8 @@ export default function Dashboard({ user, onLogout }) {
   const [hidden, setHidden] = useState([])
   const [columnOrder, setColumnOrder] = useState([])
   const [sort, setSort] = useState(DEFAULT_SORT)
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+  const [filterOptions, setFilterOptions] = useState({ atsGroups: [] })
 
   const orderedColumns = useMemo(
     () => mergeColumnOrder(columnOrder, columns),
@@ -30,26 +33,29 @@ export default function Dashboard({ user, onLogout }) {
     })
   }
 
-  const loadRows = (nextSort = sort) =>
-    api.getRows(nextSort).then((d) => {
+  const loadRows = (nextSort = sort, nextFilters = filters) =>
+    api.getRows({ ...nextSort, ...nextFilters }).then((d) => {
       setColumns(d.columns)
       setRows(d.rows)
+      setFilterOptions({ atsGroups: d.filter_options?.ats_groups || [] })
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
     })
 
   useEffect(() => {
-    Promise.all([api.getRows(DEFAULT_SORT), api.getPreferences()]).then(
-      ([rowData, preferences]) => {
-        const savedHidden = preferences.hidden_columns || []
-        const savedOrder = preferences.column_order || []
-        const nextOrder = mergeColumnOrder(savedOrder, rowData.columns)
+    Promise.all([
+      api.getRows({ ...DEFAULT_SORT, ...DEFAULT_FILTERS }),
+      api.getPreferences(),
+    ]).then(([rowData, preferences]) => {
+      const savedHidden = preferences.hidden_columns || []
+      const savedOrder = preferences.column_order || []
+      const nextOrder = mergeColumnOrder(savedOrder, rowData.columns)
 
-        setColumns(rowData.columns)
-        setRows(rowData.rows)
-        setHidden(savedHidden)
-        setColumnOrder(nextOrder)
-      }
-    )
+      setColumns(rowData.columns)
+      setRows(rowData.rows)
+      setFilterOptions({ atsGroups: rowData.filter_options?.ats_groups || [] })
+      setHidden(savedHidden)
+      setColumnOrder(nextOrder)
+    })
   }, [])
 
   const toggleColumn = async (col) => {
@@ -86,7 +92,19 @@ export default function Dashboard({ user, onLogout }) {
   const updateSort = async (sortBy, sortDir) => {
     const nextSort = { sortBy, sortDir }
     setSort(nextSort)
-    await loadRows(nextSort)
+    await loadRows(nextSort, filters)
+  }
+
+  const updateAtsGroupFilter = async (atsGroup) => {
+    const nextFilters = { ...filters, atsGroup }
+    setFilters(nextFilters)
+    await loadRows(sort, nextFilters)
+  }
+
+  const clearFilters = async () => {
+    const nextFilters = DEFAULT_FILTERS
+    setFilters(nextFilters)
+    await loadRows(sort, nextFilters)
   }
 
   const handleClick = async (row) => {
@@ -147,6 +165,30 @@ export default function Dashboard({ user, onLogout }) {
               <option value="asc">Ascending</option>
               <option value="desc">Descending</option>
             </select>
+          </div>
+
+          <div>
+            <label htmlFor="ats-group-filter">Filter ats_group</label>
+            <select
+              id="ats-group-filter"
+              value={filters.atsGroup}
+              onChange={(e) => updateAtsGroupFilter(e.target.value)}
+            >
+              <option value="">All ATS groups</option>
+              {filterOptions.atsGroups.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="table-control-actions">
+            <label>Rows shown</label>
+            <span>{rows.length}</span>
+            <button className="btn btn-grey" onClick={clearFilters}>
+              Clear filters
+            </button>
           </div>
         </div>
 
