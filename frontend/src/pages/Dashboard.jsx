@@ -12,6 +12,26 @@ function mergeColumnOrder(savedOrder, columns) {
   return [...validSaved, ...missing]
 }
 
+function parseClickedAt(clickedAt) {
+  if (!clickedAt) {
+    return null
+  }
+
+  const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(clickedAt)
+  const normalized = hasTimezone ? clickedAt : `${clickedAt}Z`
+  const parsed = new Date(normalized)
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function isSameLocalDay(dateA, dateB) {
+  return (
+    dateA.getFullYear() === dateB.getFullYear() &&
+    dateA.getMonth() === dateB.getMonth() &&
+    dateA.getDate() === dateB.getDate()
+  )
+}
+
 export default function Dashboard({ user, onLogout }) {
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
@@ -25,6 +45,21 @@ export default function Dashboard({ user, onLogout }) {
     () => mergeColumnOrder(columnOrder, columns),
     [columnOrder, columns]
   )
+
+  const rowStats = useMemo(() => {
+    const today = new Date()
+    const totalUrls = rows.filter((row) => row.data?.url).length
+    const greenUrls = rows.filter((row) => row.clicked).length
+    const greenToday = rows.filter((row) => {
+      if (!row.clicked) {
+        return false
+      }
+      const clickedAt = parseClickedAt(row.clicked_at)
+      return clickedAt ? isSameLocalDay(clickedAt, today) : false
+    }).length
+
+    return { totalUrls, greenUrls, greenToday }
+  }, [rows])
 
   const savePreferences = async (nextHidden, nextOrder) => {
     await api.setPreferences({
@@ -136,6 +171,21 @@ export default function Dashboard({ user, onLogout }) {
       </div>
       <div className="container">
         <CsvUpload onUploaded={() => loadRows()} />
+
+        <div className="stats-grid">
+          <div className="stat-card">
+            <span>Total URLs on page</span>
+            <strong>{rowStats.totalUrls}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Green URLs</span>
+            <strong>{rowStats.greenUrls}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Green today</span>
+            <strong>{rowStats.greenToday}</strong>
+          </div>
+        </div>
 
         <div className="table-controls">
           <div>
