@@ -8,9 +8,16 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import CSV_COLUMNS, CsvRow, User
+from ..models import CSV_COLUMNS, CsvRow, UrlHistory, User
 
 router = APIRouter(prefix="/upload", tags=["upload"])
+
+
+def _clean_url(url) -> str | None:
+    if url is None:
+        return None
+    cleaned = str(url).strip()
+    return cleaned or None
 
 
 @router.post("")
@@ -28,32 +35,63 @@ async def upload_csv(
         raise HTTPException(400, "CSV must contain a 'url' column")
 
     batch_id = str(uuid.uuid4())
-    records = []
-    seen = set()
+    incoming_rows = []
+    history_records = []
+    seen_in_upload = set()
+    duplicate_in_upload = 0
+
+    existing_history_urls = {
+        url
+        for (url,) in db.query(UrlHistory.url)
+        .filter(UrlHistory.user_id == user.id)
+        .all()
+    }
+
     for _, r in df.iterrows():
-        url = r.get("url")
-        if not url or url in seen:
+        url = _clean_url(r.get("url"))
+        if not url:
             continue
-        seen.add(url)
+
+        if url in seen_in_upload:
+            duplicate_in_upload += 1
+            continue
+        seen_in_upload.add(url)
+
+        if url in existing_history_urls:
+            continue
+
         row = {col: r.get(col) for col in CSV_COLUMNS}
+        row["url"] = url
         row["user_id"] = user.id
         row["upload_batch_id"] = batch_id
-        records.append(row)
+        incoming_rows.append(row)
+        history_records.append({"user_id": user.id, "url": url})
 
     inserted = 0
-    if records:
-        stmt = (
-            pg_insert(CsvRow)
-            .values(records)
+    if incoming_rows:
+        history_stmt = (
+            pg_insert(UrlHistory)
+            .values(history_records)
             .on_conflict_do_nothing(index_elements=["user_id", "url"])
         )
-        result = db.execute(stmt)
-        db.commit()
+        db.execute(history_stmt)
+
+        rows_stmt = (
+            pg_insert(CsvRow)
+            .values(incoming_rows)
+            .on_conflict_do_nothing(index_elements=["user_id", "url"])
+        )
+        result = db.execute(rows_stmt)
         inserted = result.rowcount
+        db.commit()
+
+    skipped_history_duplicates = len(seen_in_upload) - len(incoming_rows)
 
     return {
         "batch_id": batch_id,
-        "received": len(records),
+        "unique_urls_received": len(seen_in_upload),
         "inserted": inserted,
-        "skipped_duplicates": len(records) - inserted,
+        "skipped_existing_url_history": skipped_history_duplicates,
+        "skipped_duplicate_in_upload": duplicate_in_upload,
+        "skipped_duplicates": skipped_history_duplicates + duplicate_in_upload,
     }
