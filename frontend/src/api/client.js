@@ -27,6 +27,8 @@ export const api = {
       })
       .then((r) => r.data),
   recordClick: (rowId) => client.post(`/rows/${rowId}/click`).then((r) => r.data),
+  deleteRows: (rowIds) =>
+    client.delete('/rows', { data: { row_ids: rowIds } }).then((r) => r.data),
   getPreferences: () => client.get('/preferences').then((r) => r.data),
   setPreferences: ({ hiddenColumns, columnOrder }) =>
     client
