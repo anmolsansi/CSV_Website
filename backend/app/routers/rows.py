@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -53,10 +53,56 @@ def _safe_sort_column(sort_by: str):
     return column
 
 
+def _parse_utc_naive(value: str | None):
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _base_user_query(db: Session, user_id: int, ats_group: str | None = None):
+    query = db.query(CsvRow).filter(CsvRow.user_id == user_id)
+    if ats_group:
+        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
+    return query
+
+
+def _row_stats(
+    db: Session,
+    user_id: int,
+    ats_group: str | None,
+    clicked_today_start: str | None,
+    clicked_today_end: str | None,
+) -> dict:
+    query = _base_user_query(db, user_id, ats_group)
+    today_start = _parse_utc_naive(clicked_today_start)
+    today_end = _parse_utc_naive(clicked_today_end)
+
+    green_today_query = query.filter(CsvRow.clicked.is_(True), CsvRow.clicked_at.isnot(None))
+    if today_start and today_end:
+        green_today_query = green_today_query.filter(
+            CsvRow.clicked_at >= today_start,
+            CsvRow.clicked_at < today_end,
+        )
+
+    return {
+        "total_urls": query.filter(CsvRow.url.isnot(None), CsvRow.url != "").count(),
+        "green_urls": query.filter(CsvRow.clicked.is_(True)).count(),
+        "green_today": green_today_query.count() if today_start and today_end else 0,
+    }
+
+
 def _ats_group_values(db: Session, user_id: int) -> list[str]:
     values = (
         db.query(CsvRow.ats_group)
-        .filter(CsvRow.user_id == user_id, CsvRow.ats_group.isnot(None), CsvRow.ats_group != "")
+        .filter(
+            CsvRow.user_id == user_id,
+            CsvRow.archived.is_(False),
+            CsvRow.ats_group.isnot(None),
+            CsvRow.ats_group != "",
+        )
         .distinct()
         .order_by(CsvRow.ats_group.asc())
         .all()
@@ -69,15 +115,15 @@ def list_rows(
     sort_by: str = Query("created_at"),
     sort_dir: Literal["asc", "desc"] = Query("desc"),
     ats_group: str | None = Query(None),
+    clicked_today_start: str | None = Query(None),
+    clicked_today_end: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     sort_column = _safe_sort_column(sort_by)
     order_func = asc if sort_dir == "asc" else desc
 
-    query = db.query(CsvRow).filter_by(user_id=user.id)
-    if ats_group:
-        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
+    query = _base_user_query(db, user.id, ats_group).filter(CsvRow.archived.is_(False))
 
     rows = (
         query
@@ -90,6 +136,13 @@ def list_rows(
         "sort_dir": sort_dir,
         "filters": {"ats_group": ats_group or ""},
         "filter_options": {"ats_groups": _ats_group_values(db, user.id)},
+        "stats": _row_stats(
+            db,
+            user.id,
+            ats_group,
+            clicked_today_start,
+            clicked_today_end,
+        ),
         "rows": [
             {
                 "id": row.id,
@@ -127,13 +180,19 @@ def delete_rows(
     if not payload.row_ids:
         raise HTTPException(400, "No rows selected")
 
-    deleted = (
-        db.query(CsvRow)
-        .filter(CsvRow.user_id == user.id, CsvRow.id.in_(payload.row_ids))
-        .delete(synchronize_session=False)
+    query = db.query(CsvRow).filter(
+        CsvRow.user_id == user.id,
+        CsvRow.id.in_(payload.row_ids),
     )
+
+    if payload.mode == "archive":
+        updated = query.update({CsvRow.archived: True}, synchronize_session=False)
+        db.commit()
+        return {"archived": updated, "deleted": 0}
+
+    deleted = query.delete(synchronize_session=False)
     db.commit()
-    return {"deleted": deleted}
+    return {"archived": 0, "deleted": deleted}
 
 
 @router.get("/preferences")
