@@ -43,6 +43,9 @@ class User(Base):
         "OAuthIdentity", back_populates="user", cascade="all, delete-orphan"
     )
     rows = relationship("CsvRow", back_populates="user", cascade="all, delete-orphan")
+    url_history = relationship(
+        "UrlHistory", back_populates="user", cascade="all, delete-orphan"
+    )
     preference = relationship(
         "ColumnPreference", back_populates="user", uselist=False,
         cascade="all, delete-orphan",
@@ -63,6 +66,22 @@ class OAuthIdentity(Base):
 
     __table_args__ = (
         UniqueConstraint("provider", "provider_id", name="uq_provider_identity"),
+    )
+
+
+class UrlHistory(Base):
+    __tablename__ = "url_history"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    url = Column(Text, nullable=False)
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="url_history")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "url", name="uq_user_url_history"),
     )
 
 
