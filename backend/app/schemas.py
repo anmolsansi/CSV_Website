@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -23,6 +23,7 @@ class RowOut(BaseModel):
 
 class RowDeleteIn(BaseModel):
     row_ids: List[int]
+    mode: Literal["archive", "delete"] = "delete"
 
 
 class ColumnPrefOut(BaseModel):
