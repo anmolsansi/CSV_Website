@@ -32,6 +32,41 @@ function isSameLocalDay(dateA, dateB) {
   )
 }
 
+function calculateRowStats(rows) {
+  const today = new Date()
+  const totalUrls = rows.filter((row) => row.data?.url).length
+  const greenUrls = rows.filter((row) => row.clicked).length
+  const greenToday = rows.filter((row) => {
+    if (!row.clicked) {
+      return false
+    }
+    const clickedAt = parseClickedAt(row.clicked_at)
+    return clickedAt ? isSameLocalDay(clickedAt, today) : false
+  }).length
+
+  return { totalUrls, greenUrls, greenToday }
+}
+
+function buildDeleteConfirmation({ rows, rowsToDelete, label }) {
+  const before = calculateRowStats(rows)
+  const deleteIds = new Set(rowsToDelete.map((row) => row.id))
+  const remainingRows = rows.filter((row) => !deleteIds.has(row.id))
+  const after = calculateRowStats(remainingRows)
+
+  return [
+    `Delete ${label}?`,
+    '',
+    `Rows being deleted: ${rowsToDelete.length}`,
+    '',
+    'Numbers on this page will update like this:',
+    `Total URLs: ${before.totalUrls} -> ${after.totalUrls}`,
+    `Green URLs: ${before.greenUrls} -> ${after.greenUrls}`,
+    `Green today: ${before.greenToday} -> ${after.greenToday}`,
+    '',
+    'This cannot be undone.',
+  ].join('\n')
+}
+
 export default function Dashboard({ user, onLogout }) {
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
@@ -40,26 +75,14 @@ export default function Dashboard({ user, onLogout }) {
   const [sort, setSort] = useState(DEFAULT_SORT)
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [filterOptions, setFilterOptions] = useState({ atsGroups: [] })
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set())
 
   const orderedColumns = useMemo(
     () => mergeColumnOrder(columnOrder, columns),
     [columnOrder, columns]
   )
 
-  const rowStats = useMemo(() => {
-    const today = new Date()
-    const totalUrls = rows.filter((row) => row.data?.url).length
-    const greenUrls = rows.filter((row) => row.clicked).length
-    const greenToday = rows.filter((row) => {
-      if (!row.clicked) {
-        return false
-      }
-      const clickedAt = parseClickedAt(row.clicked_at)
-      return clickedAt ? isSameLocalDay(clickedAt, today) : false
-    }).length
-
-    return { totalUrls, greenUrls, greenToday }
-  }, [rows])
+  const rowStats = useMemo(() => calculateRowStats(rows), [rows])
 
   const savePreferences = async (nextHidden, nextOrder) => {
     await api.setPreferences({
@@ -74,6 +97,7 @@ export default function Dashboard({ user, onLogout }) {
       setRows(d.rows)
       setFilterOptions({ atsGroups: d.filter_options?.ats_groups || [] })
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
+      setSelectedRowIds(new Set())
     })
 
   useEffect(() => {
@@ -90,6 +114,7 @@ export default function Dashboard({ user, onLogout }) {
       setFilterOptions({ atsGroups: rowData.filter_options?.ats_groups || [] })
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
+      setSelectedRowIds(new Set())
     })
   }, [])
 
@@ -140,6 +165,53 @@ export default function Dashboard({ user, onLogout }) {
     const nextFilters = DEFAULT_FILTERS
     setFilters(nextFilters)
     await loadRows(sort, nextFilters)
+  }
+
+  const toggleRowSelection = (rowId) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(rowId)) {
+        next.delete(rowId)
+      } else {
+        next.add(rowId)
+      }
+      return next
+    })
+  }
+
+  const toggleAllRows = () => {
+    setSelectedRowIds((prev) => {
+      if (rows.length > 0 && prev.size === rows.length) {
+        return new Set()
+      }
+      return new Set(rows.map((row) => row.id))
+    })
+  }
+
+  const deleteRows = async (rowsToDelete, label) => {
+    if (rowsToDelete.length === 0) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      buildDeleteConfirmation({ rows, rowsToDelete, label })
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    await api.deleteRows(rowsToDelete.map((row) => row.id))
+    await loadRows(sort, filters)
+  }
+
+  const deleteSelectedRows = () => {
+    const rowsToDelete = rows.filter((row) => selectedRowIds.has(row.id))
+    deleteRows(rowsToDelete, `${rowsToDelete.length} selected row${rowsToDelete.length === 1 ? '' : 's'}`)
+  }
+
+  const deleteAllShownRows = () => {
+    deleteRows(rows, `all ${rows.length} row${rows.length === 1 ? '' : 's'} currently shown`)
   }
 
   const handleClick = async (row) => {
@@ -242,6 +314,26 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
 
+        <div className="delete-actions">
+          <div>
+            <strong>{selectedRowIds.size}</strong> selected
+          </div>
+          <button
+            className="btn btn-danger"
+            onClick={deleteSelectedRows}
+            disabled={selectedRowIds.size === 0}
+          >
+            Delete selected
+          </button>
+          <button
+            className="btn btn-danger-outline"
+            onClick={deleteAllShownRows}
+            disabled={rows.length === 0}
+          >
+            Delete all shown rows
+          </button>
+        </div>
+
         <div className="col-toggles">
           <div className="col-toggles-header">
             <strong>Show, hide, and rearrange columns</strong>
@@ -285,6 +377,9 @@ export default function Dashboard({ user, onLogout }) {
           rows={rows}
           hidden={hidden}
           sort={sort}
+          selectedRowIds={selectedRowIds}
+          onToggleRowSelection={toggleRowSelection}
+          onToggleAllRows={toggleAllRows}
           onSortChange={updateSort}
           onUrlClick={handleClick}
         />
