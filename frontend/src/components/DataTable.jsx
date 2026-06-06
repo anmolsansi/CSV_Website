@@ -17,6 +17,9 @@ export default function DataTable({
   rows,
   hidden,
   sort,
+  selectedRowIds,
+  onToggleRowSelection,
+  onToggleAllRows,
   onSortChange,
   onUrlClick,
 }) {
@@ -53,6 +56,9 @@ export default function DataTable({
     getCoreRowModel: getCoreRowModel(),
   })
 
+  const selectedCount = selectedRowIds?.size || 0
+  const allSelected = rows.length > 0 && selectedCount === rows.length
+
   const handleHeaderClick = (columnId) => {
     if (!onSortChange) {
       return
@@ -68,6 +74,15 @@ export default function DataTable({
         <thead>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
+              <th className="row-select-cell">
+                <input
+                  aria-label="Select all rows on page"
+                  type="checkbox"
+                  checked={allSelected}
+                  disabled={rows.length === 0}
+                  onChange={onToggleAllRows}
+                />
+              </th>
               {hg.headers.map((h) => (
                 <th key={h.id}>
                   <button
@@ -85,15 +100,26 @@ export default function DataTable({
           ))}
         </thead>
         <tbody>
-          {table.getRowModel().rows.map((r) => (
-            <tr key={r.id}>
-              {r.getVisibleCells().map((c) => (
-                <td key={c.id}>
-                  {flexRender(c.column.columnDef.cell, c.getContext())}
+          {table.getRowModel().rows.map((r) => {
+            const original = r.original
+            return (
+              <tr key={r.id} className={selectedRowIds?.has(original.id) ? 'selected-row' : ''}>
+                <td className="row-select-cell">
+                  <input
+                    aria-label={`Select row ${original.id}`}
+                    type="checkbox"
+                    checked={selectedRowIds?.has(original.id) || false}
+                    onChange={() => onToggleRowSelection(original.id)}
+                  />
                 </td>
-              ))}
-            </tr>
-          ))}
+                {r.getVisibleCells().map((c) => (
+                  <td key={c.id}>
+                    {flexRender(c.column.columnDef.cell, c.getContext())}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
       {rows.length === 0 && (
