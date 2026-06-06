@@ -21,6 +21,10 @@ class RowOut(BaseModel):
     data: dict
 
 
+class RowDeleteIn(BaseModel):
+    row_ids: List[int]
+
+
 class ColumnPrefOut(BaseModel):
     hidden_columns: List[str]
     column_order: List[str]
