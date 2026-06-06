@@ -5,6 +5,7 @@ import DataTable from '../components/DataTable'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
 const DEFAULT_FILTERS = { atsGroup: '' }
+const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 
 function mergeColumnOrder(savedOrder, columns) {
   const validSaved = savedOrder.filter((col) => columns.includes(col))
@@ -47,29 +48,83 @@ function calculateRowStats(rows) {
   return { totalUrls, greenUrls, greenToday }
 }
 
-function buildDeleteConfirmation({ rows, rowsToDelete, label }) {
-  const before = calculateRowStats(rows)
-  const deleteIds = new Set(rowsToDelete.map((row) => row.id))
-  const remainingRows = rows.filter((row) => !deleteIds.has(row.id))
-  const after = calculateRowStats(remainingRows)
+function normalizeStats(stats) {
+  if (!stats) {
+    return EMPTY_STATS
+  }
+
+  return {
+    totalUrls: stats.total_urls || 0,
+    greenUrls: stats.green_urls || 0,
+    greenToday: stats.green_today || 0,
+  }
+}
+
+function subtractStats(baseStats, removedStats) {
+  return {
+    totalUrls: Math.max(0, baseStats.totalUrls - removedStats.totalUrls),
+    greenUrls: Math.max(0, baseStats.greenUrls - removedStats.greenUrls),
+    greenToday: Math.max(0, baseStats.greenToday - removedStats.greenToday),
+  }
+}
+
+function buildDeleteConfirmation({ currentStats, rowsToDelete, label, mode }) {
+  const removedStats = calculateRowStats(rowsToDelete)
+  const after = mode === 'archive' ? currentStats : subtractStats(currentStats, removedStats)
+  const actionText = mode === 'archive'
+    ? 'Clean from table only. Numbers will stay the same.'
+    : 'Delete from database. Numbers will update.'
 
   return [
-    `Delete ${label}?`,
+    `Remove ${label}?`,
     '',
-    `Rows being deleted: ${rowsToDelete.length}`,
+    actionText,
     '',
-    'Numbers on this page will update like this:',
-    `Total URLs: ${before.totalUrls} -> ${after.totalUrls}`,
-    `Green URLs: ${before.greenUrls} -> ${after.greenUrls}`,
-    `Green today: ${before.greenToday} -> ${after.greenToday}`,
+    `Rows being removed: ${rowsToDelete.length}`,
     '',
-    'This cannot be undone.',
+    'Numbers will look like this:',
+    `Total URLs: ${currentStats.totalUrls} -> ${after.totalUrls}`,
+    `Green URLs: ${currentStats.greenUrls} -> ${after.greenUrls}`,
+    `Green today: ${currentStats.greenToday} -> ${after.greenToday}`,
+    '',
+    mode === 'archive'
+      ? 'These rows will disappear from the table, but stay counted in your totals.'
+      : 'This permanently deletes the rows and cannot be undone.',
   ].join('\n')
+}
+
+function getDeleteModeFromUser() {
+  const answer = window.prompt(
+    [
+      'How should these rows be removed?',
+      '',
+      '1 = Clean table only, numbers stay the same',
+      '2 = Delete rows, numbers update',
+      '',
+      'Enter 1 or 2:',
+    ].join('\n')
+  )
+
+  if (answer === null) {
+    return null
+  }
+
+  const trimmed = answer.trim()
+  if (trimmed === '1') {
+    return 'archive'
+  }
+  if (trimmed === '2') {
+    return 'delete'
+  }
+
+  window.alert('Invalid choice. Please enter 1 or 2.')
+  return null
 }
 
 export default function Dashboard({ user, onLogout }) {
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
+  const [stats, setStats] = useState(EMPTY_STATS)
   const [hidden, setHidden] = useState([])
   const [columnOrder, setColumnOrder] = useState([])
   const [sort, setSort] = useState(DEFAULT_SORT)
@@ -82,8 +137,6 @@ export default function Dashboard({ user, onLogout }) {
     [columnOrder, columns]
   )
 
-  const rowStats = useMemo(() => calculateRowStats(rows), [rows])
-
   const savePreferences = async (nextHidden, nextOrder) => {
     await api.setPreferences({
       hiddenColumns: nextHidden,
@@ -95,6 +148,7 @@ export default function Dashboard({ user, onLogout }) {
     api.getRows({ ...nextSort, ...nextFilters }).then((d) => {
       setColumns(d.columns)
       setRows(d.rows)
+      setStats(normalizeStats(d.stats))
       setFilterOptions({ atsGroups: d.filter_options?.ats_groups || [] })
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
       setSelectedRowIds(new Set())
@@ -111,6 +165,7 @@ export default function Dashboard({ user, onLogout }) {
 
       setColumns(rowData.columns)
       setRows(rowData.rows)
+      setStats(normalizeStats(rowData.stats))
       setFilterOptions({ atsGroups: rowData.filter_options?.ats_groups || [] })
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
@@ -188,26 +243,36 @@ export default function Dashboard({ user, onLogout }) {
     })
   }
 
-  const deleteRows = async (rowsToDelete, label) => {
-    if (rowsToDelete.length === 0) {
+  const deleteRows = async (rowsToRemove, label) => {
+    if (rowsToRemove.length === 0) {
+      return
+    }
+
+    const mode = getDeleteModeFromUser()
+    if (!mode) {
       return
     }
 
     const confirmed = window.confirm(
-      buildDeleteConfirmation({ rows, rowsToDelete, label })
+      buildDeleteConfirmation({
+        currentStats: stats,
+        rowsToDelete: rowsToRemove,
+        label,
+        mode,
+      })
     )
 
     if (!confirmed) {
       return
     }
 
-    await api.deleteRows(rowsToDelete.map((row) => row.id))
+    await api.deleteRows(rowsToRemove.map((row) => row.id), mode)
     await loadRows(sort, filters)
   }
 
   const deleteSelectedRows = () => {
-    const rowsToDelete = rows.filter((row) => selectedRowIds.has(row.id))
-    deleteRows(rowsToDelete, `${rowsToDelete.length} selected row${rowsToDelete.length === 1 ? '' : 's'}`)
+    const rowsToRemove = rows.filter((row) => selectedRowIds.has(row.id))
+    deleteRows(rowsToRemove, `${rowsToRemove.length} selected row${rowsToRemove.length === 1 ? '' : 's'}`)
   }
 
   const deleteAllShownRows = () => {
@@ -225,6 +290,7 @@ export default function Dashboard({ user, onLogout }) {
           : r
       )
     )
+    await loadRows(sort, filters)
   }
 
   return (
@@ -246,16 +312,16 @@ export default function Dashboard({ user, onLogout }) {
 
         <div className="stats-grid">
           <div className="stat-card">
-            <span>Total URLs on page</span>
-            <strong>{rowStats.totalUrls}</strong>
+            <span>Total URLs counted</span>
+            <strong>{stats.totalUrls}</strong>
           </div>
           <div className="stat-card">
             <span>Green URLs</span>
-            <strong>{rowStats.greenUrls}</strong>
+            <strong>{stats.greenUrls}</strong>
           </div>
           <div className="stat-card">
             <span>Green today</span>
-            <strong>{rowStats.greenToday}</strong>
+            <strong>{stats.greenToday}</strong>
           </div>
         </div>
 
@@ -323,14 +389,14 @@ export default function Dashboard({ user, onLogout }) {
             onClick={deleteSelectedRows}
             disabled={selectedRowIds.size === 0}
           >
-            Delete selected
+            Remove selected
           </button>
           <button
             className="btn btn-danger-outline"
             onClick={deleteAllShownRows}
             disabled={rows.length === 0}
           >
-            Delete all shown rows
+            Remove all shown rows
           </button>
         </div>
 
