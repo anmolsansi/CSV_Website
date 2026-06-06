@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, User
-from ..schemas import ColumnPrefIn
+from ..schemas import ColumnPrefIn, RowDeleteIn
 
 router = APIRouter(tags=["rows"])
 
@@ -116,6 +116,24 @@ def record_click(
         row.clicked_at = datetime.utcnow()
         db.commit()
     return {"id": row.id, "clicked": row.clicked, "clicked_at": row.clicked_at}
+
+
+@router.delete("/rows")
+def delete_rows(
+    payload: RowDeleteIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not payload.row_ids:
+        raise HTTPException(400, "No rows selected")
+
+    deleted = (
+        db.query(CsvRow)
+        .filter(CsvRow.user_id == user.id, CsvRow.id.in_(payload.row_ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.get("/preferences")
