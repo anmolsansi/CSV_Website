@@ -76,6 +76,7 @@ class CsvRow(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     clicked = Column(Boolean, default=False, nullable=False)
     clicked_at = Column(DateTime, nullable=True, index=True)
+    archived = Column(Boolean, default=False, nullable=False, index=True)
 
     # CSV data columns
     ats_group = Column(Text)
