@@ -26,6 +26,16 @@ class RowDeleteIn(BaseModel):
     mode: Literal["archive", "delete"] = "delete"
 
 
+class JobTrackUpdateIn(BaseModel):
+    company: Optional[str] = None
+    title: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    submitted_at: Optional[str] = None
+    follow_up_at: Optional[str] = None
+    mark_submitted: bool = False
+
+
 class ColumnPrefOut(BaseModel):
     hidden_columns: List[str]
     column_order: List[str]
