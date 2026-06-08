@@ -29,13 +29,16 @@ CSV_COLUMNS = [
     "extraction_method", "retry_attempted", "error", "resume_match_score",
 ]
 
+JOB_TRACK_STATUS_VALUES = [
+    "opened", "applied", "follow_up", "interview",
+    "rejected", "offer", "not_applying",
+]
+
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    # Email is the account identity: multiple OAuth providers with the same
-    # email link to the same user.
     email = Column(String(320), unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -43,6 +46,9 @@ class User(Base):
         "OAuthIdentity", back_populates="user", cascade="all, delete-orphan"
     )
     rows = relationship("CsvRow", back_populates="user", cascade="all, delete-orphan")
+    job_tracks = relationship(
+        "JobTrack", back_populates="user", cascade="all, delete-orphan"
+    )
     url_history = relationship(
         "UrlHistory", back_populates="user", cascade="all, delete-orphan"
     )
@@ -58,7 +64,7 @@ class OAuthIdentity(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
                      nullable=False, index=True)
-    provider = Column(String(50), nullable=False)  # google | microsoft | apple
+    provider = Column(String(50), nullable=False)
     provider_id = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -97,7 +103,6 @@ class CsvRow(Base):
     clicked_at = Column(DateTime, nullable=True, index=True)
     archived = Column(Boolean, default=False, nullable=False, index=True)
 
-    # CSV data columns
     ats_group = Column(Text)
     location_group = Column(Text)
     search_bucket = Column(Text)
@@ -133,10 +138,72 @@ class CsvRow(Base):
     resume_match_score = Column(Text)
 
     user = relationship("User", back_populates="rows")
+    job_track = relationship("JobTrack", back_populates="csv_row", uselist=False)
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_url"),
     )
+
+
+class JobTrack(Base):
+    __tablename__ = "job_tracks"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    csv_row_id = Column(Integer, ForeignKey("csv_rows.id"), nullable=True, index=True)
+    url = Column(Text, nullable=False)
+    company = Column(Text)
+    title = Column(Text)
+    ats_group = Column(Text)
+    search_bucket = Column(Text)
+    resume_match_score = Column(Text)
+    status = Column(String(50), default="opened", nullable=False, index=True)
+    opened_at = Column(DateTime, nullable=True, index=True)
+    applied_at = Column(DateTime, nullable=True, index=True)
+    follow_up_at = Column(DateTime, nullable=True, index=True)
+    notes = Column(Text)
+    session_id = Column(Text)
+    open_count = Column(Integer, default=1, nullable=False)
+    last_opened_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                        nullable=False)
+
+    user = relationship("User", back_populates="job_tracks")
+    csv_row = relationship("CsvRow", back_populates="job_track")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
+    )
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    view_type = Column(String(50), nullable=False, default="job_links")
+    filters = Column(JSONB, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "view_type", name="uq_user_saved_view"),
+    )
+
+
+class SearchSession(Base):
+    __tablename__ = "search_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    notes = Column(Text)
 
 
 class ColumnPreference(Base):
