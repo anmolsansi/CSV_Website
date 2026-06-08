@@ -160,9 +160,10 @@ class JobTrack(Base):
     resume_match_score = Column(Text)
     status = Column(String(50), default="opened", nullable=False, index=True)
     opened_at = Column(DateTime, nullable=True, index=True)
-    submitted_at = Column(DateTime, nullable=True, index=True)
+    applied_at = Column(DateTime, nullable=True, index=True)
     follow_up_at = Column(DateTime, nullable=True, index=True)
     notes = Column(Text)
+    session_id = Column(Text)
     open_count = Column(Integer, default=1, nullable=False)
     last_opened_at = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -175,6 +176,34 @@ class JobTrack(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
     )
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    view_type = Column(String(50), nullable=False, default="job_links")
+    filters = Column(JSONB, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "view_type", name="uq_user_saved_view"),
+    )
+
+
+class SearchSession(Base):
+    __tablename__ = "search_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    notes = Column(Text)
 
 
 class ColumnPreference(Base):
