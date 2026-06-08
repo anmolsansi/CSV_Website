@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .database import Base, engine
 from .jobs import cleanup_clicked_rows
-from .routers import auth_router, crm, rows, upload
+from .routers import auth_router, rows, upload
 
 Base.metadata.create_all(bind=engine)
 
@@ -24,7 +24,6 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(upload.router)
 app.include_router(rows.router)
-app.include_router(crm.router)
 
 scheduler = BackgroundScheduler()
 
