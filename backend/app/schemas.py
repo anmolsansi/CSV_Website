@@ -50,6 +50,9 @@ class SessionIn(BaseModel):
 class SessionUpdateIn(BaseModel):
     notes: Optional[str] = None
     end: bool = False
+    submitted_at: Optional[str] = None
+    follow_up_at: Optional[str] = None
+    mark_submitted: bool = False
 
 
 class ColumnPrefOut(BaseModel):
