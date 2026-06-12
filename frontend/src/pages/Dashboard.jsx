@@ -121,7 +121,7 @@ function getDeleteModeFromUser() {
   return null
 }
 
-export default function Dashboard({ user, onLogout }) {
+export default function Dashboard() {
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
   const [stats, setStats] = useState(EMPTY_STATS)
@@ -131,6 +131,7 @@ export default function Dashboard({ user, onLogout }) {
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [filterOptions, setFilterOptions] = useState({ atsGroups: [] })
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
+  const [columnsCollapsed, setColumnsCollapsed] = useState(true)
 
   const orderedColumns = useMemo(
     () => mergeColumnOrder(columnOrder, columns),
@@ -294,20 +295,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div>
-      <div className="topbar">
-        <strong>CSV URL Tracker</strong>
-        <div>
-          <span style={{ marginRight: 12 }}>{user.email}</span>
-          <button
-            className="btn btn-grey"
-            onClick={() => api.logout().then(onLogout)}
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-      <div className="container">
+    <div className="container">
         <CsvUpload onUploaded={() => loadRows()} />
 
         <div className="stats-grid">
@@ -402,13 +390,20 @@ export default function Dashboard({ user, onLogout }) {
 
         <div className="col-toggles">
           <div className="col-toggles-header">
-            <strong>Show, hide, and rearrange columns</strong>
-            <button className="btn btn-grey" onClick={resetColumnOrder}>
-              Reset order
+            <button
+              className="col-collapse-toggle"
+              onClick={() => setColumnsCollapsed(!columnsCollapsed)}
+            >
+              {columnsCollapsed ? '▶' : '▼'} Show, hide, and rearrange columns
             </button>
+            {!columnsCollapsed && (
+              <button className="btn btn-grey" onClick={resetColumnOrder}>
+                Reset order
+              </button>
+            )}
           </div>
 
-          {orderedColumns.map((col, index) => (
+          {!columnsCollapsed && orderedColumns.map((col, index) => (
             <div className="column-control" key={col}>
               <label>
                 <input
@@ -449,7 +444,6 @@ export default function Dashboard({ user, onLogout }) {
           onSortChange={updateSort}
           onUrlClick={handleClick}
         />
-      </div>
     </div>
   )
 }
