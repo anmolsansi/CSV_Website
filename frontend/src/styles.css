@@ -295,3 +295,24 @@ th { background: #f3f4f6; position: sticky; top: 0; }
 .export-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 1rem 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 14px; }
 .export-bar label { font-size: 12px; font-weight: 700; color: #374151; }
 .export-bar select { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; font-size: 13px; background: #fff; }
+
+/* Follow-up cell */
+.follow-up-cell { display: flex; flex-direction: column; gap: 4px; }
+.follow-up-quick-btns { display: flex; gap: 3px; flex-wrap: wrap; }
+.follow-up-quick-btns .btn-sm { padding: 2px 6px; font-size: 11px; border-radius: 4px; }
+.follow-up-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 4px; }
+.follow-up-badge.overdue { background: #fee2e2; color: #991b1b; }
+.follow-up-badge.due-today { background: #fef3c7; color: #92400e; }
+.text-overdue { color: #dc2626; font-weight: 600; }
+.text-due-today { color: #d97706; font-weight: 600; }
+
+/* Duplicate badge */
+.duplicate-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #e0e7ff; color: #3730a3; }
+.app-status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
+.app-status-badge.opened { background: #dbeafe; color: #1e40af; }
+.app-status-badge.applied { background: #d1fae5; color: #065f46; }
+.app-status-badge.follow_up { background: #fef3c7; color: #92400e; }
+.app-status-badge.interview { background: #ede9fe; color: #5b21b6; }
+.app-status-badge.rejected { background: #fee2e2; color: #991b1b; }
+.app-status-badge.offer { background: #d1fae5; color: #065f46; }
+.app-status-badge.not_applying { background: #f3f4f6; color: #374151; }

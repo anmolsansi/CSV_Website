@@ -4,7 +4,7 @@ import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
-const DEFAULT_FILTERS = { atsGroup: '' }
+const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false }
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 
 function mergeColumnOrder(savedOrder, columns) {
@@ -150,7 +150,7 @@ export default function Dashboard() {
       setColumns(d.columns)
       setRows(d.rows)
       setStats(normalizeStats(d.stats))
-      setFilterOptions({ atsGroups: d.filter_options?.ats_groups || [] })
+      setFilterOptions(d.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
       setSelectedRowIds(new Set())
     })
@@ -167,7 +167,7 @@ export default function Dashboard() {
       setColumns(rowData.columns)
       setRows(rowData.rows)
       setStats(normalizeStats(rowData.stats))
-      setFilterOptions({ atsGroups: rowData.filter_options?.ats_groups || [] })
+      setFilterOptions(rowData.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
       setSelectedRowIds(new Set())
@@ -213,6 +213,12 @@ export default function Dashboard() {
 
   const updateAtsGroupFilter = async (atsGroup) => {
     const nextFilters = { ...filters, atsGroup }
+    setFilters(nextFilters)
+    await loadRows(sort, nextFilters)
+  }
+
+  const updateFilter = async (key, value) => {
+    const nextFilters = { ...filters, [key]: value }
     setFilters(nextFilters)
     await loadRows(sort, nextFilters)
   }
@@ -462,19 +468,93 @@ export default function Dashboard() {
           </div>
 
           <div>
-            <label htmlFor="ats-group-filter">Filter ats_group</label>
+            <label htmlFor="ats-group-filter">ATS group</label>
             <select
               id="ats-group-filter"
               value={filters.atsGroup}
-              onChange={(e) => updateAtsGroupFilter(e.target.value)}
+              onChange={(e) => updateFilter('atsGroup', e.target.value)}
             >
               <option value="">All ATS groups</option>
-              {filterOptions.atsGroups.map((group) => (
+              {filterOptions.atsGroups?.map((group) => (
                 <option key={group} value={group}>
                   {group}
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label htmlFor="location-group-filter">Location</label>
+            <select
+              id="location-group-filter"
+              value={filters.locationGroup}
+              onChange={(e) => updateFilter('locationGroup', e.target.value)}
+            >
+              <option value="">All locations</option>
+              {filterOptions.locationGroups?.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="search-bucket-filter">Bucket</label>
+            <select
+              id="search-bucket-filter"
+              value={filters.searchBucket}
+              onChange={(e) => updateFilter('searchBucket', e.target.value)}
+            >
+              <option value="">All buckets</option>
+              {filterOptions.searchBuckets?.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="decision-filter">Decision</label>
+            <select
+              id="decision-filter"
+              value={filters.decision}
+              onChange={(e) => updateFilter('decision', e.target.value)}
+            >
+              <option value="">All</option>
+              {filterOptions.decisions?.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="sponsorship-filter">Sponsorship</label>
+            <select
+              id="sponsorship-filter"
+              value={filters.sponsorshipStatus}
+              onChange={(e) => updateFilter('sponsorshipStatus', e.target.value)}
+            >
+              <option value="">All</option>
+              {filterOptions.sponsorshipStatuses?.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="search-filter">Search</label>
+            <input
+              id="search-filter"
+              type="text"
+              value={filters.q}
+              onChange={(e) => updateFilter('q', e.target.value)}
+              placeholder="Company, title, URL"
+            />
+          </div>
+
+          <div className="checkbox-filter">
+            <label><input type="checkbox" checked={filters.openedOnly} onChange={(e) => updateFilter('openedOnly', e.target.checked)} /> Opened only</label>
+            <label><input type="checkbox" checked={filters.unopenedOnly} onChange={(e) => updateFilter('unopenedOnly', e.target.checked)} /> Unopened only</label>
+            <label><input type="checkbox" checked={filters.hasError} onChange={(e) => updateFilter('hasError', e.target.checked)} /> Has error</label>
+            <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => updateFilter('jdMissing', e.target.checked)} /> JD missing</label>
           </div>
 
           <div className="table-control-actions">

@@ -22,6 +22,12 @@ def _clean_url(url) -> str | None:
     return cleaned or None
 
 
+def _normalize(val):
+    if val is None:
+        return None
+    return str(val).strip().lower() or None
+
+
 @router.post("")
 async def upload_csv(
     file: UploadFile = File(...),
@@ -65,6 +71,22 @@ async def upload_csv(
         .all()
     }
 
+    # Build index of existing rows for fuzzy duplicate detection
+    existing_rows = db.query(CsvRow.id, CsvRow.url, CsvRow.canonical_company_job_key, CsvRow.company_guess, CsvRow.title, CsvRow.job_id_guess).filter(CsvRow.user_id == user.id).all()
+    existing_keys = {}  # (canonical_key) -> row_id
+    existing_company_title = {}  # (company, title) -> row_id
+    existing_job_id = {}  # job_id_guess -> row_id
+    for r in existing_rows:
+        ckey = _normalize(r.canonical_company_job_key)
+        if ckey:
+            existing_keys[ckey] = r.id
+        ct = (_normalize(r.company_guess), _normalize(r.title))
+        if ct[0] and ct[1]:
+            existing_company_title[ct] = r.id
+        jid = _normalize(r.job_id_guess)
+        if jid:
+            existing_job_id[jid] = r.id
+
     for idx, r in df.iterrows():
         url = _clean_url(r.get("url"))
         if not url:
@@ -105,6 +127,34 @@ async def upload_csv(
         result = db.execute(rows_stmt)
         inserted = result.rowcount
         db.commit()
+
+        # Post-insert: mark fuzzy duplicates
+        newly_inserted = db.query(CsvRow).filter(CsvRow.upload_batch_id == batch_id, CsvRow.user_id == user.id).all()
+        fuzzy_duplicates = 0
+        for ni in newly_inserted:
+            # Check canonical_company_job_key
+            ckey = _normalize(getattr(ni, 'canonical_company_job_key', None))
+            if ckey and ckey in existing_keys:
+                ni.is_duplicate = True
+                ni.duplicate_of_id = existing_keys[ckey]
+                fuzzy_duplicates += 1
+                continue
+            # Check company+title
+            ct = (_normalize(getattr(ni, 'company_guess', None)), _normalize(getattr(ni, 'title', None)))
+            if ct[0] and ct[1] and ct in existing_company_title:
+                ni.is_duplicate = True
+                ni.duplicate_of_id = existing_company_title[ct]
+                fuzzy_duplicates += 1
+                continue
+            # Check job_id_guess
+            jid = _normalize(getattr(ni, 'job_id_guess', None))
+            if jid and jid in existing_job_id:
+                ni.is_duplicate = True
+                ni.duplicate_of_id = existing_job_id[jid]
+                fuzzy_duplicates += 1
+                continue
+        if fuzzy_duplicates:
+            db.commit()
 
     skipped_history_duplicates = len(seen_in_upload) - len(incoming_rows)
 

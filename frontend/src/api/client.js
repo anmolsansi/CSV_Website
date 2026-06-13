@@ -29,7 +29,7 @@ export const api = {
     fd.append('file', file)
     return client.post('/upload', fd).then((r) => r.data)
   },
-  getRows: ({ sortBy = 'created_at', sortDir = 'desc', atsGroup = '' } = {}) =>
+  getRows: ({ sortBy = 'created_at', sortDir = 'desc', atsGroup = '', locationGroup = '', searchBucket = '', decision = '', sponsorshipStatus = '', q = '', openedOnly = false, unopenedOnly = false, hasError = false, jdMissing = false } = {}) =>
     client
       .get('/rows', {
         params: {
@@ -37,6 +37,15 @@ export const api = {
           sort_dir: sortDir,
           ...todayWindowParams(),
           ...(atsGroup ? { ats_group: atsGroup } : {}),
+          ...(locationGroup ? { location_group: locationGroup } : {}),
+          ...(searchBucket ? { search_bucket: searchBucket } : {}),
+          ...(decision ? { decision } : {}),
+          ...(sponsorshipStatus ? { sponsorship_status: sponsorshipStatus } : {}),
+          ...(q ? { q } : {}),
+          ...(openedOnly ? { opened_only: true } : {}),
+          ...(unopenedOnly ? { unopened_only: true } : {}),
+          ...(hasError ? { has_error: true } : {}),
+          ...(jdMissing ? { jd_missing: true } : {}),
         },
       })
       .then((r) => r.data),
@@ -105,6 +114,16 @@ export const api = {
     if (params.q) qs.set('q', params.q)
     if (params.rowIds && params.rowIds.length) qs.set('row_ids', params.rowIds.join(','))
     return client.get(`/crm/export/applications?${qs.toString()}`, { responseType: 'blob' })
+  },
+
+  // CRM - Follow-up presets
+  setFollowUpPreset: (itemId, preset) =>
+    client.post(`/crm/applications/${itemId}/follow-up?preset=${preset}`).then((r) => r.data),
+
+  // CRM - Duplicate management
+  markDuplicate: (itemId, duplicateOfId = null) => {
+    const qs = duplicateOfId ? `?duplicate_of_id=${duplicateOfId}` : ''
+    return client.post(`/crm/applications/${itemId}/mark-duplicate${qs}`).then((r) => r.data)
   },
 }
 

@@ -33,7 +33,7 @@ def num_expr(col):
 
 
 def to_out(item):
-    return {"id": item.id, "csv_row_id": item.csv_row_id, "url": item.url, "company": item.company, "title": item.title, "ats_group": item.ats_group, "search_bucket": item.search_bucket, "resume_match_score": item.resume_match_score, "status": item.status, "opened_at": item.opened_at, "applied_at": item.applied_at, "follow_up_at": item.follow_up_at, "notes": item.notes, "session_id": item.session_id, "open_count": item.open_count, "last_opened_at": item.last_opened_at, "created_at": item.created_at, "updated_at": item.updated_at}
+    return {"id": item.id, "csv_row_id": item.csv_row_id, "url": item.url, "company": item.company, "title": item.title, "ats_group": item.ats_group, "search_bucket": item.search_bucket, "resume_match_score": item.resume_match_score, "status": item.status, "opened_at": item.opened_at, "applied_at": item.applied_at, "follow_up_at": item.follow_up_at, "notes": item.notes, "session_id": item.session_id, "open_count": item.open_count, "last_opened_at": item.last_opened_at, "created_at": item.created_at, "updated_at": item.updated_at, "is_duplicate": getattr(item, 'is_duplicate', False), "duplicate_of_id": getattr(item, 'duplicate_of_id', None)}
 
 
 def upsert_from_row(db, user_id, row, now):
@@ -54,7 +54,10 @@ def upsert_from_row(db, user_id, row, now):
     return item
 
 
-def filtered_query(db, user_id, status=None, company=None, ats_group=None, search_bucket=None, quick_range=None, date_from=None, date_to=None, min_score=None, max_score=None, follow_up_due=False, opened_not_applied=False, q=None):
+def filtered_query(db, user_id, status=None, company=None, ats_group=None, search_bucket=None, quick_range=None, date_from=None, date_to=None, min_score=None, max_score=None, follow_up_due=False, opened_not_applied=False, q=None,
+                   location_group=None, decision=None, sponsorship_status=None, posted_age_min=None, posted_age_max=None,
+                   follow_up_today=False, follow_up_overdue=False, follow_up_none=False, has_error=False, jd_missing=False,
+                   date_applied_from=None, date_applied_to=None, applied_only=False):
     query = db.query(JobTrack).filter(JobTrack.user_id == user_id)
     if status:
         query = query.filter(JobTrack.status == status)
@@ -64,6 +67,16 @@ def filtered_query(db, user_id, status=None, company=None, ats_group=None, searc
         query = query.filter(func.lower(JobTrack.ats_group) == ats_group.lower())
     if search_bucket:
         query = query.filter(func.lower(JobTrack.search_bucket) == search_bucket.lower())
+    if location_group:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(func.lower(CsvRow.location_group) == location_group.lower())
+    if decision:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(func.lower(CsvRow.decision) == decision.lower())
+    if sponsorship_status:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(func.lower(CsvRow.sponsorship_status) == sponsorship_status.lower())
+    if has_error:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(CsvRow.error.isnot(None), CsvRow.error != "")
+    if jd_missing:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter((CsvRow.jd_text_length.is_(None)) | (CsvRow.jd_text_length == "") | (CsvRow.jd_text_length == "0"))
     if q:
         needle = q.lower()
         query = query.filter(or_(func.lower(JobTrack.company).contains(needle), func.lower(JobTrack.title).contains(needle), func.lower(JobTrack.url).contains(needle), func.lower(JobTrack.notes).contains(needle)))
@@ -80,6 +93,10 @@ def filtered_query(db, user_id, status=None, company=None, ats_group=None, searc
         query = query.filter(JobTrack.opened_at >= start)
     if end:
         query = query.filter(JobTrack.opened_at < end)
+    if posted_age_min is not None:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(num_expr(CsvRow.posted_age_days) >= posted_age_min)
+    if posted_age_max is not None:
+        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(num_expr(CsvRow.posted_age_days) <= posted_age_max)
     score = num_expr(JobTrack.resume_match_score)
     if min_score is not None:
         query = query.filter(score >= min_score)
@@ -87,8 +104,26 @@ def filtered_query(db, user_id, status=None, company=None, ats_group=None, searc
         query = query.filter(score <= max_score)
     if follow_up_due:
         query = query.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now)
+    if follow_up_today:
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        query = query.filter(JobTrack.follow_up_at >= today_start, JobTrack.follow_up_at < today_end)
+    if follow_up_overdue:
+        query = query.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at < now)
+    if follow_up_none:
+        query = query.filter(JobTrack.follow_up_at.is_(None))
     if opened_not_applied:
         query = query.filter(JobTrack.applied_at.is_(None), JobTrack.status == "opened")
+    if applied_only:
+        query = query.filter(JobTrack.applied_at.isnot(None))
+    if date_applied_from:
+        applied_start = parse_dt(date_applied_from)
+        if applied_start:
+            query = query.filter(JobTrack.applied_at >= applied_start)
+    if date_applied_to:
+        applied_end = parse_dt(date_applied_to)
+        if applied_end:
+            query = query.filter(JobTrack.applied_at < applied_end)
     return query
 
 
@@ -105,15 +140,25 @@ def create_from_row(row_id: int, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.get("/applications")
-def list_apps(status: str | None = Query(None), company: str | None = Query(None), ats_group: str | None = Query(None), search_bucket: str | None = Query(None), quick_range: str | None = Query(None), date_from: str | None = Query(None), date_to: str | None = Query(None), min_score: float | None = Query(None), max_score: float | None = Query(None), follow_up_due: bool = Query(False), opened_not_applied: bool = Query(False), q: str | None = Query(None), sort_by: str = Query("opened_at"), sort_dir: Literal["asc", "desc"] = Query("desc"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    query = filtered_query(db, user.id, status, company, ats_group, search_bucket, quick_range, date_from, date_to, min_score, max_score, follow_up_due, opened_not_applied, q)
+def list_apps(status: str | None = Query(None), company: str | None = Query(None), ats_group: str | None = Query(None), search_bucket: str | None = Query(None), quick_range: str | None = Query(None), date_from: str | None = Query(None), date_to: str | None = Query(None), min_score: float | None = Query(None), max_score: float | None = Query(None), follow_up_due: bool = Query(False), opened_not_applied: bool = Query(False), q: str | None = Query(None), sort_by: str = Query("opened_at"), sort_dir: Literal["asc", "desc"] = Query("desc"),
+              location_group: str | None = Query(None), decision: str | None = Query(None), sponsorship_status: str | None = Query(None), posted_age_min: float | None = Query(None), posted_age_max: float | None = Query(None),
+              follow_up_today: bool = Query(False), follow_up_overdue: bool = Query(False), follow_up_none: bool = Query(False), has_error: bool = Query(False), jd_missing: bool = Query(False),
+              date_applied_from: str | None = Query(None), date_applied_to: str | None = Query(None), applied_only: bool = Query(False),
+              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    query = filtered_query(db, user.id, status, company, ats_group, search_bucket, quick_range, date_from, date_to, min_score, max_score, follow_up_due, opened_not_applied, q,
+                           location_group, decision, sponsorship_status, posted_age_min, posted_age_max,
+                           follow_up_today, follow_up_overdue, follow_up_none, has_error, jd_missing,
+                           date_applied_from, date_applied_to, applied_only)
     if sort_by not in SORT_FIELDS:
         sort_by = "opened_at"
     order = asc if sort_dir == "asc" else desc
     sort_col = num_expr(JobTrack.resume_match_score) if sort_by == "resume_match_score" else getattr(JobTrack, sort_by)
     rows = query.order_by(order(sort_col).nullslast(), JobTrack.id.desc()).all()
     options = db.query(JobTrack.ats_group).filter(JobTrack.user_id == user.id, JobTrack.ats_group.isnot(None), JobTrack.ats_group != "").distinct().order_by(JobTrack.ats_group.asc()).all()
-    return {"statuses": JOB_TRACK_STATUS_VALUES, "filter_options": {"ats_groups": [x for (x,) in options]}, "rows": [to_out(x) for x in rows]}
+    location_options = db.query(CsvRow.location_group).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.location_group.isnot(None), CsvRow.location_group != "").distinct().order_by(CsvRow.location_group.asc()).all()
+    decision_options = db.query(CsvRow.decision).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.decision.isnot(None), CsvRow.decision != "").distinct().order_by(CsvRow.decision.asc()).all()
+    sponsorship_options = db.query(CsvRow.sponsorship_status).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.sponsorship_status.isnot(None), CsvRow.sponsorship_status != "").distinct().order_by(CsvRow.sponsorship_status.asc()).all()
+    return {"statuses": JOB_TRACK_STATUS_VALUES, "filter_options": {"ats_groups": [x for (x,) in options], "location_groups": [x for (x,) in location_options], "decisions": [x for (x,) in decision_options], "sponsorship_statuses": [x for (x,) in sponsorship_options]}, "rows": [to_out(x) for x in rows]}
 
 
 @router.patch("/applications/bulk")
@@ -333,6 +378,59 @@ def delete_session(session_id: int, db: Session = Depends(get_db), user: User = 
     deleted = db.query(SearchSession).filter_by(id=session_id, user_id=user.id).delete()
     db.commit()
     return {"deleted": deleted}
+
+
+# ─── Follow-Up Presets ───────────────────────────────────────────────────
+
+def _next_weekday(target_weekday):
+    now = datetime.utcnow()
+    days_ahead = target_weekday - now.weekday()
+    if days_ahead <= 0:
+        days_ahead += 7
+    return now + timedelta(days=days_ahead)
+
+
+@router.post("/applications/{item_id}/follow-up")
+def set_follow_up_preset(item_id: int, preset: str = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
+    if not item:
+        raise HTTPException(404, "Application not found")
+    now = datetime.utcnow()
+    if preset == "3_days":
+        item.follow_up_at = now + timedelta(days=3)
+    elif preset == "7_days":
+        item.follow_up_at = now + timedelta(days=7)
+    elif preset == "next_monday":
+        item.follow_up_at = _next_weekday(0)
+    elif preset == "clear":
+        item.follow_up_at = None
+    else:
+        raise HTTPException(400, "Invalid preset. Use: 3_days, 7_days, next_monday, clear")
+    item.updated_at = now
+    db.commit()
+    db.refresh(item)
+    return to_out(item)
+
+
+# ─── Duplicate Management ────────────────────────────────────────────────
+
+@router.post("/applications/{item_id}/mark-duplicate")
+def mark_duplicate(item_id: int, duplicate_of_id: int | None = Query(None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    item = db.query(CsvRow).filter_by(id=item_id, user_id=user.id).first()
+    if not item:
+        raise HTTPException(404, "Row not found")
+    if duplicate_of_id is not None:
+        original = db.query(CsvRow).filter_by(id=duplicate_of_id, user_id=user.id).first()
+        if not original:
+            raise HTTPException(404, "Original row not found")
+        item.is_duplicate = True
+        item.duplicate_of_id = duplicate_of_id
+    else:
+        item.is_duplicate = not item.is_duplicate
+        if not item.is_duplicate:
+            item.duplicate_of_id = None
+    db.commit()
+    return {"id": item.id, "is_duplicate": item.is_duplicate, "duplicate_of_id": item.duplicate_of_id}
 
 
 # ─── Export ───────────────────────────────────────────────────────────────
