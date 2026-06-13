@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, User
+from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
 from ..schemas import ColumnPrefIn, RowDeleteIn
 
 router = APIRouter(tags=["rows"])
@@ -110,11 +110,36 @@ def _ats_group_values(db: Session, user_id: int) -> list[str]:
     return [value for (value,) in values if value]
 
 
+def _filter_option_values(db: Session, user_id: int, column) -> list[str]:
+    values = (
+        db.query(column)
+        .filter(
+            CsvRow.user_id == user_id,
+            CsvRow.archived.is_(False),
+            column.isnot(None),
+            column != "",
+        )
+        .distinct()
+        .order_by(column.asc())
+        .all()
+    )
+    return [value for (value,) in values if value]
+
+
 @router.get("/rows")
 def list_rows(
     sort_by: str = Query("created_at"),
     sort_dir: Literal["asc", "desc"] = Query("desc"),
     ats_group: str | None = Query(None),
+    location_group: str | None = Query(None),
+    search_bucket: str | None = Query(None),
+    decision: str | None = Query(None),
+    sponsorship_status: str | None = Query(None),
+    q: str | None = Query(None),
+    opened_only: bool = Query(False),
+    unopened_only: bool = Query(False),
+    has_error: bool = Query(False),
+    jd_missing: bool = Query(False),
     clicked_today_start: str | None = Query(None),
     clicked_today_end: str | None = Query(None),
     db: Session = Depends(get_db),
@@ -123,19 +148,63 @@ def list_rows(
     sort_column = _safe_sort_column(sort_by)
     order_func = asc if sort_dir == "asc" else desc
 
-    query = _base_user_query(db, user.id, ats_group).filter(CsvRow.archived.is_(False))
+    query = db.query(CsvRow).filter(CsvRow.user_id == user_id, CsvRow.archived.is_(False))
+
+    if ats_group:
+        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
+    if location_group:
+        query = query.filter(func.lower(CsvRow.location_group) == location_group.lower())
+    if search_bucket:
+        query = query.filter(func.lower(CsvRow.search_bucket) == search_bucket.lower())
+    if decision:
+        query = query.filter(func.lower(CsvRow.decision) == decision.lower())
+    if sponsorship_status:
+        query = query.filter(func.lower(CsvRow.sponsorship_status) == sponsorship_status.lower())
+    if has_error:
+        query = query.filter(CsvRow.error.isnot(None), CsvRow.error != "")
+    if jd_missing:
+        query = query.filter((CsvRow.jd_text_length.is_(None)) | (CsvRow.jd_text_length == "") | (CsvRow.jd_text_length == "0"))
+    if q:
+        needle = q.lower()
+        query = query.filter(
+            func.lower(CsvRow.url).contains(needle)
+            | func.lower(CsvRow.company_guess).contains(needle)
+            | func.lower(CsvRow.title).contains(needle)
+        )
+
+    # Subquery for clicked status
+    clicked_sub = db.query(JobTrack.csv_row_id).filter(JobTrack.user_id == user.id).correlate(CsvRow).scalar_subquery()
+
+    if opened_only:
+        query = query.filter(clicked_sub.isnot(None))
+    if unopened_only:
+        query = query.filter(clicked_sub.is_(None))
 
     rows = (
         query
         .order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
         .all()
     )
+
+    # Build a map of csv_row_id -> JobTrack for application data
+    row_ids = [r.id for r in rows]
+    track_map = {}
+    if row_ids:
+        tracks = db.query(JobTrack).filter(JobTrack.csv_row_id.in_(row_ids), JobTrack.user_id == user.id).all()
+        track_map = {t.csv_row_id: t for t in tracks}
+
     return {
         "columns": CSV_COLUMNS,
         "sort_by": sort_by,
         "sort_dir": sort_dir,
         "filters": {"ats_group": ats_group or ""},
-        "filter_options": {"ats_groups": _ats_group_values(db, user.id)},
+        "filter_options": {
+            "ats_groups": _ats_group_values(db, user.id),
+            "location_groups": _filter_option_values(db, user.id, CsvRow.location_group),
+            "search_buckets": _filter_option_values(db, user.id, CsvRow.search_bucket),
+            "decisions": _filter_option_values(db, user.id, CsvRow.decision),
+            "sponsorship_statuses": _filter_option_values(db, user.id, CsvRow.sponsorship_status),
+        },
         "stats": _row_stats(
             db,
             user.id,
@@ -148,7 +217,14 @@ def list_rows(
                 "id": row.id,
                 "clicked": row.clicked,
                 "clicked_at": row.clicked_at,
+                "is_duplicate": row.is_duplicate,
+                "duplicate_of_id": row.duplicate_of_id,
                 "data": {col: getattr(row, col) for col in CSV_COLUMNS},
+                "app_status": track_map[row.id].status if row.id in track_map else None,
+                "app_id": track_map[row.id].id if row.id in track_map else None,
+                "applied_at": str(track_map[row.id].applied_at) if row.id in track_map and track_map[row.id].applied_at else None,
+                "follow_up_at": str(track_map[row.id].follow_up_at) if row.id in track_map and track_map[row.id].follow_up_at else None,
+                "app_notes": (track_map[row.id].notes or "")[:80] if row.id in track_map else None,
             }
             for row in rows
         ],

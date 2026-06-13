@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import { useToast } from '../App'
 import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
-const DEFAULT_FILTERS = { atsGroup: '' }
+const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false }
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 
 function mergeColumnOrder(savedOrder, columns) {
@@ -129,9 +130,11 @@ export default function Dashboard() {
   const [columnOrder, setColumnOrder] = useState([])
   const [sort, setSort] = useState(DEFAULT_SORT)
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
-  const [filterOptions, setFilterOptions] = useState({ atsGroups: [] })
+  const [filterOptions, setFilterOptions] = useState({ atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [columnsCollapsed, setColumnsCollapsed] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const toast = useToast()
 
   const orderedColumns = useMemo(
     () => mergeColumnOrder(columnOrder, columns),
@@ -145,17 +148,20 @@ export default function Dashboard() {
     })
   }
 
-  const loadRows = (nextSort = sort, nextFilters = filters) =>
-    api.getRows({ ...nextSort, ...nextFilters }).then((d) => {
+  const loadRows = (nextSort = sort, nextFilters = filters) => {
+    setLoading(true)
+    return api.getRows({ ...nextSort, ...nextFilters }).then((d) => {
       setColumns(d.columns)
       setRows(d.rows)
       setStats(normalizeStats(d.stats))
-      setFilterOptions({ atsGroups: d.filter_options?.ats_groups || [] })
+      setFilterOptions(d.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
       setSelectedRowIds(new Set())
-    })
+    }).finally(() => setLoading(false))
+  }
 
   useEffect(() => {
+    setLoading(true)
     Promise.all([
       api.getRows({ ...DEFAULT_SORT, ...DEFAULT_FILTERS }),
       api.getPreferences(),
@@ -167,11 +173,11 @@ export default function Dashboard() {
       setColumns(rowData.columns)
       setRows(rowData.rows)
       setStats(normalizeStats(rowData.stats))
-      setFilterOptions({ atsGroups: rowData.filter_options?.ats_groups || [] })
+      setFilterOptions(rowData.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
       setSelectedRowIds(new Set())
-    })
+    }).finally(() => setLoading(false))
   }, [])
 
   const toggleColumn = async (col) => {
@@ -213,6 +219,12 @@ export default function Dashboard() {
 
   const updateAtsGroupFilter = async (atsGroup) => {
     const nextFilters = { ...filters, atsGroup }
+    setFilters(nextFilters)
+    await loadRows(sort, nextFilters)
+  }
+
+  const updateFilter = async (key, value) => {
+    const nextFilters = { ...filters, [key]: value }
     setFilters(nextFilters)
     await loadRows(sort, nextFilters)
   }
@@ -284,9 +296,7 @@ export default function Dashboard() {
     if (selectedRowIds.size === 0) return
     const ids = [...selectedRowIds]
     const result = await api.bulkCreateApplicationsFromRows(ids)
-    window.alert(
-      `Sent to Applications:\n\nCreated: ${result.created}\nUpdated: ${result.updated}\nSkipped: ${result.skipped}`
-    )
+    toast(`Created: ${result.created}, Updated: ${result.updated}`, 'success')
     await loadRows(sort, filters)
   }
 
@@ -300,13 +310,13 @@ export default function Dashboard() {
       api.recordClick(row.id).catch(() => {})
       api.createApplicationFromRow(row.id).catch(() => {})
     }
-    if (blocked > 0) window.alert(`Browser blocked ${blocked} popup(s). Please allow popups for this site.`)
+    if (blocked > 0) toast(`Browser blocked ${blocked} popup(s)`, 'warning')
     await loadRows(sort, filters)
   }
 
   const openNext5 = async () => {
     const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
-    if (unclicked.length === 0) { window.alert('No unclicked rows remaining.'); return }
+    if (unclicked.length === 0) { toast('No unclicked rows remaining', 'warning'); return }
     let blocked = 0
     for (const row of unclicked) {
       const win = window.open(row.data.url, '_blank', 'noopener')
@@ -314,17 +324,15 @@ export default function Dashboard() {
       api.recordClick(row.id).catch(() => {})
       api.createApplicationFromRow(row.id).catch(() => {})
     }
-    if (blocked > 0) window.alert(`Browser blocked ${blocked} popup(s). Please allow popups for this site.`)
+    if (blocked > 0) toast(`Browser blocked ${blocked} popup(s)`, 'warning')
     await loadRows(sort, filters)
   }
 
   const sendNext5ToApplications = async () => {
     const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
-    if (unclicked.length === 0) { window.alert('No unclicked rows remaining.'); return }
+    if (unclicked.length === 0) { toast('No unclicked rows remaining', 'warning'); return }
     const result = await api.bulkCreateApplicationsFromRows(unclicked.map((r) => r.id))
-    window.alert(
-      `Sent next ${unclicked.length} to Applications:\n\nCreated: ${result.created}\nUpdated: ${result.updated}\nSkipped: ${result.skipped}`
-    )
+    toast(`Sent ${unclicked.length} to Applications: ${result.created} created, ${result.updated} updated`, 'success')
     await loadRows(sort, filters)
   }
 
@@ -355,6 +363,33 @@ export default function Dashboard() {
     a.download = 'applypilot_batch.json'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const [exportFormat, setExportFormat] = useState('csv')
+  const [exportScope, setExportScope] = useState('all')
+
+  const handleExport = async () => {
+    const params = { format: exportFormat }
+    if (exportScope === 'selected') {
+      if (selectedRowIds.size === 0) { toast('No rows selected', 'warning'); return }
+      params.rowIds = [...selectedRowIds]
+    } else if (exportScope === 'filtered') {
+      params.atsGroup = filters.atsGroup || undefined
+    }
+    try {
+      const res = await api.exportDashboard(params)
+      const ext = exportFormat === 'json' ? 'json' : 'csv'
+      const blob = new Blob([res.data], { type: ext === 'json' ? 'application/json' : 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dashboard_export.${ext}`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('Export downloaded', 'success')
+    } catch (err) {
+      toast('Export failed', 'error')
+    }
   }
 
   const handleClick = async (row) => {
@@ -391,16 +426,30 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div className="export-bar">
+          <label>Export</label>
+          <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+          </select>
+          <select value={exportScope} onChange={(e) => setExportScope(e.target.value)}>
+            <option value="all">All rows</option>
+            <option value="filtered">Filtered rows</option>
+            <option value="selected">Selected rows</option>
+          </select>
+          <button className="btn btn-grey" onClick={handleExport}>Download</button>
+        </div>
+
         <div className="table-controls">
           <div>
-            <label htmlFor="sort-column">Sort database by</label>
+            <label htmlFor="sort-column">Sort by</label>
             <select
               id="sort-column"
               value={sort.sortBy}
               onChange={(e) => updateSort(e.target.value, sort.sortDir)}
             >
-              <option value="created_at">created_at</option>
-              <option value="clicked_at">clicked_at</option>
+              <option value="created_at">Upload date</option>
+              <option value="clicked_at">Click date</option>
               {columns.map((col) => (
                 <option key={col} value={col}>
                   {col}
@@ -422,19 +471,93 @@ export default function Dashboard() {
           </div>
 
           <div>
-            <label htmlFor="ats-group-filter">Filter ats_group</label>
+            <label htmlFor="ats-group-filter">ATS group</label>
             <select
               id="ats-group-filter"
               value={filters.atsGroup}
-              onChange={(e) => updateAtsGroupFilter(e.target.value)}
+              onChange={(e) => updateFilter('atsGroup', e.target.value)}
             >
               <option value="">All ATS groups</option>
-              {filterOptions.atsGroups.map((group) => (
+              {filterOptions.atsGroups?.map((group) => (
                 <option key={group} value={group}>
                   {group}
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label htmlFor="location-group-filter">Location</label>
+            <select
+              id="location-group-filter"
+              value={filters.locationGroup}
+              onChange={(e) => updateFilter('locationGroup', e.target.value)}
+            >
+              <option value="">All locations</option>
+              {filterOptions.locationGroups?.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="search-bucket-filter">Bucket</label>
+            <select
+              id="search-bucket-filter"
+              value={filters.searchBucket}
+              onChange={(e) => updateFilter('searchBucket', e.target.value)}
+            >
+              <option value="">All buckets</option>
+              {filterOptions.searchBuckets?.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="decision-filter">Decision</label>
+            <select
+              id="decision-filter"
+              value={filters.decision}
+              onChange={(e) => updateFilter('decision', e.target.value)}
+            >
+              <option value="">All</option>
+              {filterOptions.decisions?.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="sponsorship-filter">Sponsorship</label>
+            <select
+              id="sponsorship-filter"
+              value={filters.sponsorshipStatus}
+              onChange={(e) => updateFilter('sponsorshipStatus', e.target.value)}
+            >
+              <option value="">All</option>
+              {filterOptions.sponsorshipStatuses?.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="search-filter">Search</label>
+            <input
+              id="search-filter"
+              type="text"
+              value={filters.q}
+              onChange={(e) => updateFilter('q', e.target.value)}
+              placeholder="Company, title, URL"
+            />
+          </div>
+
+          <div className="checkbox-filter">
+            <label><input type="checkbox" checked={filters.openedOnly} onChange={(e) => updateFilter('openedOnly', e.target.checked)} /> Opened only</label>
+            <label><input type="checkbox" checked={filters.unopenedOnly} onChange={(e) => updateFilter('unopenedOnly', e.target.checked)} /> Unopened only</label>
+            <label><input type="checkbox" checked={filters.hasError} onChange={(e) => updateFilter('hasError', e.target.checked)} /> Has error</label>
+            <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => updateFilter('jdMissing', e.target.checked)} /> JD missing</label>
           </div>
 
           <div className="table-control-actions">
@@ -446,57 +569,30 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {selectedRowIds.size > 0 && (
+          <div className="sticky-toolbar">
+            <span className="toolbar-count"><strong>{selectedRowIds.size}</strong> selected</span>
+            <button className="btn btn-blue" onClick={openSelected}>Open selected</button>
+            <button className="btn btn-blue" onClick={sendToApplications}>Send to Applications</button>
+            <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size > 5}>
+              Send 5 to ApplyPilot
+            </button>
+            <button className="btn btn-danger" onClick={deleteSelectedRows}>Remove selected</button>
+            <button className="btn btn-grey" onClick={() => setSelectedRowIds(new Set())}>Clear selection</button>
+          </div>
+        )}
+
         <div className="delete-actions">
           <div>
             <strong>{selectedRowIds.size}</strong> selected
           </div>
-          <button
-            className="btn btn-blue"
-            onClick={openSelected}
-            disabled={selectedRowIds.size === 0}
-          >
-            Open selected
-          </button>
-          <button
-            className="btn btn-blue"
-            onClick={openNext5}
-          >
-            Open next 5
-          </button>
-          <button
-            className="btn btn-blue"
-            onClick={sendToApplications}
-            disabled={selectedRowIds.size === 0}
-          >
-            Send selected to Applications
-          </button>
-          <button
-            className="btn btn-blue"
-            onClick={sendNext5ToApplications}
-          >
-            Send next 5 to Applications
-          </button>
-          <button
-            className="btn btn-green"
-            onClick={exportApplyPilot}
-            disabled={selectedRowIds.size === 0}
-          >
-            Send 5 to ApplyPilot
-          </button>
-          <button
-            className="btn btn-danger"
-            onClick={deleteSelectedRows}
-            disabled={selectedRowIds.size === 0}
-          >
-            Remove selected
-          </button>
-          <button
-            className="btn btn-danger-outline"
-            onClick={deleteAllShownRows}
-            disabled={rows.length === 0}
-          >
-            Remove all shown rows
-          </button>
+          <button className="btn btn-blue" onClick={openSelected} disabled={selectedRowIds.size === 0}>Open selected</button>
+          <button className="btn btn-blue" onClick={openNext5}>Open next 5</button>
+          <button className="btn btn-blue" onClick={sendToApplications} disabled={selectedRowIds.size === 0}>Send selected to Applications</button>
+          <button className="btn btn-blue" onClick={sendNext5ToApplications}>Send next 5 to Applications</button>
+          <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size === 0}>Send 5 to ApplyPilot</button>
+          <button className="btn btn-danger" onClick={deleteSelectedRows} disabled={selectedRowIds.size === 0}>Remove selected</button>
+          <button className="btn btn-danger-outline" onClick={deleteAllShownRows} disabled={rows.length === 0}>Remove all shown rows</button>
         </div>
 
         <div className="col-toggles">
@@ -525,36 +621,36 @@ export default function Dashboard() {
                 {col}
               </label>
               <div className="column-move-actions">
-                <button
-                  type="button"
-                  onClick={() => moveColumn(col, -1)}
-                  disabled={index === 0}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveColumn(col, 1)}
-                  disabled={index === orderedColumns.length - 1}
-                >
-                  ↓
-                </button>
+                <button type="button" onClick={() => moveColumn(col, -1)} disabled={index === 0}>↑</button>
+                <button type="button" onClick={() => moveColumn(col, 1)} disabled={index === orderedColumns.length - 1}>↓</button>
               </div>
             </div>
           ))}
         </div>
 
-        <DataTable
-          columns={orderedColumns}
-          rows={rows}
-          hidden={hidden}
-          sort={sort}
-          selectedRowIds={selectedRowIds}
-          onToggleRowSelection={toggleRowSelection}
-          onToggleAllRows={toggleAllRows}
-          onSortChange={updateSort}
-          onUrlClick={handleClick}
-        />
+        {loading ? (
+          <div className="empty-state">
+            <div className="loading-spinner" />
+            <p>Loading job links...</p>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="empty-state">
+            <h3>No job links yet</h3>
+            <p>Upload a CSV file with job URLs to get started.</p>
+          </div>
+        ) : (
+          <DataTable
+            columns={orderedColumns}
+            rows={rows}
+            hidden={hidden}
+            sort={sort}
+            selectedRowIds={selectedRowIds}
+            onToggleRowSelection={toggleRowSelection}
+            onToggleAllRows={toggleAllRows}
+            onSortChange={updateSort}
+            onUrlClick={handleClick}
+          />
+        )}
     </div>
   )
 }

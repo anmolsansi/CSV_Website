@@ -38,33 +38,54 @@ export default function Pipeline() {
     setApplications((prev) => prev.map((a) => a.id === appId ? { ...a, status: newStatus } : a))
   }
 
-  if (loading) return <div className="container"><p>Loading pipeline...</p></div>
+  if (loading) return <div className="container"><div className="empty-state"><div className="loading-spinner" /><p>Loading pipeline...</p></div></div>
+
+  const hasAnyItems = Object.values(grouped).some((arr) => arr.length > 0)
 
   return (
     <div className="container">
       <div className="page-header-row">
         <div>
           <h2>Pipeline</h2>
-          <p>Jobs grouped by application status.</p>
+          <p>Jobs grouped by application status. Drag cards between columns to update status.</p>
         </div>
         <button className="btn btn-blue" onClick={refresh}>Refresh</button>
       </div>
 
-      <div className="pipeline-board">
+      {!hasAnyItems ? (
+        <div className="empty-state">
+          <h3>Pipeline is empty</h3>
+          <p>Open job links from the Dashboard to start building your pipeline.</p>
+        </div>
+      ) : (
+        <div className="pipeline-board">
         {STATUSES.map((status) => (
           <div className="pipeline-column" key={status}>
             <div className="pipeline-column-header">
               {status.replace('_', ' ')} ({(grouped[status] || []).length})
             </div>
             <div className="pipeline-column-body">
-              {(grouped[status] || []).map((app) => (
+              {(grouped[status] || []).map((app) => {
+                const followUpDate = parseDate(app.follow_up_at)
+                const isOverdue = followUpDate && followUpDate < new Date()
+                const isDueToday = followUpDate && (() => {
+                  const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                  return followUpDate >= today && followUpDate < new Date(today.getTime() + 86400000)
+                })()
+                return (
                 <div className="pipeline-card" key={app.id}>
                   <div className="pipeline-card-company">{app.company || 'Unknown'}</div>
                   <div className="pipeline-card-title">{app.title || 'Untitled'}</div>
                   {app.resume_match_score && <div className="pipeline-card-score">Score: {app.resume_match_score}</div>}
                   {app.ats_group && <div className="pipeline-card-meta">ATS: {app.ats_group}</div>}
                   {app.applied_at && <div className="pipeline-card-meta">Applied: {formatDateTime(app.applied_at)}</div>}
-                  {app.follow_up_at && <div className="pipeline-card-meta">Follow-up: {formatDateTime(app.follow_up_at)}</div>}
+                  {app.follow_up_at && (
+                    <div className={`pipeline-card-meta ${isOverdue ? 'text-overdue' : isDueToday ? 'text-due-today' : ''}`}>
+                      Follow-up: {formatDateTime(app.follow_up_at)}
+                      {isOverdue && <span className="follow-up-badge overdue">Overdue</span>}
+                      {isDueToday && <span className="follow-up-badge due-today">Due today</span>}
+                    </div>
+                  )}
                   {app.notes && <div className="pipeline-card-notes">{app.notes.slice(0, 80)}{app.notes.length > 80 ? '...' : ''}</div>}
                   <div className="pipeline-card-actions">
                     <select value={app.status} onChange={(e) => updateStatus(app.id, e.target.value)}>
@@ -73,12 +94,14 @@ export default function Pipeline() {
                     <button className="btn btn-blue" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
               {(grouped[status] || []).length === 0 && <p style={{ color: '#9ca3af', fontSize: 13, padding: 8 }}>No items</p>}
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

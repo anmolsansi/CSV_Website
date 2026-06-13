@@ -59,25 +59,33 @@ export default function SavedViews() {
         </div>
       </div>
 
-      {loading ? <p>Loading...</p> : (
-        views.length === 0 ? <p style={{ color: '#9ca3af' }}>No saved views yet.</p> : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Name</th><th>Page</th><th>Filters</th><th>Created</th><th>Actions</th></tr></thead>
-              <tbody>
-                {views.map((v) => (
-                  <tr key={v.id}>
-                    <td>{v.name}</td>
-                    <td>{v.view_type}</td>
-                    <td><code style={{ fontSize: 12 }}>{JSON.stringify(v.filters)}</code></td>
-                    <td>{new Date(v.created_at).toLocaleDateString()}</td>
-                    <td><button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => deleteView(v.id)}>Delete</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
+      {loading ? (
+        <div className="empty-state">
+          <div className="loading-spinner" />
+          <p>Loading saved views...</p>
+        </div>
+      ) : views.length === 0 ? (
+        <div className="empty-state">
+          <h3>No saved views yet</h3>
+          <p>Save filter combinations above to quickly access your most-used searches.</p>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Page</th><th>Filters</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody>
+              {views.map((v) => (
+                <tr key={v.id}>
+                  <td>{v.name}</td>
+                  <td>{v.view_type}</td>
+                  <td><code style={{ fontSize: 12 }}>{JSON.stringify(v.filters)}</code></td>
+                  <td>{new Date(v.created_at).toLocaleDateString()}</td>
+                  <td><button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => deleteView(v.id)}>Delete</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

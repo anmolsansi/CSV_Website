@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import { useToast } from '../App'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -40,6 +41,14 @@ const DEFAULT_FILTERS = {
   maxScore: '',
   onlyOpenedNotApplied: false,
   followUpDue: false,
+  followUpToday: false,
+  followUpOverdue: false,
+  followUpNone: false,
+  locationGroup: '',
+  decision: '',
+  sponsorshipStatus: '',
+  hasError: false,
+  jdMissing: false,
   q: '',
 }
 
@@ -115,12 +124,13 @@ function calculateStats(apps) {
 
 export default function Applications() {
   const [applications, setApplications] = useState([])
-  const [filterOptions, setFilterOptions] = useState({ ats_groups: [] })
+  const [filterOptions, setFilterOptions] = useState({ ats_groups: [], location_groups: [], decisions: [], sponsorship_statuses: [] })
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [hiddenColumns, setHiddenColumns] = useState(['searchBucket'])
   const [sort, setSort] = useState({ field: 'opened_at', direction: 'desc' })
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const toast = useToast()
 
   const refresh = () => {
     setLoading(true)
@@ -143,6 +153,7 @@ export default function Applications() {
     const minScore = filters.minScore === '' ? null : Number(filters.minScore)
     const maxScore = filters.maxScore === '' ? null : Number(filters.maxScore)
     const now = new Date()
+    const todayStart = startOfLocalDay(now)
     const needle = filters.q.trim().toLowerCase()
 
     return applications.filter((app) => {
@@ -160,6 +171,22 @@ export default function Applications() {
       if (filters.followUpDue) {
         const followUp = parseDate(app.follow_up_at)
         if (!followUp || followUp > now) return false
+      }
+      if (filters.followUpToday) {
+        const followUp = parseDate(app.follow_up_at)
+        if (!followUp || followUp < todayStart || followUp >= new Date(todayStart.getTime() + 86400000)) return false
+      }
+      if (filters.followUpOverdue) {
+        const followUp = parseDate(app.follow_up_at)
+        if (!followUp || followUp >= now) return false
+      }
+      if (filters.followUpNone) {
+        if (app.follow_up_at) return false
+      }
+      if (filters.hasError && !app.error) return false
+      if (filters.jdMissing) {
+        const len = Number(app.jd_text_length || 0)
+        if (len > 0) return false
       }
       if (needle) {
         const haystack = [app.company, app.title, app.url, app.notes, app.ats_group].join(' ').toLowerCase()
@@ -222,12 +249,49 @@ export default function Applications() {
     if (selectedIds.size === 0) return
     const confirmed = window.confirm(`Mark ${selectedIds.size} application(s) as applied?`)
     if (!confirmed) return
-    const result = await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
+    await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
+    toast(`Marked ${selectedIds.size} as applied`, 'success')
     setSelectedIds(new Set())
     refresh()
   }
 
   const clearFilters = () => setFilters(DEFAULT_FILTERS)
+
+  const [exportFormat, setExportFormat] = useState('csv')
+  const [exportScope, setExportScope] = useState('all')
+
+  const handleExport = async () => {
+    const params = { format: exportFormat }
+    if (exportScope === 'selected') {
+      if (selectedIds.size === 0) { toast('No rows selected', 'warning'); return }
+      params.rowIds = [...selectedIds]
+    } else if (exportScope === 'filtered') {
+      params.status = filters.status || undefined
+      params.company = filters.company || undefined
+      params.atsGroup = filters.atsGroup || undefined
+      params.followUpDue = filters.followUpDue || undefined
+      params.openedNotApplied = filters.onlyOpenedNotApplied || undefined
+      params.q = filters.q || undefined
+    } else if (exportScope === 'applied') {
+      params.status = 'applied'
+    } else if (exportScope === 'followups') {
+      params.followUpDue = true
+    }
+    try {
+      const res = await api.exportApplications(params)
+      const ext = exportFormat === 'json' ? 'json' : 'csv'
+      const blob = new Blob([res.data], { type: ext === 'json' ? 'application/json' : 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `applications_export.${ext}`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('Export downloaded', 'success')
+    } catch (err) {
+      toast('Export failed', 'error')
+    }
+  }
 
   const columns = [
     ['company', 'Company'],
@@ -264,17 +328,44 @@ export default function Applications() {
         <div className="stat-card"><span>Rejected</span><strong>{stats.rejected}</strong></div>
       </div>
 
+      <div className="export-bar">
+        <label>Export</label>
+        <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
+          <option value="csv">CSV</option>
+          <option value="json">JSON</option>
+        </select>
+        <select value={exportScope} onChange={(e) => setExportScope(e.target.value)}>
+          <option value="all">All rows</option>
+          <option value="filtered">Filtered rows</option>
+          <option value="selected">Selected rows</option>
+          <option value="applied">Applied only</option>
+          <option value="followups">Follow-ups due</option>
+        </select>
+        <button className="btn btn-grey" onClick={handleExport}>Download</button>
+      </div>
+
       <div className="table-controls">
         <div><label>Status</label><select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         <div><label>Company</label><input value={filters.company} onChange={(e) => setFilters({ ...filters, company: e.target.value })} placeholder="Company" /></div>
-        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => setFilters({ ...filters, atsGroup: e.target.value })}><option value="">All</option>{filterOptions.ats_groups.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => setFilters({ ...filters, atsGroup: e.target.value })}><option value="">All</option>{filterOptions.ats_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>Location</label><select value={filters.locationGroup} onChange={(e) => setFilters({ ...filters, locationGroup: e.target.value })}><option value="">All</option>{filterOptions.location_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>Decision</label><select value={filters.decision} onChange={(e) => setFilters({ ...filters, decision: e.target.value })}><option value="">All</option>{filterOptions.decisions?.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
+        <div><label>Sponsorship</label><select value={filters.sponsorshipStatus} onChange={(e) => setFilters({ ...filters, sponsorshipStatus: e.target.value })}><option value="">All</option>{filterOptions.sponsorship_statuses?.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         <div><label>Range</label><select value={filters.quickRange} onChange={(e) => setFilters({ ...filters, quickRange: e.target.value })}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
         <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} /></div>
         <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} /></div>
         <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => setFilters({ ...filters, minScore: e.target.value })} /></div>
         <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => setFilters({ ...filters, maxScore: e.target.value })} /></div>
         <div><label>Search</label><input value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} placeholder="Title, company, URL" /></div>
-        <div className="checkbox-filter"><label><input type="checkbox" checked={filters.onlyOpenedNotApplied} onChange={(e) => setFilters({ ...filters, onlyOpenedNotApplied: e.target.checked })} /> Opened, not applied</label><label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => setFilters({ ...filters, followUpDue: e.target.checked })} /> Follow-up due</label></div>
+        <div className="checkbox-filter">
+          <label><input type="checkbox" checked={filters.onlyOpenedNotApplied} onChange={(e) => setFilters({ ...filters, onlyOpenedNotApplied: e.target.checked })} /> Opened, not applied</label>
+          <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => setFilters({ ...filters, followUpDue: e.target.checked })} /> Follow-up due</label>
+          <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => setFilters({ ...filters, followUpToday: e.target.checked })} /> Follow-up today</label>
+          <label><input type="checkbox" checked={filters.followUpOverdue} onChange={(e) => setFilters({ ...filters, followUpOverdue: e.target.checked })} /> Overdue</label>
+          <label><input type="checkbox" checked={filters.followUpNone} onChange={(e) => setFilters({ ...filters, followUpNone: e.target.checked })} /> No follow-up</label>
+          <label><input type="checkbox" checked={filters.hasError} onChange={(e) => setFilters({ ...filters, hasError: e.target.checked })} /> Has error</label>
+          <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => setFilters({ ...filters, jdMissing: e.target.checked })} /> JD missing</label>
+        </div>
         <div className="table-control-actions"><label>Rows shown</label><span>{sorted.length}</span><button className="btn btn-grey" onClick={clearFilters}>Clear filters</button></div>
       </div>
 
@@ -285,22 +376,30 @@ export default function Applications() {
         ))}
       </div>
 
-      <div className="delete-actions">
-        <div>
-          <strong>{selectedIds.size}</strong> selected
+      {selectedIds.size > 0 && (
+        <div className="sticky-toolbar">
+          <span className="toolbar-count"><strong>{selectedIds.size}</strong> selected</span>
+          <button className="btn btn-green" onClick={bulkMarkApplied}>Mark applied</button>
+          <button className="btn btn-grey" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
         </div>
-        <button
-          className="btn btn-green"
-          onClick={bulkMarkApplied}
-          disabled={selectedIds.size === 0}
-        >
-          Mark selected as applied
-        </button>
+      )}
+
+      <div className="delete-actions">
+        <div><strong>{selectedIds.size}</strong> selected</div>
+        <button className="btn btn-green" onClick={bulkMarkApplied} disabled={selectedIds.size === 0}>Mark selected as applied</button>
       </div>
 
       <div className="table-wrap">
         {loading ? (
-          <p style={{ padding: '1rem' }}>Loading applications...</p>
+          <div className="empty-state">
+            <div className="loading-spinner" />
+            <p>Loading applications...</p>
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="empty-state">
+            <h3>No applications yet</h3>
+            <p>Open job links from the Dashboard to start tracking applications.</p>
+          </div>
         ) : (
           <table>
             <thead><tr>
@@ -313,7 +412,14 @@ export default function Applications() {
               </th>
               {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => setSort({ field: key, direction: sort.field === key && sort.direction === 'asc' ? 'desc' : 'asc' })}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
             <tbody>
-              {sorted.map((app) => (
+              {sorted.map((app) => {
+                const followUpDate = parseDate(app.follow_up_at)
+                const isOverdue = followUpDate && followUpDate < new Date()
+                const isDueToday = followUpDate && (() => {
+                  const today = startOfLocalDay()
+                  return followUpDate >= today && followUpDate < new Date(today.getTime() + 86400000)
+                })()
+                return (
                 <tr key={app.id} className={selectedIds.has(app.id) ? 'selected-row' : ''}>
                   <td className="row-select-cell">
                     <input
@@ -330,16 +436,33 @@ export default function Applications() {
                   {!hiddenColumns.includes('resume_match_score') && <td>{app.resume_match_score}</td>}
                   {!hiddenColumns.includes('opened_at') && <td>{formatDateTime(app.opened_at)}</td>}
                   {!hiddenColumns.includes('applied_at') && <td><input type="datetime-local" value={localInputValue(app.applied_at)} onChange={(e) => updateApp(app.id, { applied_at: inputToIso(e.target.value), status: e.target.value ? 'applied' : app.status })} /></td>}
-                  {!hiddenColumns.includes('follow_up_at') && <td><input type="datetime-local" value={localInputValue(app.follow_up_at)} onChange={(e) => updateApp(app.id, { follow_up_at: inputToIso(e.target.value) })} /></td>}
+                  {!hiddenColumns.includes('follow_up_at') && (
+                    <td>
+                      <div className="follow-up-cell">
+                        <input type="datetime-local" value={localInputValue(app.follow_up_at)} onChange={(e) => updateApp(app.id, { follow_up_at: inputToIso(e.target.value) })} />
+                        <div className="follow-up-quick-btns">
+                          <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: new Date(Date.now() + 3 * 86400000).toISOString() })}>+3d</button>
+                          <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: new Date(Date.now() + 7 * 86400000).toISOString() })}>+7d</button>
+                          <button className="btn btn-grey btn-sm" onClick={() => {
+                            const now = new Date(); const day = now.getDay(); const daysUntilMon = (8 - day) % 7 || 7
+                            updateApp(app.id, { follow_up_at: new Date(now.getTime() + daysUntilMon * 86400000).toISOString() })
+                          }}>Mon</button>
+                          {app.follow_up_at && <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: '' })}>Clear</button>}
+                        </div>
+                        {isOverdue && <span className="follow-up-badge overdue">Overdue</span>}
+                        {isDueToday && <span className="follow-up-badge due-today">Due today</span>}
+                      </div>
+                    </td>
+                  )}
                   {!hiddenColumns.includes('notes') && <td><textarea value={app.notes || ''} onChange={(e) => updateApp(app.id, { notes: e.target.value })} /></td>}
                   {!hiddenColumns.includes('url') && <td><button className="btn btn-blue" onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button></td>}
                   <td><button className="btn btn-green" onClick={() => markApplied(app)}>Mark applied</button></td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         )}
-        {!loading && sorted.length === 0 && <p style={{ padding: '1rem' }}>No opened job links match these filters.</p>}
       </div>
     </div>
   )

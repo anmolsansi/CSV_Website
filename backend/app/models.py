@@ -102,6 +102,8 @@ class CsvRow(Base):
     clicked = Column(Boolean, default=False, nullable=False)
     clicked_at = Column(DateTime, nullable=True, index=True)
     archived = Column(Boolean, default=False, nullable=False, index=True)
+    is_duplicate = Column(Boolean, default=False, nullable=False, index=True)
+    duplicate_of_id = Column(Integer, ForeignKey("csv_rows.id"), nullable=True, index=True)
 
     ats_group = Column(Text)
     location_group = Column(Text)
@@ -139,6 +141,7 @@ class CsvRow(Base):
 
     user = relationship("User", back_populates="rows")
     job_track = relationship("JobTrack", back_populates="csv_row", uselist=False)
+    duplicate_of = relationship("CsvRow", remote_side=[id], uselist=False)
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_url"),

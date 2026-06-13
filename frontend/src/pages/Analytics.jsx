@@ -32,8 +32,8 @@ export default function Analytics() {
 
   useEffect(() => { refresh() }, [])
 
-  if (loading) return <div className="container"><p>Loading analytics...</p></div>
-  if (!data) return <div className="container"><p>Failed to load analytics.</p></div>
+  if (loading) return <div className="container"><div className="empty-state"><div className="loading-spinner" /><p>Loading analytics...</p></div></div>
+  if (!data) return <div className="container"><div className="empty-state"><h3>Failed to load analytics</h3><p>Please try refreshing.</p></div></div>
 
   return (
     <div className="container">
