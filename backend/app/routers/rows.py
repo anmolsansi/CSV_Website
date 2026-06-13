@@ -148,7 +148,7 @@ def list_rows(
     sort_column = _safe_sort_column(sort_by)
     order_func = asc if sort_dir == "asc" else desc
 
-    query = db.query(CsvRow).filter(CsvRow.user_id == user_id, CsvRow.archived.is_(False))
+    query = db.query(CsvRow).filter(CsvRow.user_id == user.id, CsvRow.archived.is_(False))
 
     if ats_group:
         query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
@@ -240,11 +240,62 @@ def record_click(
     row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
     if not row:
         raise HTTPException(404, "Row not found")
+    now = datetime.utcnow()
+
+    # Mark clicked
     if not row.clicked:
         row.clicked = True
-        row.clicked_at = datetime.utcnow()
-        db.commit()
-    return {"id": row.id, "clicked": row.clicked, "clicked_at": row.clicked_at}
+        row.clicked_at = now
+
+    # Upsert JobTrack atomically
+    from ..models import SearchSession
+    active_session = db.query(SearchSession).filter(
+        SearchSession.user_id == user.id,
+        SearchSession.ended_at.is_(None),
+    ).first()
+
+    track = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
+    if track:
+        track.csv_row_id = row.id
+        track.open_count = (track.open_count or 0) + 1
+        track.last_opened_at = now
+        track.updated_at = now
+        track.company = track.company or row.company_guess
+        track.title = track.title or row.title
+        track.ats_group = track.ats_group or row.ats_group
+        track.search_bucket = track.search_bucket or row.search_bucket
+        track.resume_match_score = track.resume_match_score or row.resume_match_score
+        if active_session and not track.session_id:
+            track.session_id = str(active_session.id)
+    else:
+        track = JobTrack(
+            user_id=user.id,
+            csv_row_id=row.id,
+            url=row.url,
+            company=row.company_guess,
+            title=row.title,
+            ats_group=row.ats_group,
+            search_bucket=row.search_bucket,
+            resume_match_score=row.resume_match_score,
+            status="opened",
+            opened_at=now,
+            last_opened_at=now,
+            open_count=1,
+            session_id=str(active_session.id) if active_session else None,
+        )
+        db.add(track)
+
+    db.commit()
+    db.refresh(row)
+    db.refresh(track)
+
+    return {
+        "id": row.id,
+        "clicked": row.clicked,
+        "clicked_at": row.clicked_at,
+        "app_id": track.id,
+        "app_status": track.status,
+    }
 
 
 @router.delete("/rows")

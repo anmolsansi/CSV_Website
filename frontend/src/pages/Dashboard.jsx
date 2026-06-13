@@ -307,8 +307,7 @@ export default function Dashboard() {
     for (const row of toOpen) {
       const win = window.open(row.data.url, '_blank', 'noopener')
       if (!win) { blocked++; continue }
-      api.recordClick(row.id).catch(() => {})
-      api.createApplicationFromRow(row.id).catch(() => {})
+      api.openRow(row.id).catch(() => {})
     }
     if (blocked > 0) toast(`Browser blocked ${blocked} popup(s)`, 'warning')
     await loadRows(sort, filters)
@@ -321,8 +320,7 @@ export default function Dashboard() {
     for (const row of unclicked) {
       const win = window.open(row.data.url, '_blank', 'noopener')
       if (!win) { blocked++; continue }
-      api.recordClick(row.id).catch(() => {})
-      api.createApplicationFromRow(row.id).catch(() => {})
+      api.openRow(row.id).catch(() => {})
     }
     if (blocked > 0) toast(`Browser blocked ${blocked} popup(s)`, 'warning')
     await loadRows(sort, filters)
@@ -395,15 +393,7 @@ export default function Dashboard() {
   const handleClick = async (row) => {
     const url = row.data.url
     window.open(url, '_blank', 'noopener')
-    const updated = await api.recordClick(row.id)
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === row.id
-          ? { ...r, clicked: updated.clicked, clicked_at: updated.clicked_at }
-          : r
-      )
-    )
-    api.createApplicationFromRow(row.id).catch(() => {})
+    await api.openRow(row.id)
     await loadRows(sort, filters)
   }
 
