@@ -2,13 +2,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import Float, asc, case, cast, desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import JOB_TRACK_STATUS_VALUES, CsvRow, JobTrack, SavedView, SearchSession, User
-from ..schemas import JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
+from ..schemas import BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 SORT_FIELDS = {"company", "title", "ats_group", "search_bucket", "resume_match_score", "status", "opened_at", "applied_at", "follow_up_at", "created_at", "updated_at"}
@@ -112,6 +113,64 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
     return {"statuses": JOB_TRACK_STATUS_VALUES, "filter_options": {"ats_groups": [x for (x,) in options]}, "rows": [to_out(x) for x in rows]}
 
 
+@router.patch("/applications/bulk")
+def bulk_update_apps(payload: BulkUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    items = db.query(JobTrack).filter(JobTrack.id.in_(payload.ids), JobTrack.user_id == user.id).all()
+    now = datetime.utcnow()
+    updated = 0
+    failed = []
+    for item in items:
+        data = payload.patch.model_dump(exclude_unset=True)
+        for key in ["company", "title", "status", "notes"]:
+            if key in data:
+                setattr(item, key, data[key])
+        if "applied_at" in data:
+            item.applied_at = parse_dt(data["applied_at"])
+        if "follow_up_at" in data:
+            item.follow_up_at = parse_dt(data["follow_up_at"])
+        if data.get("mark_applied"):
+            item.status = "applied"
+            item.applied_at = now
+        item.updated_at = now
+        updated += 1
+    db.commit()
+    return {"updated": updated, "failed": failed}
+
+
+@router.post("/from-rows/bulk")
+def bulk_create_from_rows(payload: BulkFromRowsIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.query(CsvRow).filter(CsvRow.id.in_(payload.row_ids), CsvRow.user_id == user.id).all()
+    now = datetime.utcnow()
+    created = 0
+    updated_count = 0
+    skipped = 0
+    for row in rows:
+        existing = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
+        if existing:
+            existing.csv_row_id = row.id
+            existing.open_count = (existing.open_count or 0) + 1
+            existing.last_opened_at = now
+            existing.updated_at = now
+            existing.company = existing.company or row.company_guess
+            existing.title = existing.title or row.title
+            existing.ats_group = existing.ats_group or row.ats_group
+            existing.search_bucket = existing.search_bucket or row.search_bucket
+            existing.resume_match_score = existing.resume_match_score or row.resume_match_score
+            updated_count += 1
+        else:
+            item = JobTrack(
+                user_id=user.id, csv_row_id=row.id, url=row.url,
+                company=row.company_guess, title=row.title,
+                ats_group=row.ats_group, search_bucket=row.search_bucket,
+                resume_match_score=row.resume_match_score,
+                status="opened", opened_at=now, last_opened_at=now, open_count=1,
+            )
+            db.add(item)
+            created += 1
+    db.commit()
+    return {"created": created, "updated": updated_count, "skipped": skipped}
+
+
 @router.patch("/applications/{item_id}")
 def update_app(item_id: int, payload: JobTrackUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
@@ -146,3 +205,128 @@ def stats(today_start: str | None = Query(None), today_end: str | None = Query(N
         applied_today = applied_today.filter(JobTrack.applied_at >= start, JobTrack.applied_at < end)
     now = datetime.utcnow()
     return {"total_opened": query.count(), "total_applied": query.filter(JobTrack.applied_at.isnot(None)).count(), "opened_today": opened_today.count() if start and end else 0, "applied_today": applied_today.count() if start and end else 0, "last_24_hours": query.filter(JobTrack.opened_at >= now - timedelta(hours=24)).count(), "follow_ups_due": query.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now).count(), "interviews": query.filter(JobTrack.status == "interview").count(), "rejected": query.filter(JobTrack.status == "rejected").count()}
+
+
+# ─── Analytics ─────────────────────────────────────────────────────────────────
+
+@router.get("/analytics")
+def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=7)
+
+    total_urls = db.query(CsvRow).filter(CsvRow.user_id == user.id).count()
+    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id)
+    total_opened = tracks.count()
+    total_applied = tracks.filter(JobTrack.applied_at.isnot(None)).count()
+    applied_today = tracks.filter(JobTrack.applied_at >= today_start).count()
+    applied_7d = tracks.filter(JobTrack.applied_at >= week_start).count()
+    opened_not_applied = tracks.filter(JobTrack.applied_at.is_(None), JobTrack.status == "opened").count()
+    follow_ups_due = tracks.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now).count()
+    interviews = tracks.filter(JobTrack.status == "interview").count()
+    rejected = tracks.filter(JobTrack.status == "rejected").count()
+    offers = tracks.filter(JobTrack.status == "offer").count()
+
+    by_ats = db.query(JobTrack.ats_group, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.ats_group.isnot(None), JobTrack.ats_group != "").group_by(JobTrack.ats_group).order_by(desc(func.count(JobTrack.id))).limit(10).all()
+    by_bucket = db.query(JobTrack.search_bucket, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.search_bucket.isnot(None), JobTrack.search_bucket != "").group_by(JobTrack.search_bucket).order_by(desc(func.count(JobTrack.id))).limit(10).all()
+    by_status = db.query(JobTrack.status, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id).group_by(JobTrack.status).all()
+
+    applied_scores = tracks.filter(JobTrack.applied_at.isnot(None), JobTrack.resume_match_score.isnot(None), JobTrack.resume_match_score != "").all()
+    scores = []
+    for t in applied_scores:
+        try:
+            s = float(str(t.resume_match_score).replace("%", "").replace(",", "").strip())
+            scores.append(s)
+        except (ValueError, TypeError):
+            pass
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+
+    daily = db.query(func.date(JobTrack.applied_at), func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.applied_at.isnot(None), JobTrack.applied_at >= now - timedelta(days=30)).group_by(func.date(JobTrack.applied_at)).order_by(func.date(JobTrack.applied_at)).all()
+
+    top_opened = db.query(JobTrack.company, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "").group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(10).all()
+    top_applied = db.query(JobTrack.company, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "", JobTrack.applied_at.isnot(None)).group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(10).all()
+
+    return {
+        "total_urls": total_urls, "total_opened": total_opened, "total_applied": total_applied,
+        "applied_today": applied_today, "applied_7d": applied_7d,
+        "opened_not_applied": opened_not_applied, "follow_ups_due": follow_ups_due,
+        "interviews": interviews, "rejected": rejected, "offers": offers,
+        "avg_applied_score": avg_score,
+        "by_ats_group": [{"name": n, "count": c} for n, c in by_ats],
+        "by_search_bucket": [{"name": n, "count": c} for n, c in by_bucket],
+        "by_status": [{"name": n, "count": c} for n, c in by_status],
+        "daily_applied": [{"date": str(d), "count": c} for d, c in daily],
+        "top_companies_opened": [{"name": n, "count": c} for n, c in top_opened],
+        "top_companies_applied": [{"name": n, "count": c} for n, c in top_applied],
+    }
+
+
+# ─── Saved Views ───────────────────────────────────────────────────────────────
+
+@router.get("/views")
+def list_views(view_type: str | None = Query(None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    query = db.query(SavedView).filter(SavedView.user_id == user.id)
+    if view_type:
+        query = query.filter(SavedView.view_type == view_type)
+    views = query.order_by(SavedView.created_at.desc()).all()
+    return [{"id": v.id, "name": v.name, "view_type": v.view_type, "filters": v.filters, "created_at": v.created_at} for v in views]
+
+
+@router.post("/views")
+def create_view(payload: SavedViewIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    existing = db.query(SavedView).filter_by(user_id=user.id, name=payload.name, view_type=payload.view_type).first()
+    if existing:
+        existing.filters = payload.filters
+        db.commit()
+        db.refresh(existing)
+        return {"id": existing.id, "name": existing.name, "view_type": existing.view_type, "filters": existing.filters, "created_at": existing.created_at}
+    view = SavedView(user_id=user.id, name=payload.name, view_type=payload.view_type, filters=payload.filters)
+    db.add(view)
+    db.commit()
+    db.refresh(view)
+    return {"id": view.id, "name": view.name, "view_type": view.view_type, "filters": view.filters, "created_at": view.created_at}
+
+
+@router.delete("/views/{view_id}")
+def delete_view(view_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    deleted = db.query(SavedView).filter_by(id=view_id, user_id=user.id).delete()
+    db.commit()
+    return {"deleted": deleted}
+
+
+# ─── Sessions ──────────────────────────────────────────────────────────────────
+
+@router.get("/sessions")
+def list_sessions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    sessions = db.query(SearchSession).filter(SearchSession.user_id == user.id).order_by(SearchSession.started_at.desc()).all()
+    return [{"id": s.id, "name": s.name, "started_at": s.started_at, "ended_at": s.ended_at, "notes": s.notes} for s in sessions]
+
+
+@router.post("/sessions")
+def start_session(payload: SessionIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    session = SearchSession(user_id=user.id, name=payload.name, notes=payload.notes)
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return {"id": session.id, "name": session.name, "started_at": session.started_at, "ended_at": session.ended_at, "notes": session.notes}
+
+
+@router.patch("/sessions/{session_id}")
+def update_session(session_id: int, payload: SessionUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    session = db.query(SearchSession).filter_by(id=session_id, user_id=user.id).first()
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if payload.notes is not None:
+        session.notes = payload.notes
+    if payload.end:
+        session.ended_at = datetime.utcnow()
+    db.commit()
+    db.refresh(session)
+    return {"id": session.id, "name": session.name, "started_at": session.started_at, "ended_at": session.ended_at, "notes": session.notes}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    deleted = db.query(SearchSession).filter_by(id=session_id, user_id=user.id).delete()
+    db.commit()
+    return {"deleted": deleted}
