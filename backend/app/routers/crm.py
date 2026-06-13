@@ -144,21 +144,23 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
               location_group: str | None = Query(None), decision: str | None = Query(None), sponsorship_status: str | None = Query(None), posted_age_min: float | None = Query(None), posted_age_max: float | None = Query(None),
               follow_up_today: bool = Query(False), follow_up_overdue: bool = Query(False), follow_up_none: bool = Query(False), has_error: bool = Query(False), jd_missing: bool = Query(False),
               date_applied_from: str | None = Query(None), date_applied_to: str | None = Query(None), applied_only: bool = Query(False),
+              page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     query = filtered_query(db, user.id, status, company, ats_group, search_bucket, quick_range, date_from, date_to, min_score, max_score, follow_up_due, opened_not_applied, q,
                            location_group, decision, sponsorship_status, posted_age_min, posted_age_max,
                            follow_up_today, follow_up_overdue, follow_up_none, has_error, jd_missing,
                            date_applied_from, date_applied_to, applied_only)
+    total = query.count()
     if sort_by not in SORT_FIELDS:
         sort_by = "opened_at"
     order = asc if sort_dir == "asc" else desc
     sort_col = num_expr(JobTrack.resume_match_score) if sort_by == "resume_match_score" else getattr(JobTrack, sort_by)
-    rows = query.order_by(order(sort_col).nullslast(), JobTrack.id.desc()).all()
+    rows = query.order_by(order(sort_col).nullslast(), JobTrack.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     options = db.query(JobTrack.ats_group).filter(JobTrack.user_id == user.id, JobTrack.ats_group.isnot(None), JobTrack.ats_group != "").distinct().order_by(JobTrack.ats_group.asc()).all()
     location_options = db.query(CsvRow.location_group).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.location_group.isnot(None), CsvRow.location_group != "").distinct().order_by(CsvRow.location_group.asc()).all()
     decision_options = db.query(CsvRow.decision).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.decision.isnot(None), CsvRow.decision != "").distinct().order_by(CsvRow.decision.asc()).all()
     sponsorship_options = db.query(CsvRow.sponsorship_status).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.sponsorship_status.isnot(None), CsvRow.sponsorship_status != "").distinct().order_by(CsvRow.sponsorship_status.asc()).all()
-    return {"statuses": JOB_TRACK_STATUS_VALUES, "filter_options": {"ats_groups": [x for (x,) in options], "location_groups": [x for (x,) in location_options], "decisions": [x for (x,) in decision_options], "sponsorship_statuses": [x for (x,) in sponsorship_options]}, "rows": [to_out(x) for x in rows]}
+    return {"total": total, "page": page, "page_size": page_size, "statuses": JOB_TRACK_STATUS_VALUES, "filter_options": {"ats_groups": [x for (x,) in options], "location_groups": [x for (x,) in location_options], "decisions": [x for (x,) in decision_options], "sponsorship_statuses": [x for (x,) in sponsorship_options]}, "rows": [to_out(x) for x in rows]}
 
 
 @router.patch("/applications/bulk")

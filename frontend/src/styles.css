@@ -339,3 +339,7 @@ th { background: #f3f4f6; position: sticky; top: 0; }
 
 /* Topbar brand */
 .topbar-brand { font-size: 20px; letter-spacing: -0.5px; color: #111827; }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 1rem 0; padding: 1rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+.pagination span { font-size: 14px; color: #374151; }
