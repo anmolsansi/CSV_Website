@@ -1,8 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 
-const STORAGE_KEY = 'csv_website_application_tracker_v1'
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
+
+// ─── localStorage backup (kept for reference / fallback) ──────────────────────
+// const STORAGE_KEY = 'csv_website_application_tracker_v1'
+// function loadMeta() {
+//   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }
+//   catch { return {} }
+// }
+// function saveMeta(meta) { localStorage.setItem(STORAGE_KEY, JSON.stringify(meta)) }
+// function rowToApplication(row, meta) {
+//   const url = row.data?.url || ''
+//   const saved = meta[url] || {}
+//   return {
+//     id: row.id, url,
+//     company: saved.company ?? row.data?.company_guess ?? '',
+//     title: saved.title ?? row.data?.title ?? '',
+//     atsGroup: row.data?.ats_group ?? '',
+//     searchBucket: row.data?.search_bucket ?? '',
+//     resumeMatchScore: row.data?.resume_match_score ?? '',
+//     clickedAt: row.clicked_at,
+//     appliedAt: saved.appliedAt || '',
+//     followUpAt: saved.followUpAt || '',
+//     status: saved.status || 'opened',
+//     notes: saved.notes || '',
+//   }
+// }
+// ───────────────────────────────────────────────────────────────────────────────
+
 const DEFAULT_FILTERS = {
   status: '',
   company: '',
@@ -63,40 +89,9 @@ function inQuickRange(date, range) {
   return true
 }
 
-function loadMeta() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-  } catch {
-    return {}
-  }
-}
-
-function saveMeta(meta) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(meta))
-}
-
 function scoreValue(value) {
   const score = Number(String(value || '').replace(/[%,$\s]/g, ''))
   return Number.isNaN(score) ? null : score
-}
-
-function rowToApplication(row, meta) {
-  const url = row.data?.url || ''
-  const saved = meta[url] || {}
-  return {
-    id: row.id,
-    url,
-    company: saved.company ?? row.data?.company_guess ?? '',
-    title: saved.title ?? row.data?.title ?? '',
-    atsGroup: row.data?.ats_group ?? '',
-    searchBucket: row.data?.search_bucket ?? '',
-    resumeMatchScore: row.data?.resume_match_score ?? '',
-    clickedAt: row.clicked_at,
-    appliedAt: saved.appliedAt || '',
-    followUpAt: saved.followUpAt || '',
-    status: saved.status || 'opened',
-    notes: saved.notes || '',
-  }
 }
 
 function calculateStats(apps) {
@@ -105,12 +100,12 @@ function calculateStats(apps) {
   const last24 = new Date(now.getTime() - 24 * 60 * 60 * 1000)
   return {
     totalOpened: apps.length,
-    totalApplied: apps.filter((a) => a.appliedAt || a.status === 'applied').length,
-    openedToday: apps.filter((a) => parseDate(a.clickedAt) >= today).length,
-    appliedToday: apps.filter((a) => parseDate(a.appliedAt) >= today).length,
-    last24Hours: apps.filter((a) => parseDate(a.clickedAt) >= last24).length,
+    totalApplied: apps.filter((a) => a.applied_at || a.status === 'applied').length,
+    openedToday: apps.filter((a) => parseDate(a.opened_at) >= today).length,
+    appliedToday: apps.filter((a) => parseDate(a.applied_at) >= today).length,
+    last24Hours: apps.filter((a) => parseDate(a.opened_at) >= last24).length,
     followUpsDue: apps.filter((a) => {
-      const date = parseDate(a.followUpAt)
+      const date = parseDate(a.follow_up_at)
       return date && date <= now
     }).length,
     interviews: apps.filter((a) => a.status === 'interview').length,
@@ -119,31 +114,28 @@ function calculateStats(apps) {
 }
 
 export default function Applications() {
-  const [rows, setRows] = useState([])
-  const [meta, setMeta] = useState(() => loadMeta())
+  const [applications, setApplications] = useState([])
+  const [filterOptions, setFilterOptions] = useState({ ats_groups: [] })
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [hiddenColumns, setHiddenColumns] = useState(['searchBucket'])
-  const [sort, setSort] = useState({ field: 'clickedAt', direction: 'desc' })
+  const [sort, setSort] = useState({ field: 'opened_at', direction: 'desc' })
+  const [loading, setLoading] = useState(true)
+  const [selectedIds, setSelectedIds] = useState(new Set())
 
   const refresh = () => {
-    api.getRows({ sortBy: 'clicked_at', sortDir: 'desc' }).then((data) => {
-      setRows((data.rows || []).filter((row) => row.clicked))
-    })
+    setLoading(true)
+    api.getApplications({
+      sort_by: sort.field === 'clickedAt' ? 'opened_at' : sort.field,
+      sort_dir: sort.direction,
+    }).then((data) => {
+      setApplications(data.rows || [])
+      setFilterOptions(data.filter_options || { ats_groups: [] })
+    }).finally(() => setLoading(false))
   }
 
   useEffect(() => {
     refresh()
   }, [])
-
-  const applications = useMemo(
-    () => rows.map((row) => rowToApplication(row, meta)),
-    [rows, meta]
-  )
-
-  const filterOptions = useMemo(() => ({
-    atsGroups: [...new Set(applications.map((a) => a.atsGroup).filter(Boolean))].sort(),
-    companies: [...new Set(applications.map((a) => a.company).filter(Boolean))].sort(),
-  }), [applications])
 
   const filtered = useMemo(() => {
     const from = filters.dateFrom ? new Date(filters.dateFrom) : null
@@ -154,23 +146,23 @@ export default function Applications() {
     const needle = filters.q.trim().toLowerCase()
 
     return applications.filter((app) => {
-      const clicked = parseDate(app.clickedAt)
-      const score = scoreValue(app.resumeMatchScore)
+      const opened = parseDate(app.opened_at)
+      const score = scoreValue(app.resume_match_score)
       if (filters.status && app.status !== filters.status) return false
-      if (filters.company && !app.company.toLowerCase().includes(filters.company.toLowerCase())) return false
-      if (filters.atsGroup && app.atsGroup !== filters.atsGroup) return false
-      if (!inQuickRange(clicked, filters.quickRange)) return false
-      if (from && (!clicked || clicked < from)) return false
-      if (to && (!clicked || clicked >= to)) return false
+      if (filters.company && !app.company?.toLowerCase().includes(filters.company.toLowerCase())) return false
+      if (filters.atsGroup && app.ats_group !== filters.atsGroup) return false
+      if (!inQuickRange(opened, filters.quickRange)) return false
+      if (from && (!opened || opened < from)) return false
+      if (to && (!opened || opened >= to)) return false
       if (minScore !== null && (score === null || score < minScore)) return false
       if (maxScore !== null && (score === null || score > maxScore)) return false
-      if (filters.onlyOpenedNotApplied && (app.appliedAt || app.status !== 'opened')) return false
+      if (filters.onlyOpenedNotApplied && (app.applied_at || app.status !== 'opened')) return false
       if (filters.followUpDue) {
-        const followUp = parseDate(app.followUpAt)
+        const followUp = parseDate(app.follow_up_at)
         if (!followUp || followUp > now) return false
       }
       if (needle) {
-        const haystack = [app.company, app.title, app.url, app.notes, app.atsGroup].join(' ').toLowerCase()
+        const haystack = [app.company, app.title, app.url, app.notes, app.ats_group].join(' ').toLowerCase()
         if (!haystack.includes(needle)) return false
       }
       return true
@@ -180,15 +172,15 @@ export default function Applications() {
   const sorted = useMemo(() => {
     const copy = [...filtered]
     copy.sort((a, b) => {
-      const aValue = ['clickedAt', 'appliedAt', 'followUpAt'].includes(sort.field)
+      const aValue = ['opened_at', 'applied_at', 'follow_up_at'].includes(sort.field)
         ? parseDate(a[sort.field])?.getTime() || 0
-        : sort.field === 'resumeMatchScore'
-          ? scoreValue(a.resumeMatchScore) ?? -1
+        : sort.field === 'resumeMatchScore' || sort.field === 'resume_match_score'
+          ? scoreValue(a.resume_match_score) ?? -1
           : String(a[sort.field] || '').toLowerCase()
-      const bValue = ['clickedAt', 'appliedAt', 'followUpAt'].includes(sort.field)
+      const bValue = ['opened_at', 'applied_at', 'follow_up_at'].includes(sort.field)
         ? parseDate(b[sort.field])?.getTime() || 0
-        : sort.field === 'resumeMatchScore'
-          ? scoreValue(b.resumeMatchScore) ?? -1
+        : sort.field === 'resumeMatchScore' || sort.field === 'resume_match_score'
+          ? scoreValue(b.resume_match_score) ?? -1
           : String(b[sort.field] || '').toLowerCase()
       if (aValue < bValue) return sort.direction === 'asc' ? -1 : 1
       if (aValue > bValue) return sort.direction === 'asc' ? 1 : -1
@@ -199,14 +191,40 @@ export default function Applications() {
 
   const stats = useMemo(() => calculateStats(applications), [applications])
 
-  const updateMeta = (url, patch) => {
-    const next = { ...meta, [url]: { ...(meta[url] || {}), ...patch } }
-    setMeta(next)
-    saveMeta(next)
+  const updateApp = async (itemId, payload) => {
+    const updated = await api.updateApplication(itemId, payload)
+    setApplications((prev) =>
+      prev.map((app) => (app.id === itemId ? { ...app, ...updated } : app))
+    )
   }
 
   const markApplied = (app) => {
-    updateMeta(app.url, { status: 'applied', appliedAt: new Date().toISOString() })
+    updateApp(app.id, { mark_applied: true })
+  }
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (sorted.length > 0 && prev.size === sorted.length) return new Set()
+      return new Set(sorted.map((a) => a.id))
+    })
+  }
+
+  const bulkMarkApplied = async () => {
+    if (selectedIds.size === 0) return
+    const confirmed = window.confirm(`Mark ${selectedIds.size} application(s) as applied?`)
+    if (!confirmed) return
+    const result = await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
+    setSelectedIds(new Set())
+    refresh()
   }
 
   const clearFilters = () => setFilters(DEFAULT_FILTERS)
@@ -215,12 +233,12 @@ export default function Applications() {
     ['company', 'Company'],
     ['title', 'Title'],
     ['status', 'Status'],
-    ['atsGroup', 'ATS'],
-    ['searchBucket', 'Bucket'],
-    ['resumeMatchScore', 'Score'],
-    ['clickedAt', 'Opened At'],
-    ['appliedAt', 'Applied At'],
-    ['followUpAt', 'Follow-up'],
+    ['ats_group', 'ATS'],
+    ['search_bucket', 'Bucket'],
+    ['resume_match_score', 'Score'],
+    ['opened_at', 'Opened At'],
+    ['applied_at', 'Applied At'],
+    ['follow_up_at', 'Follow-up'],
     ['notes', 'Notes'],
     ['url', 'URL'],
   ]
@@ -249,7 +267,7 @@ export default function Applications() {
       <div className="table-controls">
         <div><label>Status</label><select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         <div><label>Company</label><input value={filters.company} onChange={(e) => setFilters({ ...filters, company: e.target.value })} placeholder="Company" /></div>
-        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => setFilters({ ...filters, atsGroup: e.target.value })}><option value="">All</option>{filterOptions.atsGroups.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => setFilters({ ...filters, atsGroup: e.target.value })}><option value="">All</option>{filterOptions.ats_groups.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
         <div><label>Range</label><select value={filters.quickRange} onChange={(e) => setFilters({ ...filters, quickRange: e.target.value })}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
         <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} /></div>
         <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} /></div>
@@ -267,29 +285,61 @@ export default function Applications() {
         ))}
       </div>
 
+      <div className="delete-actions">
+        <div>
+          <strong>{selectedIds.size}</strong> selected
+        </div>
+        <button
+          className="btn btn-green"
+          onClick={bulkMarkApplied}
+          disabled={selectedIds.size === 0}
+        >
+          Mark selected as applied
+        </button>
+      </div>
+
       <div className="table-wrap">
-        <table>
-          <thead><tr>{columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => setSort({ field: key, direction: sort.field === key && sort.direction === 'asc' ? 'desc' : 'asc' })}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
-          <tbody>
-            {sorted.map((app) => (
-              <tr key={app.id}>
-                {!hiddenColumns.includes('company') && <td><input className="inline-input" value={app.company} onChange={(e) => updateMeta(app.url, { company: e.target.value })} /></td>}
-                {!hiddenColumns.includes('title') && <td>{app.title}</td>}
-                {!hiddenColumns.includes('status') && <td><select value={app.status} onChange={(e) => updateMeta(app.url, { status: e.target.value })}>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></td>}
-                {!hiddenColumns.includes('atsGroup') && <td>{app.atsGroup}</td>}
-                {!hiddenColumns.includes('searchBucket') && <td>{app.searchBucket}</td>}
-                {!hiddenColumns.includes('resumeMatchScore') && <td>{app.resumeMatchScore}</td>}
-                {!hiddenColumns.includes('clickedAt') && <td>{formatDateTime(app.clickedAt)}</td>}
-                {!hiddenColumns.includes('appliedAt') && <td><input type="datetime-local" value={localInputValue(app.appliedAt)} onChange={(e) => updateMeta(app.url, { appliedAt: inputToIso(e.target.value), status: e.target.value ? 'applied' : app.status })} /></td>}
-                {!hiddenColumns.includes('followUpAt') && <td><input type="datetime-local" value={localInputValue(app.followUpAt)} onChange={(e) => updateMeta(app.url, { followUpAt: inputToIso(e.target.value) })} /></td>}
-                {!hiddenColumns.includes('notes') && <td><textarea value={app.notes} onChange={(e) => updateMeta(app.url, { notes: e.target.value })} /></td>}
-                {!hiddenColumns.includes('url') && <td><button className="btn btn-blue" onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button></td>}
-                <td><button className="btn btn-green" onClick={() => markApplied(app)}>Mark applied</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {sorted.length === 0 && <p style={{ padding: '1rem' }}>No opened job links match these filters.</p>}
+        {loading ? (
+          <p style={{ padding: '1rem' }}>Loading applications...</p>
+        ) : (
+          <table>
+            <thead><tr>
+              <th className="row-select-cell">
+                <input
+                  type="checkbox"
+                  checked={sorted.length > 0 && selectedIds.size === sorted.length}
+                  onChange={toggleSelectAll}
+                />
+              </th>
+              {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => setSort({ field: key, direction: sort.field === key && sort.direction === 'asc' ? 'desc' : 'asc' })}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
+            <tbody>
+              {sorted.map((app) => (
+                <tr key={app.id} className={selectedIds.has(app.id) ? 'selected-row' : ''}>
+                  <td className="row-select-cell">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(app.id)}
+                      onChange={() => toggleSelect(app.id)}
+                    />
+                  </td>
+                  {!hiddenColumns.includes('company') && <td><input className="inline-input" value={app.company || ''} onChange={(e) => updateApp(app.id, { company: e.target.value })} /></td>}
+                  {!hiddenColumns.includes('title') && <td>{app.title}</td>}
+                  {!hiddenColumns.includes('status') && <td><select value={app.status} onChange={(e) => updateApp(app.id, { status: e.target.value })}>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></td>}
+                  {!hiddenColumns.includes('ats_group') && <td>{app.ats_group}</td>}
+                  {!hiddenColumns.includes('search_bucket') && <td>{app.search_bucket}</td>}
+                  {!hiddenColumns.includes('resume_match_score') && <td>{app.resume_match_score}</td>}
+                  {!hiddenColumns.includes('opened_at') && <td>{formatDateTime(app.opened_at)}</td>}
+                  {!hiddenColumns.includes('applied_at') && <td><input type="datetime-local" value={localInputValue(app.applied_at)} onChange={(e) => updateApp(app.id, { applied_at: inputToIso(e.target.value), status: e.target.value ? 'applied' : app.status })} /></td>}
+                  {!hiddenColumns.includes('follow_up_at') && <td><input type="datetime-local" value={localInputValue(app.follow_up_at)} onChange={(e) => updateApp(app.id, { follow_up_at: inputToIso(e.target.value) })} /></td>}
+                  {!hiddenColumns.includes('notes') && <td><textarea value={app.notes || ''} onChange={(e) => updateApp(app.id, { notes: e.target.value })} /></td>}
+                  {!hiddenColumns.includes('url') && <td><button className="btn btn-blue" onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button></td>}
+                  <td><button className="btn btn-green" onClick={() => markApplied(app)}>Mark applied</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {!loading && sorted.length === 0 && <p style={{ padding: '1rem' }}>No opened job links match these filters.</p>}
       </div>
     </div>
   )

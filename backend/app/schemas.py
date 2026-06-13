@@ -36,6 +36,15 @@ class JobTrackUpdateIn(BaseModel):
     mark_applied: bool = False
 
 
+class BulkUpdateIn(BaseModel):
+    ids: List[int]
+    patch: JobTrackUpdateIn
+
+
+class BulkFromRowsIn(BaseModel):
+    row_ids: List[int]
+
+
 class SavedViewIn(BaseModel):
     name: str
     view_type: str = "job_links"

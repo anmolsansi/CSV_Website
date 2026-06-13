@@ -64,9 +64,38 @@ th { background: #f3f4f6; position: sticky; top: 0; }
 .pipeline-board { display: flex; gap: 12px; overflow-x: auto; padding: 1rem 0; }
 .pipeline-column { min-width: 200px; flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
 .pipeline-column-header { padding: 10px 12px; font-weight: 700; font-size: 13px; text-transform: capitalize; border-bottom: 1px solid #e5e7eb; background: #fff; border-radius: 8px 8px 0 0; }
-.pipeline-column-body { padding: 12px; min-height: 120px; }
+.pipeline-column-body { padding: 12px; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+.pipeline-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; }
+.pipeline-card-company { font-weight: 700; font-size: 13px; color: #111827; }
+.pipeline-card-title { font-size: 12px; color: #374151; margin: 2px 0 6px; }
+.pipeline-card-score { font-size: 11px; color: #2563eb; }
+.pipeline-card-meta { font-size: 11px; color: #6b7280; }
+.pipeline-card-notes { font-size: 11px; color: #6b7280; margin-top: 4px; font-style: italic; }
+.pipeline-card-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.pipeline-card-actions select { font-size: 12px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px; }
+
+.analytics-charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 1rem; }
+.chart-section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+.chart-section h3 { margin: 0 0 12px; font-size: 14px; color: #111827; }
+.chart-bars { display: flex; flex-direction: column; gap: 6px; }
+.chart-bar-row { display: flex; align-items: center; gap: 8px; }
+.chart-bar-label { font-size: 12px; color: #374151; min-width: 100px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart-bar-track { flex: 1; height: 16px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+.chart-bar-fill { height: 100%; background: #2563eb; border-radius: 4px; min-width: 2px; }
+.chart-bar-count { font-size: 12px; font-weight: 600; color: #111827; min-width: 24px; text-align: right; }
+
+.saved-view-form { margin-bottom: 1.5rem; }
+.filter-json-input { font-family: monospace; font-size: 12px; min-width: 300px; }
+.error-msg { color: #dc2626; font-size: 13px; margin-top: 8px; }
+
+.active-session-banner { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 1rem; font-size: 14px; color: #166534; }
 
 .empty-state { text-align: center; padding: 3rem 1rem; color: #374151; }
+
+@media (max-width: 900px) {
+  .analytics-charts { grid-template-columns: 1fr; }
+  .app-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .auth-page {
   min-height: 100vh;

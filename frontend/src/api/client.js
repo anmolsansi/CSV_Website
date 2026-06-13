@@ -51,6 +51,39 @@ export const api = {
         column_order: columnOrder,
       })
       .then((r) => r.data),
+
+  // CRM - Applications
+  getApplications: (params = {}) =>
+    client.get('/crm/applications', { params }).then((r) => r.data),
+  updateApplication: (itemId, payload) =>
+    client.patch(`/crm/applications/${itemId}`, payload).then((r) => r.data),
+  createApplicationFromRow: (rowId) =>
+    client.post(`/crm/from-row/${rowId}`).then((r) => r.data),
+  bulkUpdateApplications: (ids, patch) =>
+    client.patch('/crm/applications/bulk', { ids, patch }).then((r) => r.data),
+  bulkCreateApplicationsFromRows: (rowIds) =>
+    client.post('/crm/from-rows/bulk', { row_ids: rowIds }).then((r) => r.data),
+  getApplicationStats: (params = {}) =>
+    client.get('/crm/stats', { params }).then((r) => r.data),
+
+  // CRM - Analytics
+  getAnalytics: () => client.get('/crm/analytics').then((r) => r.data),
+
+  // CRM - Saved Views
+  getViews: (viewType) =>
+    client.get('/crm/views', { params: viewType ? { view_type: viewType } : {} }).then((r) => r.data),
+  saveView: (payload) =>
+    client.post('/crm/views', payload).then((r) => r.data),
+  deleteView: (viewId) =>
+    client.delete(`/crm/views/${viewId}`).then((r) => r.data),
+
+  // CRM - Sessions
+  getSessions: () => client.get('/crm/sessions').then((r) => r.data),
+  startSession: (payload) => client.post('/crm/sessions', payload).then((r) => r.data),
+  updateSession: (sessionId, payload) =>
+    client.patch(`/crm/sessions/${sessionId}`, payload).then((r) => r.data),
+  deleteSession: (sessionId) =>
+    client.delete(`/crm/sessions/${sessionId}`).then((r) => r.data),
 }
 
 export default client

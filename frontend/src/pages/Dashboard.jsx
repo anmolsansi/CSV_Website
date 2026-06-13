@@ -280,6 +280,83 @@ export default function Dashboard() {
     deleteRows(rows, `all ${rows.length} row${rows.length === 1 ? '' : 's'} currently shown`)
   }
 
+  const sendToApplications = async () => {
+    if (selectedRowIds.size === 0) return
+    const ids = [...selectedRowIds]
+    const result = await api.bulkCreateApplicationsFromRows(ids)
+    window.alert(
+      `Sent to Applications:\n\nCreated: ${result.created}\nUpdated: ${result.updated}\nSkipped: ${result.skipped}`
+    )
+    await loadRows(sort, filters)
+  }
+
+  const openSelected = async () => {
+    if (selectedRowIds.size === 0) return
+    const toOpen = rows.filter((r) => selectedRowIds.has(r.id))
+    let blocked = 0
+    for (const row of toOpen) {
+      const win = window.open(row.data.url, '_blank', 'noopener')
+      if (!win) { blocked++; continue }
+      api.recordClick(row.id).catch(() => {})
+      api.createApplicationFromRow(row.id).catch(() => {})
+    }
+    if (blocked > 0) window.alert(`Browser blocked ${blocked} popup(s). Please allow popups for this site.`)
+    await loadRows(sort, filters)
+  }
+
+  const openNext5 = async () => {
+    const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
+    if (unclicked.length === 0) { window.alert('No unclicked rows remaining.'); return }
+    let blocked = 0
+    for (const row of unclicked) {
+      const win = window.open(row.data.url, '_blank', 'noopener')
+      if (!win) { blocked++; continue }
+      api.recordClick(row.id).catch(() => {})
+      api.createApplicationFromRow(row.id).catch(() => {})
+    }
+    if (blocked > 0) window.alert(`Browser blocked ${blocked} popup(s). Please allow popups for this site.`)
+    await loadRows(sort, filters)
+  }
+
+  const sendNext5ToApplications = async () => {
+    const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
+    if (unclicked.length === 0) { window.alert('No unclicked rows remaining.'); return }
+    const result = await api.bulkCreateApplicationsFromRows(unclicked.map((r) => r.id))
+    window.alert(
+      `Sent next ${unclicked.length} to Applications:\n\nCreated: ${result.created}\nUpdated: ${result.updated}\nSkipped: ${result.skipped}`
+    )
+    await loadRows(sort, filters)
+  }
+
+  const exportApplyPilot = () => {
+    if (selectedRowIds.size === 0) return
+    if (selectedRowIds.size > 5) {
+      window.alert('ApplyPilot V1 supports max 5 jobs per batch. Please select 5 or fewer.')
+      return
+    }
+    const toExport = rows.filter((r) => selectedRowIds.has(r.id))
+    const payload = toExport.map((r) => ({
+      job_id: r.data.job_id_guess || '',
+      company: r.data.company_guess || '',
+      title: r.data.title || '',
+      url: r.data.url || '',
+      ats_group: r.data.ats_group || '',
+      search_bucket: r.data.search_bucket || '',
+      resume_match_score: r.data.resume_match_score || '',
+      jd_text: r.data.jd_text || '',
+      sponsorship_status: r.data.sponsorship_status || '',
+      location_group: r.data.location_group || '',
+      posted_age_days: r.data.posted_age_days || '',
+    }))
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'applypilot_batch.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleClick = async (row) => {
     const url = row.data.url
     window.open(url, '_blank', 'noopener')
@@ -291,6 +368,7 @@ export default function Dashboard() {
           : r
       )
     )
+    api.createApplicationFromRow(row.id).catch(() => {})
     await loadRows(sort, filters)
   }
 
@@ -372,6 +450,39 @@ export default function Dashboard() {
           <div>
             <strong>{selectedRowIds.size}</strong> selected
           </div>
+          <button
+            className="btn btn-blue"
+            onClick={openSelected}
+            disabled={selectedRowIds.size === 0}
+          >
+            Open selected
+          </button>
+          <button
+            className="btn btn-blue"
+            onClick={openNext5}
+          >
+            Open next 5
+          </button>
+          <button
+            className="btn btn-blue"
+            onClick={sendToApplications}
+            disabled={selectedRowIds.size === 0}
+          >
+            Send selected to Applications
+          </button>
+          <button
+            className="btn btn-blue"
+            onClick={sendNext5ToApplications}
+          >
+            Send next 5 to Applications
+          </button>
+          <button
+            className="btn btn-green"
+            onClick={exportApplyPilot}
+            disabled={selectedRowIds.size === 0}
+          >
+            Send 5 to ApplyPilot
+          </button>
           <button
             className="btn btn-danger"
             onClick={deleteSelectedRows}
