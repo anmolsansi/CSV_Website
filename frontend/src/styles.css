@@ -267,3 +267,31 @@ th { background: #f3f4f6; position: sticky; top: 0; }
   .nav-tab { padding: 6px 10px; font-size: 12px; }
   .app-shell .topbar { flex-direction: column; align-items: stretch; }
 }
+
+/* CSV Upload */
+.csv-upload { margin: 1rem 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; }
+.csv-upload-input { display: flex; align-items: center; gap: 12px; }
+.upload-spinner { color: #2563eb; font-weight: 600; font-size: 14px; }
+.upload-error { margin-top: 8px; color: #dc2626; font-size: 13px; }
+
+.upload-result { margin-top: 10px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #f9fafb; }
+.upload-result-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upload-result-summary { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #374151; flex-wrap: wrap; }
+.upload-dup { background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.upload-warn { background: #fee2e2; color: #991b1b; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.upload-result-hint { font-size: 12px; color: #6b7280; margin-left: 4px; }
+.btn-sm { padding: 3px 8px; font-size: 12px; }
+
+.upload-result-details { margin-top: 10px; }
+.upload-detail-table { width: auto; background: transparent; }
+.upload-detail-table td { border: none; padding: 3px 12px 3px 0; font-size: 13px; white-space: normal; }
+.upload-detail-table td:first-child { font-weight: 600; color: #374151; }
+.upload-detail-table .mono { font-family: monospace; font-size: 12px; color: #6b7280; }
+.upload-detail-table .positive { color: #16a34a; font-weight: 600; }
+.upload-detail-table .negative { color: #dc2626; font-weight: 600; }
+.upload-detail-table .muted { color: #9ca3af; }
+
+/* Export controls */
+.export-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 1rem 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 14px; }
+.export-bar label { font-size: 12px; font-weight: 700; color: #374151; }
+.export-bar select { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; font-size: 13px; background: #fff; }

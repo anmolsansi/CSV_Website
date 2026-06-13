@@ -84,6 +84,28 @@ export const api = {
     client.patch(`/crm/sessions/${sessionId}`, payload).then((r) => r.data),
   deleteSession: (sessionId) =>
     client.delete(`/crm/sessions/${sessionId}`).then((r) => r.data),
+
+  // CRM - Export
+  exportDashboard: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.format) qs.set('format', params.format)
+    if (params.atsGroup) qs.set('ats_group', params.atsGroup)
+    if (params.rowIds && params.rowIds.length) qs.set('row_ids', params.rowIds.join(','))
+    return client.get(`/crm/export/dashboard?${qs.toString()}`, { responseType: 'blob' })
+  },
+  exportApplications: (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.format) qs.set('format', params.format)
+    if (params.status) qs.set('status', params.status)
+    if (params.company) qs.set('company', params.company)
+    if (params.atsGroup) qs.set('ats_group', params.atsGroup)
+    if (params.searchBucket) qs.set('search_bucket', params.searchBucket)
+    if (params.followUpDue) qs.set('follow_up_due', 'true')
+    if (params.openedNotApplied) qs.set('opened_not_applied', 'true')
+    if (params.q) qs.set('q', params.q)
+    if (params.rowIds && params.rowIds.length) qs.set('row_ids', params.rowIds.join(','))
+    return client.get(`/crm/export/applications?${qs.toString()}`, { responseType: 'blob' })
+  },
 }
 
 export default client

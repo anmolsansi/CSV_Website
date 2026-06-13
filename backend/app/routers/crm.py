@@ -1,14 +1,17 @@
+import csv
+import io
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Float, asc, case, cast, desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import JOB_TRACK_STATUS_VALUES, CsvRow, JobTrack, SavedView, SearchSession, User
+from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, CsvRow, JobTrack, SavedView, SearchSession, User
 from ..schemas import BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -330,3 +333,98 @@ def delete_session(session_id: int, db: Session = Depends(get_db), user: User = 
     deleted = db.query(SearchSession).filter_by(id=session_id, user_id=user.id).delete()
     db.commit()
     return {"deleted": deleted}
+
+
+# ─── Export ───────────────────────────────────────────────────────────────
+
+EXPORT_DASHBOARD_FIELDS = CSV_COLUMNS + ["clicked", "clicked_at"]
+EXPORT_APPLICATION_FIELDS = CSV_COLUMNS + [
+    "clicked", "clicked_at",
+    "app_status", "applied_at", "follow_up_at", "notes", "last_updated",
+]
+
+
+def _serialize_dashboard_row(row):
+    out = {col: getattr(row, col) for col in CSV_COLUMNS}
+    out["clicked"] = row.clicked
+    out["clicked_at"] = str(row.clicked_at) if row.clicked_at else ""
+    return out
+
+
+def _serialize_application_row(row):
+    out = {col: getattr(row.csv_row, col, None) for col in CSV_COLUMNS} if row.csv_row else {col: None for col in CSV_COLUMNS}
+    out["url"] = row.url
+    out["clicked"] = row.csv_row.clicked if row.csv_row else False
+    out["clicked_at"] = str(row.csv_row.clicked_at) if row.csv_row and row.csv_row.clicked_at else ""
+    out["app_status"] = row.status
+    out["applied_at"] = str(row.applied_at) if row.applied_at else ""
+    out["follow_up_at"] = str(row.follow_up_at) if row.follow_up_at else ""
+    out["notes"] = row.notes or ""
+    out["last_updated"] = str(row.updated_at) if row.updated_at else ""
+    return out
+
+
+def _to_csv_response(rows_dict, filename):
+    if not rows_dict:
+        return StreamingResponse(io.BytesIO(b""), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(rows_dict[0].keys()))
+    writer.writeheader()
+    writer.writerows(rows_dict)
+    content = buf.getvalue().encode("utf-8")
+    return StreamingResponse(io.BytesIO(content), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def _to_json_response(rows_dict, filename):
+    content = json.dumps(rows_dict, indent=2, default=str).encode("utf-8")
+    return StreamingResponse(io.BytesIO(content), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/export/dashboard")
+def export_dashboard(
+    format: Literal["csv", "json"] = Query("csv"),
+    ats_group: str | None = Query(None),
+    row_ids: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    query = db.query(CsvRow).filter(CsvRow.user_id == user.id, CsvRow.archived.is_(False))
+    if ats_group:
+        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
+    if row_ids:
+        id_list = [int(x) for x in row_ids.split(",") if x.strip().isdigit()]
+        if id_list:
+            query = query.filter(CsvRow.id.in_(id_list))
+    rows = query.order_by(CsvRow.id.desc()).all()
+    data = [_serialize_dashboard_row(r) for r in rows]
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    if format == "json":
+        return _to_json_response(data, f"dashboard_export_{ts}.json")
+    return _to_csv_response(data, f"dashboard_export_{ts}.csv")
+
+
+@router.get("/export/applications")
+def export_applications(
+    format: Literal["csv", "json"] = Query("csv"),
+    status: str | None = Query(None),
+    company: str | None = Query(None),
+    ats_group: str | None = Query(None),
+    search_bucket: str | None = Query(None),
+    follow_up_due: bool = Query(False),
+    opened_not_applied: bool = Query(False),
+    q: str | None = Query(None),
+    row_ids: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    query = filtered_query(db, user.id, status, company, ats_group, search_bucket, None, None, None, None, None, follow_up_due, opened_not_applied, q)
+    if row_ids:
+        id_list = [int(x) for x in row_ids.split(",") if x.strip().isdigit()]
+        if id_list:
+            query = query.filter(JobTrack.id.in_(id_list))
+    rows = query.order_by(JobTrack.id.desc()).all()
+    data = [_serialize_application_row(r) for r in rows]
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    if format == "json":
+        return _to_json_response(data, f"applications_export_{ts}.json")
+    return _to_csv_response(data, f"applications_export_{ts}.csv")

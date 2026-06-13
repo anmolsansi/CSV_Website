@@ -357,6 +357,32 @@ export default function Dashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const [exportFormat, setExportFormat] = useState('csv')
+  const [exportScope, setExportScope] = useState('all')
+
+  const handleExport = async () => {
+    const params = { format: exportFormat }
+    if (exportScope === 'selected') {
+      if (selectedRowIds.size === 0) { window.alert('No rows selected.'); return }
+      params.rowIds = [...selectedRowIds]
+    } else if (exportScope === 'filtered') {
+      params.atsGroup = filters.atsGroup || undefined
+    }
+    try {
+      const res = await api.exportDashboard(params)
+      const ext = exportFormat === 'json' ? 'json' : 'csv'
+      const blob = new Blob([res.data], { type: ext === 'json' ? 'application/json' : 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dashboard_export.${ext}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      window.alert('Export failed.')
+    }
+  }
+
   const handleClick = async (row) => {
     const url = row.data.url
     window.open(url, '_blank', 'noopener')
@@ -389,6 +415,20 @@ export default function Dashboard() {
             <span>Green today</span>
             <strong>{stats.greenToday}</strong>
           </div>
+        </div>
+
+        <div className="export-bar">
+          <label>Export</label>
+          <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+          </select>
+          <select value={exportScope} onChange={(e) => setExportScope(e.target.value)}>
+            <option value="all">All rows</option>
+            <option value="filtered">Filtered rows</option>
+            <option value="selected">Selected rows</option>
+          </select>
+          <button className="btn btn-grey" onClick={handleExport}>Download</button>
         </div>
 
         <div className="table-controls">

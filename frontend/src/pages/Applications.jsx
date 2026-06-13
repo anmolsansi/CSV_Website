@@ -229,6 +229,41 @@ export default function Applications() {
 
   const clearFilters = () => setFilters(DEFAULT_FILTERS)
 
+  const [exportFormat, setExportFormat] = useState('csv')
+  const [exportScope, setExportScope] = useState('all')
+
+  const handleExport = async () => {
+    const params = { format: exportFormat }
+    if (exportScope === 'selected') {
+      if (selectedIds.size === 0) { window.alert('No rows selected.'); return }
+      params.rowIds = [...selectedIds]
+    } else if (exportScope === 'filtered') {
+      params.status = filters.status || undefined
+      params.company = filters.company || undefined
+      params.atsGroup = filters.atsGroup || undefined
+      params.followUpDue = filters.followUpDue || undefined
+      params.openedNotApplied = filters.onlyOpenedNotApplied || undefined
+      params.q = filters.q || undefined
+    } else if (exportScope === 'applied') {
+      params.status = 'applied'
+    } else if (exportScope === 'followups') {
+      params.followUpDue = true
+    }
+    try {
+      const res = await api.exportApplications(params)
+      const ext = exportFormat === 'json' ? 'json' : 'csv'
+      const blob = new Blob([res.data], { type: ext === 'json' ? 'application/json' : 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `applications_export.${ext}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      window.alert('Export failed.')
+    }
+  }
+
   const columns = [
     ['company', 'Company'],
     ['title', 'Title'],
@@ -262,6 +297,22 @@ export default function Applications() {
         <div className="stat-card"><span>Follow-ups due</span><strong>{stats.followUpsDue}</strong></div>
         <div className="stat-card"><span>Interviews</span><strong>{stats.interviews}</strong></div>
         <div className="stat-card"><span>Rejected</span><strong>{stats.rejected}</strong></div>
+      </div>
+
+      <div className="export-bar">
+        <label>Export</label>
+        <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
+          <option value="csv">CSV</option>
+          <option value="json">JSON</option>
+        </select>
+        <select value={exportScope} onChange={(e) => setExportScope(e.target.value)}>
+          <option value="all">All rows</option>
+          <option value="filtered">Filtered rows</option>
+          <option value="selected">Selected rows</option>
+          <option value="applied">Applied only</option>
+          <option value="followups">Follow-ups due</option>
+        </select>
+        <button className="btn btn-grey" onClick={handleExport}>Download</button>
       </div>
 
       <div className="table-controls">
