@@ -95,35 +95,43 @@ export default function Sessions() {
         </div>
       )}
 
-      {loading ? <p>Loading...</p> : (
-        sessions.length === 0 ? <p style={{ color: '#9ca3af' }}>No sessions yet. Start one above.</p> : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Name</th><th>Started</th><th>Ended</th><th>Duration</th><th>Notes</th><th>Actions</th></tr></thead>
-              <tbody>
-                {sessions.map((s) => {
-                  const duration = s.ended_at
-                    ? `${Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000)}m`
-                    : timeAgo(s.started_at)
-                  return (
-                    <tr key={s.id} className={s.id === activeId ? 'selected-row' : ''}>
-                      <td>{s.name}</td>
-                      <td>{formatDateTime(s.started_at)}</td>
-                      <td>{s.ended_at ? formatDateTime(s.ended_at) : <span style={{ color: '#16a34a' }}>Active</span>}</td>
-                      <td>{duration}</td>
-                      <td>{s.notes || '-'}</td>
-                      <td>
-                        <button className="btn btn-grey" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => addNotes(s.id, s.notes)}>Notes</button>
-                        {!s.ended_at && <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: 12, marginLeft: 4 }} onClick={() => endSession(s.id)}>End</button>}
-                        <button className="btn btn-danger-outline" style={{ padding: '4px 8px', fontSize: 12, marginLeft: 4 }} onClick={() => deleteSession(s.id)}>Delete</button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+      {loading ? (
+        <div className="empty-state">
+          <div className="loading-spinner" />
+          <p>Loading sessions...</p>
+        </div>
+      ) : sessions.length === 0 ? (
+        <div className="empty-state">
+          <h3>No sessions yet</h3>
+          <p>Start a session to track your job search activity with notes and durations.</p>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Started</th><th>Ended</th><th>Duration</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody>
+              {sessions.map((s) => {
+                const duration = s.ended_at
+                  ? `${Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000)}m`
+                  : timeAgo(s.started_at)
+                return (
+                  <tr key={s.id} className={s.id === activeId ? 'selected-row' : ''}>
+                    <td>{s.name}</td>
+                    <td>{formatDateTime(s.started_at)}</td>
+                    <td>{s.ended_at ? formatDateTime(s.ended_at) : <span style={{ color: '#16a34a' }}>Active</span>}</td>
+                    <td>{duration}</td>
+                    <td>{s.notes || '-'}</td>
+                    <td>
+                      <button className="btn btn-grey" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => addNotes(s.id, s.notes)}>Notes</button>
+                      {!s.ended_at && <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: 12, marginLeft: 4 }} onClick={() => endSession(s.id)}>End</button>}
+                      <button className="btn btn-danger-outline" style={{ padding: '4px 8px', fontSize: 12, marginLeft: 4 }} onClick={() => deleteSession(s.id)}>Delete</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import { useToast } from '../App'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -123,12 +124,13 @@ function calculateStats(apps) {
 
 export default function Applications() {
   const [applications, setApplications] = useState([])
-  const [filterOptions, setFilterOptions] = useState({ ats_groups: [] })
+  const [filterOptions, setFilterOptions] = useState({ ats_groups: [], location_groups: [], decisions: [], sponsorship_statuses: [] })
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [hiddenColumns, setHiddenColumns] = useState(['searchBucket'])
   const [sort, setSort] = useState({ field: 'opened_at', direction: 'desc' })
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const toast = useToast()
 
   const refresh = () => {
     setLoading(true)
@@ -247,7 +249,8 @@ export default function Applications() {
     if (selectedIds.size === 0) return
     const confirmed = window.confirm(`Mark ${selectedIds.size} application(s) as applied?`)
     if (!confirmed) return
-    const result = await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
+    await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
+    toast(`Marked ${selectedIds.size} as applied`, 'success')
     setSelectedIds(new Set())
     refresh()
   }
@@ -260,7 +263,7 @@ export default function Applications() {
   const handleExport = async () => {
     const params = { format: exportFormat }
     if (exportScope === 'selected') {
-      if (selectedIds.size === 0) { window.alert('No rows selected.'); return }
+      if (selectedIds.size === 0) { toast('No rows selected', 'warning'); return }
       params.rowIds = [...selectedIds]
     } else if (exportScope === 'filtered') {
       params.status = filters.status || undefined
@@ -284,8 +287,9 @@ export default function Applications() {
       a.download = `applications_export.${ext}`
       a.click()
       URL.revokeObjectURL(url)
+      toast('Export downloaded', 'success')
     } catch (err) {
-      window.alert('Export failed.')
+      toast('Export failed', 'error')
     }
   }
 
@@ -372,22 +376,30 @@ export default function Applications() {
         ))}
       </div>
 
-      <div className="delete-actions">
-        <div>
-          <strong>{selectedIds.size}</strong> selected
+      {selectedIds.size > 0 && (
+        <div className="sticky-toolbar">
+          <span className="toolbar-count"><strong>{selectedIds.size}</strong> selected</span>
+          <button className="btn btn-green" onClick={bulkMarkApplied}>Mark applied</button>
+          <button className="btn btn-grey" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
         </div>
-        <button
-          className="btn btn-green"
-          onClick={bulkMarkApplied}
-          disabled={selectedIds.size === 0}
-        >
-          Mark selected as applied
-        </button>
+      )}
+
+      <div className="delete-actions">
+        <div><strong>{selectedIds.size}</strong> selected</div>
+        <button className="btn btn-green" onClick={bulkMarkApplied} disabled={selectedIds.size === 0}>Mark selected as applied</button>
       </div>
 
       <div className="table-wrap">
         {loading ? (
-          <p style={{ padding: '1rem' }}>Loading applications...</p>
+          <div className="empty-state">
+            <div className="loading-spinner" />
+            <p>Loading applications...</p>
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="empty-state">
+            <h3>No applications yet</h3>
+            <p>Open job links from the Dashboard to start tracking applications.</p>
+          </div>
         ) : (
           <table>
             <thead><tr>
@@ -451,7 +463,6 @@ export default function Applications() {
             </tbody>
           </table>
         )}
-        {!loading && sorted.length === 0 && <p style={{ padding: '1rem' }}>No opened job links match these filters.</p>}
       </div>
     </div>
   )

@@ -38,19 +38,27 @@ export default function Pipeline() {
     setApplications((prev) => prev.map((a) => a.id === appId ? { ...a, status: newStatus } : a))
   }
 
-  if (loading) return <div className="container"><p>Loading pipeline...</p></div>
+  if (loading) return <div className="container"><div className="empty-state"><div className="loading-spinner" /><p>Loading pipeline...</p></div></div>
+
+  const hasAnyItems = Object.values(grouped).some((arr) => arr.length > 0)
 
   return (
     <div className="container">
       <div className="page-header-row">
         <div>
           <h2>Pipeline</h2>
-          <p>Jobs grouped by application status.</p>
+          <p>Jobs grouped by application status. Drag cards between columns to update status.</p>
         </div>
         <button className="btn btn-blue" onClick={refresh}>Refresh</button>
       </div>
 
-      <div className="pipeline-board">
+      {!hasAnyItems ? (
+        <div className="empty-state">
+          <h3>Pipeline is empty</h3>
+          <p>Open job links from the Dashboard to start building your pipeline.</p>
+        </div>
+      ) : (
+        <div className="pipeline-board">
         {STATUSES.map((status) => (
           <div className="pipeline-column" key={status}>
             <div className="pipeline-column-header">
@@ -92,7 +100,8 @@ export default function Pipeline() {
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
