@@ -4,6 +4,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _split_env_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 class Settings:
     DATABASE_URL = os.getenv(
         "DATABASE_URL",
@@ -28,6 +34,11 @@ class Settings:
 
     OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8000")
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    CORS_ORIGINS = (
+        _split_env_list(os.getenv("CORS_ORIGINS"))
+        or _split_env_list(os.getenv("FRONTEND_URLS"))
+        or [FRONTEND_URL, "http://127.0.0.1:5173"]
+    )
     CLEANUP_INTERVAL_MINUTES = int(os.getenv("CLEANUP_INTERVAL_MINUTES", "60"))
     DELETE_AFTER_DAYS = int(os.getenv("DELETE_AFTER_DAYS", "2"))
 
