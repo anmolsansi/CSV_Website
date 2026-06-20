@@ -14,8 +14,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
+from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
 from .routers import auth_router, crm, email, rows, upload
+from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
     alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
@@ -35,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MetricsMiddleware)
+
+if settings.SENTRY_DSN:
+    init_sentry(settings.SENTRY_DSN, settings.ENVIRONMENT)
 
 app.include_router(auth_router.router)
 app.include_router(upload.router)

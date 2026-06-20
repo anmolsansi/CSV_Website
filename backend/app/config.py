@@ -32,5 +32,15 @@ class Settings:
     DELETE_AFTER_DAYS = int(os.getenv("DELETE_AFTER_DAYS", "2"))
     TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
 
+    # Email / SMTP
+    EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASS = os.getenv("SMTP_PASS", "")
+
+    # Sentry
+    SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+
 
 settings = Settings()

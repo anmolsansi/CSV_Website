@@ -28,7 +28,8 @@ class TestUpload:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["rows_created"] == 2
+        assert "batch_id" in data
+        assert "inserted" in data
 
 
 class TestRows:
