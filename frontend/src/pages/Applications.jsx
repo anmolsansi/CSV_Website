@@ -19,12 +19,8 @@ const DEFAULT_FILTERS = {
   followUpToday: false,
   followUpOverdue: false,
   followUpNone: false,
-  locationGroup: '',
-  decision: '',
-  sponsorshipStatus: '',
   hasError: false,
   jdMissing: false,
-  q: '',
 }
 const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 
@@ -160,8 +156,17 @@ export default function Applications() {
     refresh()
   }
 
+  const clearFilters = () => { setFilters(DEFAULT_FILTERS); setPage(1); setTimeout(() => refresh({ page: 1 }), 0) }
+
   const [exportFormat, setExportFormat] = useState('csv')
   const [exportScope, setExportScope] = useState('all')
+
+  const handleSort = (field) => {
+    const newDir = sort.field === field && sort.direction === 'asc' ? 'desc' : 'asc'
+    setSort({ field, direction: newDir })
+    setPage(1)
+    setTimeout(() => refresh({ sort_by: field, sort_dir: newDir, page: 1 }), 0)
+  }
 
   const handleExport = async () => {
     const params = { format: exportFormat }
@@ -247,6 +252,8 @@ export default function Applications() {
 
       <div className="stats-grid app-stats-grid">
         <div className="stat-card"><span>Total</span><strong>{pagination.totalCount}</strong></div>
+        <div className="stat-card"><span>Total opened</span><strong>{total}</strong></div>
+        <div className="stat-card"><span>Shown</span><strong>{applications.length}</strong></div>
       </div>
 
       <div className="export-bar">
@@ -384,6 +391,14 @@ export default function Applications() {
           </table>
         )}
       </div>
+
+      {total > pageSize && (
+        <div className="pagination">
+          <button className="btn btn-grey" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
+          <span>Page {page} of {Math.ceil(total / pageSize)}</span>
+          <button className="btn btn-grey" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(page + 1)}>Next</button>
+        </div>
+      )}
     </div>
   )
 }

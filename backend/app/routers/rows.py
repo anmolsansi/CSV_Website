@@ -251,6 +251,9 @@ def record_click(
     row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
     if not row:
         raise HTTPException(404, "Row not found")
+    now = datetime.utcnow()
+
+    # Mark clicked
     if not row.clicked:
         row.clicked = True
         row.clicked_at = datetime.utcnow()

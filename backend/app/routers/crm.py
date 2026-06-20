@@ -298,6 +298,7 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
                            location_group, decision, sponsorship_status, posted_age_min, posted_age_max,
                            follow_up_today, follow_up_overdue, follow_up_none, has_error, jd_missing,
                            date_applied_from, date_applied_to, applied_only)
+    total = query.count()
     if sort_by not in SORT_FIELDS:
         sort_by = "opened_at"
     sort_by_is_computed = sort_by in ("priority_score", "triage")

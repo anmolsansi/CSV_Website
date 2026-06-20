@@ -25,16 +25,9 @@ else:
     from .database import Base, engine
     Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="CSV URL Tracker")
+api_app = FastAPI(title="CSV URL Tracker")
 
-app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+api_app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 app.include_router(auth_router.router)
 app.include_router(upload.router)
@@ -45,7 +38,7 @@ app.include_router(email.router)
 scheduler = BackgroundScheduler()
 
 
-@app.on_event("startup")
+@api_app.on_event("startup")
 def start_scheduler():
     scheduler.add_job(
         cleanup_clicked_rows,
@@ -56,12 +49,12 @@ def start_scheduler():
     scheduler.start()
 
 
-@app.on_event("shutdown")
+@api_app.on_event("shutdown")
 def stop_scheduler():
     scheduler.shutdown()
 
 
-@app.get("/health")
+@api_app.get("/health")
 def health():
     return {"status": "ok"}
 
