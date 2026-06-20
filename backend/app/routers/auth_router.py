@@ -1,6 +1,7 @@
 from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import (
@@ -22,6 +23,36 @@ def _client(provider: str):
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(404, "Unsupported provider")
     return getattr(oauth, provider)
+
+
+class DevLoginRequest(BaseModel):
+    email: str = "test@jobgrid.dev"
+
+
+@router.post("/dev-login")
+def dev_login(payload: DevLoginRequest, db: Session = Depends(get_db)):
+    """Test-only endpoint: creates or retrieves a user and returns a session cookie.
+    Only available when TEST_AUTH=true."""
+    if not settings.TEST_AUTH:
+        raise HTTPException(404, "Not found")
+    user = db.query(User).filter_by(email=payload.email).first()
+    if not user:
+        user = User(email=payload.email)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    jwt_token = create_token(user)
+    from fastapi.responses import JSONResponse
+    resp = JSONResponse({"id": user.id, "email": user.email})
+    resp.set_cookie(
+        "session_token",
+        jwt_token,
+        max_age=60 * 60 * 24 * 7,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+    )
+    return resp
 
 
 def _cookie_options() -> dict:

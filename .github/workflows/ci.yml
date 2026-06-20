@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  frontend-e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test --project=chromium
+        env:
+          BASE_URL: http://localhost:8000
+
+  backend:
+    name: Backend Compile Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - run: pip install -r requirements.txt
+      - run: python -m compileall app
+
+  backend-tests:
+    name: Backend Tests (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: jobgrid_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - run: pip install -r requirements.txt
+      - run: pip install pytest httpx
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short
+        env:
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/jobgrid_test
+          TEST_AUTH: "true"
+          SECRET_KEY: test-secret-key-for-ci
+          FRONTEND_URL: http://localhost:5173
+          ENVIRONMENT: test

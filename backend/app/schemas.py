@@ -74,4 +74,20 @@ class ColumnPrefIn(BaseModel):
     column_order: List[str] = []
 
 
+class ApplyPilotResultIn(BaseModel):
+    url: str
+    submitted: bool = False
+    questions_extracted: Optional[bool] = False
+    manual_review_needed: Optional[bool] = False
+    application_url: Optional[str] = None
+    error: Optional[str] = None
+    screenshot_path: Optional[str] = None
+    submitted_at: Optional[str] = None
+
+
+class ShareViewOut(BaseModel):
+    share_url: str
+    expires_at: str
+
+
 ALL_COLUMNS = CSV_COLUMNS

@@ -1,45 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../App'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
-// ─── localStorage backup (kept for reference / fallback) ──────────────────────
-// const STORAGE_KEY = 'csv_website_application_tracker_v1'
-// function loadMeta() {
-//   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }
-//   catch { return {} }
-// }
-// function saveMeta(meta) { localStorage.setItem(STORAGE_KEY, JSON.stringify(meta)) }
-// function rowToApplication(row, meta) {
-//   const url = row.data?.url || ''
-//   const saved = meta[url] || {}
-//   return {
-//     id: row.id, url,
-//     company: saved.company ?? row.data?.company_guess ?? '',
-//     title: saved.title ?? row.data?.title ?? '',
-//     atsGroup: row.data?.ats_group ?? '',
-//     searchBucket: row.data?.search_bucket ?? '',
-//     resumeMatchScore: row.data?.resume_match_score ?? '',
-//     clickedAt: row.clicked_at,
-//     appliedAt: saved.appliedAt || '',
-//     followUpAt: saved.followUpAt || '',
-//     status: saved.status || 'opened',
-//     notes: saved.notes || '',
-//   }
-// }
-// ───────────────────────────────────────────────────────────────────────────────
-
 const DEFAULT_FILTERS = {
   status: '',
   company: '',
   atsGroup: '',
+  searchBucket: '',
   quickRange: '',
   dateFrom: '',
   dateTo: '',
   minScore: '',
   maxScore: '',
-  onlyOpenedNotApplied: false,
+  openedNotApplied: false,
   followUpDue: false,
   followUpToday: false,
   followUpOverdue: false,
@@ -51,74 +26,53 @@ const DEFAULT_FILTERS = {
   jdMissing: false,
   q: '',
 }
-
-function parseDate(value) {
-  if (!value) return null
-  const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)
-  const parsed = new Date(hasTimezone ? value : `${value}Z`)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
+const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 
 function formatDateTime(value) {
-  const date = parseDate(value)
-  return date ? date.toLocaleString() : ''
+  if (!value) return ''
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString()
 }
 
 function localInputValue(value) {
-  const date = parseDate(value)
-  if (!date) return ''
-  const offset = date.getTimezoneOffset() * 60000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+  if (!value) return ''
+  const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)
+  const parsed = new Date(hasTimezone ? value : `${value}Z`)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const offset = parsed.getTimezoneOffset() * 60000
+  return new Date(parsed.getTime() - offset).toISOString().slice(0, 16)
 }
 
 function inputToIso(value) {
   return value ? new Date(value).toISOString() : ''
 }
 
-function startOfLocalDay(date = new Date()) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-function inQuickRange(date, range) {
-  if (!range) return true
-  if (!date) return false
-  const now = new Date()
-  if (range === 'last_24_hours') return date >= new Date(now.getTime() - 24 * 60 * 60 * 1000)
-  if (range === 'today') return date >= startOfLocalDay(now)
-  if (range === 'yesterday') {
-    const today = startOfLocalDay(now)
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-    return date >= yesterday && date < today
-  }
-  if (range === 'last_7_days') return date >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-  if (range === 'last_30_days') return date >= new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-  return true
-}
-
-function scoreValue(value) {
-  const score = Number(String(value || '').replace(/[%,$\s]/g, ''))
-  return Number.isNaN(score) ? null : score
-}
-
-function calculateStats(apps) {
-  const now = new Date()
-  const today = startOfLocalDay(now)
-  const last24 = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+function buildApiParams(filters, sort, pagination) {
   return {
-    totalOpened: apps.length,
-    totalApplied: apps.filter((a) => a.applied_at || a.status === 'applied').length,
-    openedToday: apps.filter((a) => parseDate(a.opened_at) >= today).length,
-    appliedToday: apps.filter((a) => parseDate(a.applied_at) >= today).length,
-    last24Hours: apps.filter((a) => parseDate(a.opened_at) >= last24).length,
-    followUpsDue: apps.filter((a) => {
-      const date = parseDate(a.follow_up_at)
-      return date && date <= now
-    }).length,
-    interviews: apps.filter((a) => a.status === 'interview').length,
-    rejected: apps.filter((a) => a.status === 'rejected').length,
+    sort_by: sort.field === 'clickedAt' ? 'opened_at' : sort.field,
+    sort_dir: sort.direction,
+    page: pagination.page,
+    page_size: pagination.pageSize,
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.company ? { company: filters.company } : {}),
+    ...(filters.atsGroup ? { ats_group: filters.atsGroup } : {}),
+    ...(filters.searchBucket ? { search_bucket: filters.searchBucket } : {}),
+    ...(filters.quickRange ? { quick_range: filters.quickRange } : {}),
+    ...(filters.dateFrom ? { date_from: new Date(filters.dateFrom).toISOString() } : {}),
+    ...(filters.dateTo ? { date_to: new Date(filters.dateTo).toISOString() } : {}),
+    ...(filters.minScore ? { min_score: Number(filters.minScore) } : {}),
+    ...(filters.maxScore ? { max_score: Number(filters.maxScore) } : {}),
+    ...(filters.followUpDue ? { follow_up_due: true } : {}),
+    ...(filters.followUpToday ? { follow_up_today: true } : {}),
+    ...(filters.followUpOverdue ? { follow_up_overdue: true } : {}),
+    ...(filters.followUpNone ? { follow_up_none: true } : {}),
+    ...(filters.openedNotApplied ? { opened_not_applied: true } : {}),
+    ...(filters.hasError ? { has_error: true } : {}),
+    ...(filters.jdMissing ? { jd_missing: true } : {}),
+    ...(filters.locationGroup ? { location_group: filters.locationGroup } : {}),
+    ...(filters.decision ? { decision: filters.decision } : {}),
+    ...(filters.sponsorshipStatus ? { sponsorship_status: filters.sponsorshipStatus } : {}),
+    ...(filters.q ? { q: filters.q } : {}),
   }
 }
 
@@ -130,16 +84,16 @@ export default function Applications() {
   const [sort, setSort] = useState({ field: 'opened_at', direction: 'desc' })
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
   const toast = useToast()
 
-  const refresh = () => {
+  const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page) => {
     setLoading(true)
-    api.getApplications({
-      sort_by: sort.field === 'clickedAt' ? 'opened_at' : sort.field,
-      sort_dir: sort.direction,
-    }).then((data) => {
+    const params = buildApiParams(nextFilters, nextSort, { ...pagination, page: nextPage })
+    api.getApplications(params).then((data) => {
       setApplications(data.rows || [])
       setFilterOptions(data.filter_options || { ats_groups: [] })
+      setPagination({ page: data.page || nextPage, pageSize: data.page_size || 50, totalCount: data.total_count || (data.rows || []).length, hasNext: data.has_next || false })
     }).finally(() => setLoading(false))
   }
 
@@ -147,76 +101,27 @@ export default function Applications() {
     refresh()
   }, [])
 
-  const filtered = useMemo(() => {
-    const from = filters.dateFrom ? new Date(filters.dateFrom) : null
-    const to = filters.dateTo ? new Date(filters.dateTo) : null
-    const minScore = filters.minScore === '' ? null : Number(filters.minScore)
-    const maxScore = filters.maxScore === '' ? null : Number(filters.maxScore)
-    const now = new Date()
-    const todayStart = startOfLocalDay(now)
-    const needle = filters.q.trim().toLowerCase()
+  const updateFilter = (key, value) => {
+    const nextFilters = { ...filters, [key]: value }
+    setFilters(nextFilters)
+    refresh(nextFilters, sort, 1)
+  }
 
-    return applications.filter((app) => {
-      const opened = parseDate(app.opened_at)
-      const score = scoreValue(app.resume_match_score)
-      if (filters.status && app.status !== filters.status) return false
-      if (filters.company && !app.company?.toLowerCase().includes(filters.company.toLowerCase())) return false
-      if (filters.atsGroup && app.ats_group !== filters.atsGroup) return false
-      if (!inQuickRange(opened, filters.quickRange)) return false
-      if (from && (!opened || opened < from)) return false
-      if (to && (!opened || opened >= to)) return false
-      if (minScore !== null && (score === null || score < minScore)) return false
-      if (maxScore !== null && (score === null || score > maxScore)) return false
-      if (filters.onlyOpenedNotApplied && (app.applied_at || app.status !== 'opened')) return false
-      if (filters.followUpDue) {
-        const followUp = parseDate(app.follow_up_at)
-        if (!followUp || followUp > now) return false
-      }
-      if (filters.followUpToday) {
-        const followUp = parseDate(app.follow_up_at)
-        if (!followUp || followUp < todayStart || followUp >= new Date(todayStart.getTime() + 86400000)) return false
-      }
-      if (filters.followUpOverdue) {
-        const followUp = parseDate(app.follow_up_at)
-        if (!followUp || followUp >= now) return false
-      }
-      if (filters.followUpNone) {
-        if (app.follow_up_at) return false
-      }
-      if (filters.hasError && !app.error) return false
-      if (filters.jdMissing) {
-        const len = Number(app.jd_text_length || 0)
-        if (len > 0) return false
-      }
-      if (needle) {
-        const haystack = [app.company, app.title, app.url, app.notes, app.ats_group].join(' ').toLowerCase()
-        if (!haystack.includes(needle)) return false
-      }
-      return true
-    })
-  }, [applications, filters])
+  const updateSort = (field) => {
+    const direction = sort.field === field && sort.direction === 'asc' ? 'desc' : 'asc'
+    const nextSort = { field, direction }
+    setSort(nextSort)
+    refresh(filters, nextSort, 1)
+  }
 
-  const sorted = useMemo(() => {
-    const copy = [...filtered]
-    copy.sort((a, b) => {
-      const aValue = ['opened_at', 'applied_at', 'follow_up_at'].includes(sort.field)
-        ? parseDate(a[sort.field])?.getTime() || 0
-        : sort.field === 'resumeMatchScore' || sort.field === 'resume_match_score'
-          ? scoreValue(a.resume_match_score) ?? -1
-          : String(a[sort.field] || '').toLowerCase()
-      const bValue = ['opened_at', 'applied_at', 'follow_up_at'].includes(sort.field)
-        ? parseDate(b[sort.field])?.getTime() || 0
-        : sort.field === 'resumeMatchScore' || sort.field === 'resume_match_score'
-          ? scoreValue(b.resume_match_score) ?? -1
-          : String(b[sort.field] || '').toLowerCase()
-      if (aValue < bValue) return sort.direction === 'asc' ? -1 : 1
-      if (aValue > bValue) return sort.direction === 'asc' ? 1 : -1
-      return 0
-    })
-    return copy
-  }, [filtered, sort])
+  const clearFilters = () => {
+    setFilters(DEFAULT_FILTERS)
+    refresh(DEFAULT_FILTERS, sort, 1)
+  }
 
-  const stats = useMemo(() => calculateStats(applications), [applications])
+  const goToPage = (newPage) => {
+    refresh(filters, sort, newPage)
+  }
 
   const updateApp = async (itemId, payload) => {
     const updated = await api.updateApplication(itemId, payload)
@@ -240,8 +145,8 @@ export default function Applications() {
 
   const toggleSelectAll = () => {
     setSelectedIds((prev) => {
-      if (sorted.length > 0 && prev.size === sorted.length) return new Set()
-      return new Set(sorted.map((a) => a.id))
+      if (applications.length > 0 && prev.size === applications.length) return new Set()
+      return new Set(applications.map((a) => a.id))
     })
   }
 
@@ -254,8 +159,6 @@ export default function Applications() {
     setSelectedIds(new Set())
     refresh()
   }
-
-  const clearFilters = () => setFilters(DEFAULT_FILTERS)
 
   const [exportFormat, setExportFormat] = useState('csv')
   const [exportScope, setExportScope] = useState('all')
@@ -270,7 +173,7 @@ export default function Applications() {
       params.company = filters.company || undefined
       params.atsGroup = filters.atsGroup || undefined
       params.followUpDue = filters.followUpDue || undefined
-      params.openedNotApplied = filters.onlyOpenedNotApplied || undefined
+      params.openedNotApplied = filters.openedNotApplied || undefined
       params.q = filters.q || undefined
     } else if (exportScope === 'applied') {
       params.status = 'applied'
@@ -293,6 +196,31 @@ export default function Applications() {
     }
   }
 
+  const handleKeyDown = useCallback((e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+      return
+    }
+    switch (e.key.toLowerCase()) {
+      case 'a':
+        e.preventDefault()
+        if (selectedIds.size > 0) bulkMarkApplied()
+        break
+      case 'o':
+        e.preventDefault()
+        if (selectedIds.size > 0) {
+          applications.filter((a) => selectedIds.has(a.id)).forEach((app) => window.open(app.url, '_blank', 'noopener'))
+        }
+        break
+      default:
+        break
+    }
+  }, [selectedIds.size, applications, bulkMarkApplied])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
+
   const columns = [
     ['company', 'Company'],
     ['title', 'Title'],
@@ -314,18 +242,11 @@ export default function Applications() {
           <h2>Applications</h2>
           <p>Track opened jobs, applied dates, follow-ups, notes, and statuses.</p>
         </div>
-        <button className="btn btn-blue" onClick={refresh}>Refresh</button>
+        <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
       </div>
 
       <div className="stats-grid app-stats-grid">
-        <div className="stat-card"><span>Total opened</span><strong>{stats.totalOpened}</strong></div>
-        <div className="stat-card"><span>Total applied</span><strong>{stats.totalApplied}</strong></div>
-        <div className="stat-card"><span>Opened today</span><strong>{stats.openedToday}</strong></div>
-        <div className="stat-card"><span>Applied today</span><strong>{stats.appliedToday}</strong></div>
-        <div className="stat-card"><span>Last 24 hours</span><strong>{stats.last24Hours}</strong></div>
-        <div className="stat-card"><span>Follow-ups due</span><strong>{stats.followUpsDue}</strong></div>
-        <div className="stat-card"><span>Interviews</span><strong>{stats.interviews}</strong></div>
-        <div className="stat-card"><span>Rejected</span><strong>{stats.rejected}</strong></div>
+        <div className="stat-card"><span>Total</span><strong>{pagination.totalCount}</strong></div>
       </div>
 
       <div className="export-bar">
@@ -345,29 +266,43 @@ export default function Applications() {
       </div>
 
       <div className="table-controls">
-        <div><label>Status</label><select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-        <div><label>Company</label><input value={filters.company} onChange={(e) => setFilters({ ...filters, company: e.target.value })} placeholder="Company" /></div>
-        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => setFilters({ ...filters, atsGroup: e.target.value })}><option value="">All</option>{filterOptions.ats_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
-        <div><label>Location</label><select value={filters.locationGroup} onChange={(e) => setFilters({ ...filters, locationGroup: e.target.value })}><option value="">All</option>{filterOptions.location_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
-        <div><label>Decision</label><select value={filters.decision} onChange={(e) => setFilters({ ...filters, decision: e.target.value })}><option value="">All</option>{filterOptions.decisions?.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
-        <div><label>Sponsorship</label><select value={filters.sponsorshipStatus} onChange={(e) => setFilters({ ...filters, sponsorshipStatus: e.target.value })}><option value="">All</option>{filterOptions.sponsorship_statuses?.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-        <div><label>Range</label><select value={filters.quickRange} onChange={(e) => setFilters({ ...filters, quickRange: e.target.value })}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
-        <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} /></div>
-        <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} /></div>
-        <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => setFilters({ ...filters, minScore: e.target.value })} /></div>
-        <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => setFilters({ ...filters, maxScore: e.target.value })} /></div>
-        <div><label>Search</label><input value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} placeholder="Title, company, URL" /></div>
+        <div><label>Status</label><select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div><label>Company</label><input value={filters.company} onChange={(e) => updateFilter('company', e.target.value)} placeholder="Company" /></div>
+        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => updateFilter('atsGroup', e.target.value)}><option value="">All</option>{filterOptions.ats_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>Location</label><select value={filters.locationGroup} onChange={(e) => updateFilter('locationGroup', e.target.value)}><option value="">All</option>{filterOptions.location_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>Decision</label><select value={filters.decision} onChange={(e) => updateFilter('decision', e.target.value)}><option value="">All</option>{filterOptions.decisions?.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
+        <div><label>Sponsorship</label><select value={filters.sponsorshipStatus} onChange={(e) => updateFilter('sponsorshipStatus', e.target.value)}><option value="">All</option>{filterOptions.sponsorship_statuses?.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div><label>Range</label><select value={filters.quickRange} onChange={(e) => updateFilter('quickRange', e.target.value)}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
+        <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
+        <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => updateFilter('minScore', e.target.value)} /></div>
+        <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => updateFilter('maxScore', e.target.value)} /></div>
+        <div><label>Search</label><input value={filters.q} onChange={(e) => updateFilter('q', e.target.value)} placeholder="Title, company, URL" /></div>
         <div className="checkbox-filter">
-          <label><input type="checkbox" checked={filters.onlyOpenedNotApplied} onChange={(e) => setFilters({ ...filters, onlyOpenedNotApplied: e.target.checked })} /> Opened, not applied</label>
-          <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => setFilters({ ...filters, followUpDue: e.target.checked })} /> Follow-up due</label>
-          <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => setFilters({ ...filters, followUpToday: e.target.checked })} /> Follow-up today</label>
-          <label><input type="checkbox" checked={filters.followUpOverdue} onChange={(e) => setFilters({ ...filters, followUpOverdue: e.target.checked })} /> Overdue</label>
-          <label><input type="checkbox" checked={filters.followUpNone} onChange={(e) => setFilters({ ...filters, followUpNone: e.target.checked })} /> No follow-up</label>
-          <label><input type="checkbox" checked={filters.hasError} onChange={(e) => setFilters({ ...filters, hasError: e.target.checked })} /> Has error</label>
-          <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => setFilters({ ...filters, jdMissing: e.target.checked })} /> JD missing</label>
+          <label><input type="checkbox" checked={filters.openedNotApplied} onChange={(e) => updateFilter('openedNotApplied', e.target.checked)} /> Opened, not applied</label>
+          <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => updateFilter('followUpDue', e.target.checked)} /> Follow-up due</label>
+          <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => updateFilter('followUpToday', e.target.checked)} /> Follow-up today</label>
+          <label><input type="checkbox" checked={filters.followUpOverdue} onChange={(e) => updateFilter('followUpOverdue', e.target.checked)} /> Overdue</label>
+          <label><input type="checkbox" checked={filters.followUpNone} onChange={(e) => updateFilter('followUpNone', e.target.checked)} /> No follow-up</label>
+          <label><input type="checkbox" checked={filters.hasError} onChange={(e) => updateFilter('hasError', e.target.checked)} /> Has error</label>
+          <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => updateFilter('jdMissing', e.target.checked)} /> JD missing</label>
         </div>
-        <div className="table-control-actions"><label>Rows shown</label><span>{sorted.length}</span><button className="btn btn-grey" onClick={clearFilters}>Clear filters</button></div>
+        <div className="table-control-actions">
+          <label>Rows shown</label>
+          <span>{applications.length} of {pagination.totalCount}</span>
+          <button className="btn btn-grey" onClick={clearFilters}>Clear filters</button>
+        </div>
       </div>
+
+      {pagination.totalCount > pagination.pageSize && (
+        <div className="pagination-controls">
+          <button className="btn btn-grey btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(1)}>First</button>
+          <button className="btn btn-grey btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}>Prev</button>
+          <span className="pagination-info">Page {pagination.page} of {Math.ceil(pagination.totalCount / pagination.pageSize)}</span>
+          <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(pagination.page + 1)}>Next</button>
+          <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(Math.ceil(pagination.totalCount / pagination.pageSize))}>Last</button>
+        </div>
+      )}
 
       <div className="col-toggles compact-toggles">
         <strong style={{ width: '100%' }}>Application columns</strong>
@@ -384,18 +319,13 @@ export default function Applications() {
         </div>
       )}
 
-      <div className="delete-actions">
-        <div><strong>{selectedIds.size}</strong> selected</div>
-        <button className="btn btn-green" onClick={bulkMarkApplied} disabled={selectedIds.size === 0}>Mark selected as applied</button>
-      </div>
-
       <div className="table-wrap">
         {loading ? (
           <div className="empty-state">
             <div className="loading-spinner" />
             <p>Loading applications...</p>
           </div>
-        ) : sorted.length === 0 ? (
+        ) : applications.length === 0 ? (
           <div className="empty-state">
             <h3>No applications yet</h3>
             <p>Open job links from the Dashboard to start tracking applications.</p>
@@ -406,20 +336,13 @@ export default function Applications() {
               <th className="row-select-cell">
                 <input
                   type="checkbox"
-                  checked={sorted.length > 0 && selectedIds.size === sorted.length}
+                  checked={applications.length > 0 && selectedIds.size === applications.length}
                   onChange={toggleSelectAll}
                 />
               </th>
-              {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => setSort({ field: key, direction: sort.field === key && sort.direction === 'asc' ? 'desc' : 'asc' })}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
+              {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => updateSort(key)}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
             <tbody>
-              {sorted.map((app) => {
-                const followUpDate = parseDate(app.follow_up_at)
-                const isOverdue = followUpDate && followUpDate < new Date()
-                const isDueToday = followUpDate && (() => {
-                  const today = startOfLocalDay()
-                  return followUpDate >= today && followUpDate < new Date(today.getTime() + 86400000)
-                })()
-                return (
+              {applications.map((app) => (
                 <tr key={app.id} className={selectedIds.has(app.id) ? 'selected-row' : ''}>
                   <td className="row-select-cell">
                     <input
@@ -449,8 +372,6 @@ export default function Applications() {
                           }}>Mon</button>
                           {app.follow_up_at && <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: '' })}>Clear</button>}
                         </div>
-                        {isOverdue && <span className="follow-up-badge overdue">Overdue</span>}
-                        {isDueToday && <span className="follow-up-badge due-today">Due today</span>}
                       </div>
                     </td>
                   )}
@@ -458,8 +379,7 @@ export default function Applications() {
                   {!hiddenColumns.includes('url') && <td><button className="btn btn-blue" onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button></td>}
                   <td><button className="btn btn-green" onClick={() => markApplied(app)}>Mark applied</button></td>
                 </tr>
-                )
-              })}
+              ))}
             </tbody>
           </table>
         )}

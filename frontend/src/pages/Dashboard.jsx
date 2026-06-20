@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../App'
 import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
+import RowDrawer from '../components/RowDrawer'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
 const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false }
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
+const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
+const DENSITY_OPTIONS = ['comfortable', 'compact', 'dense']
 
 function mergeColumnOrder(savedOrder, columns) {
   const validSaved = savedOrder.filter((col) => columns.includes(col))
@@ -134,6 +137,12 @@ export default function Dashboard() {
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [columnsCollapsed, setColumnsCollapsed] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
+  const [drawerRow, setDrawerRow] = useState(null)
+  const [density, setDensity] = useState(() => localStorage.getItem('density') || 'comfortable')
+  const [pinnedColumns, setPinnedColumns] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('pinnedColumns') || '[]') } catch { return [] }
+  })
   const toast = useToast()
 
   const orderedColumns = useMemo(
@@ -148,22 +157,23 @@ export default function Dashboard() {
     })
   }
 
-  const loadRows = (nextSort = sort, nextFilters = filters) => {
+  const loadRows = (nextSort = sort, nextFilters = filters, nextPage = pagination.page, nextPageSize = pagination.pageSize) => {
     setLoading(true)
-    return api.getRows({ ...nextSort, ...nextFilters }).then((d) => {
+    return api.getRows({ ...nextSort, ...nextFilters, page: nextPage, pageSize: nextPageSize }).then((d) => {
       setColumns(d.columns)
       setRows(d.rows)
       setStats(normalizeStats(d.stats))
       setFilterOptions(d.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
       setSelectedRowIds(new Set())
+      setPagination({ page: d.page || nextPage, pageSize: d.page_size || nextPageSize, totalCount: d.total_count || d.rows.length, hasNext: d.has_next || false })
     }).finally(() => setLoading(false))
   }
 
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      api.getRows({ ...DEFAULT_SORT, ...DEFAULT_FILTERS }),
+      api.getRows({ ...DEFAULT_SORT, ...DEFAULT_FILTERS, page: 1, pageSize: 50 }),
       api.getPreferences(),
     ]).then(([rowData, preferences]) => {
       const savedHidden = preferences.hidden_columns || []
@@ -177,6 +187,7 @@ export default function Dashboard() {
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
       setSelectedRowIds(new Set())
+      setPagination({ page: rowData.page || 1, pageSize: rowData.page_size || 50, totalCount: rowData.total_count || rowData.rows.length, hasNext: rowData.has_next || false })
     }).finally(() => setLoading(false))
   }, [])
 
@@ -214,25 +225,51 @@ export default function Dashboard() {
   const updateSort = async (sortBy, sortDir) => {
     const nextSort = { sortBy, sortDir }
     setSort(nextSort)
-    await loadRows(nextSort, filters)
+    await loadRows(nextSort, filters, 1)
   }
 
   const updateAtsGroupFilter = async (atsGroup) => {
     const nextFilters = { ...filters, atsGroup }
     setFilters(nextFilters)
-    await loadRows(sort, nextFilters)
+    await loadRows(sort, nextFilters, 1)
   }
 
   const updateFilter = async (key, value) => {
     const nextFilters = { ...filters, [key]: value }
     setFilters(nextFilters)
-    await loadRows(sort, nextFilters)
+    await loadRows(sort, nextFilters, 1)
   }
 
   const clearFilters = async () => {
     const nextFilters = DEFAULT_FILTERS
     setFilters(nextFilters)
-    await loadRows(sort, nextFilters)
+    await loadRows(sort, nextFilters, 1)
+  }
+
+  const goToPage = async (newPage) => {
+    await loadRows(sort, filters, newPage)
+  }
+
+  const bulkStatusAction = async (status) => {
+    if (selectedRowIds.size === 0) return
+    const ids = [...selectedRowIds]
+    await api.bulkCreateApplicationsFromRows(ids)
+    await api.bulkUpdateApplications(ids, { status })
+    toast(`Marked ${ids.length} as ${status}`, 'success')
+    setSelectedRowIds(new Set())
+    await loadRows(sort, filters)
+  }
+
+  const bulkFollowUp = async (preset) => {
+    if (selectedRowIds.size === 0) return
+    const ids = [...selectedRowIds]
+    await api.bulkCreateApplicationsFromRows(ids)
+    for (const id of ids) {
+      await api.setFollowUpPreset(id, preset).catch(() => {})
+    }
+    toast(`Set follow-up for ${ids.length} applications`, 'success')
+    setSelectedRowIds(new Set())
+    await loadRows(sort, filters)
   }
 
   const toggleRowSelection = (rowId) => {
@@ -328,6 +365,36 @@ export default function Dashboard() {
     await loadRows(sort, filters)
   }
 
+  const toggleDensity = () => {
+    const idx = DENSITY_OPTIONS.indexOf(density)
+    const next = DENSITY_OPTIONS[(idx + 1) % DENSITY_OPTIONS.length]
+    setDensity(next)
+    localStorage.setItem('density', next)
+  }
+
+  const togglePinColumn = (col) => {
+    setPinnedColumns((prev) => {
+      const next = prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
+      localStorage.setItem('pinnedColumns', JSON.stringify(next))
+      return next
+    })
+  }
+
+  const handleBackupExport = async () => {
+    try {
+      const res = await api.exportBackup()
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `jobgrid_backup_${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast('Backup exported', 'success')
+    } catch {
+      toast('Export failed', 'error')
+    }
+  }
+
   const sendNext5ToApplications = async () => {
     const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
     if (unclicked.length === 0) { toast('No unclicked rows remaining', 'warning'); return }
@@ -407,6 +474,49 @@ export default function Dashboard() {
     await loadRows(sort, filters)
   }
 
+  const handleKeyDown = useCallback((e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+      return
+    }
+    switch (e.key.toLowerCase()) {
+      case 'o':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) openSelected()
+        break
+      case 'a':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) sendToApplications()
+        break
+      case 's':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) exportApplyPilot()
+        break
+      case 'x':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) deleteSelectedRows()
+        break
+      case 'f':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) bulkFollowUp('3_days')
+        break
+      case 'n':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) bulkStatusAction('not_applying')
+        break
+      case 'r':
+        e.preventDefault()
+        if (selectedRowIds.size > 0) bulkStatusAction('applied')
+        break
+      default:
+        break
+    }
+  }, [selectedRowIds.size, openSelected, sendToApplications, exportApplyPilot, deleteSelectedRows, bulkFollowUp, bulkStatusAction])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
+
   return (
     <div className="container">
         <CsvUpload onUploaded={() => loadRows()} />
@@ -438,6 +548,12 @@ export default function Dashboard() {
             <option value="selected">Selected rows</option>
           </select>
           <button className="btn btn-grey" onClick={handleExport}>Download</button>
+          <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
+          <button className="btn btn-grey" onClick={handleBackupExport}>Export Backup</button>
+          <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
+          <button className="btn btn-grey btn-sm" onClick={toggleDensity} title="Toggle density">
+            {density === 'comfortable' ? 'Comfortable' : density === 'compact' ? 'Compact' : 'Dense'}
+          </button>
         </div>
 
         <div className="table-controls">
@@ -562,18 +678,36 @@ export default function Dashboard() {
 
           <div className="table-control-actions">
             <label>Rows shown</label>
-            <span>{rows.length}</span>
+            <span>{rows.length} of {pagination.totalCount}</span>
             <button className="btn btn-grey" onClick={clearFilters}>
               Clear filters
             </button>
           </div>
         </div>
 
+        {pagination.totalCount > pagination.pageSize && (
+          <div className="pagination-controls">
+            <button className="btn btn-grey btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(1)}>First</button>
+            <button className="btn btn-grey btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}>Prev</button>
+            <span className="pagination-info">Page {pagination.page} of {Math.ceil(pagination.totalCount / pagination.pageSize)}</span>
+            <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(pagination.page + 1)}>Next</button>
+            <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(Math.ceil(pagination.totalCount / pagination.pageSize))}>Last</button>
+          </div>
+        )}
+
         {selectedRowIds.size > 0 && (
           <div className="sticky-toolbar">
             <span className="toolbar-count"><strong>{selectedRowIds.size}</strong> selected</span>
             <button className="btn btn-blue" onClick={openSelected}>Open selected</button>
             <button className="btn btn-blue" onClick={sendToApplications}>Send to Applications</button>
+            <button className="btn btn-green" onClick={() => bulkStatusAction('applied')}>Mark applied</button>
+            <button className="btn btn-grey" onClick={() => bulkStatusAction('not_applying')}>Not applying</button>
+            <button className="btn btn-grey" onClick={() => bulkStatusAction('follow_up')}>Follow-up</button>
+            <button className="btn btn-grey" onClick={() => bulkStatusAction('rejected')}>Rejected</button>
+            <button className="btn btn-grey" onClick={() => bulkFollowUp('3_days')}>+3d follow-up</button>
+            <button className="btn btn-grey" onClick={() => bulkFollowUp('7_days')}>+7d follow-up</button>
+            <button className="btn btn-grey" onClick={() => bulkFollowUp('next_monday')}>Monday</button>
+            <button className="btn btn-grey" onClick={() => bulkFollowUp('clear')}>Clear follow-up</button>
             <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size > 5}>
               Send 5 to ApplyPilot
             </button>
@@ -621,6 +755,9 @@ export default function Dashboard() {
                 {col}
               </label>
               <div className="column-move-actions">
+                <button type="button" onClick={() => togglePinColumn(col)} title={pinnedColumns.includes(col) ? 'Unpin' : 'Pin left'} style={{ background: pinnedColumns.includes(col) ? '#dbeafe' : undefined }}>
+                  📌
+                </button>
                 <button type="button" onClick={() => moveColumn(col, -1)} disabled={index === 0}>↑</button>
                 <button type="button" onClick={() => moveColumn(col, 1)} disabled={index === orderedColumns.length - 1}>↓</button>
               </div>
@@ -649,8 +786,12 @@ export default function Dashboard() {
             onToggleAllRows={toggleAllRows}
             onSortChange={updateSort}
             onUrlClick={handleClick}
+            onRowClick={(row) => setDrawerRow(row)}
+            pinnedColumns={pinnedColumns}
+            density={density}
           />
         )}
+        {drawerRow && <RowDrawer row={drawerRow} onClose={() => setDrawerRow(null)} />}
     </div>
   )
 }

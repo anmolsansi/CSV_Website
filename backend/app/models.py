@@ -9,8 +9,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    JSON,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -55,6 +55,15 @@ class User(Base):
     preference = relationship(
         "ColumnPreference", back_populates="user", uselist=False,
         cascade="all, delete-orphan",
+    )
+    audit_events = relationship(
+        "AuditEvent", backref="user", cascade="all, delete-orphan"
+    )
+    applypilot_batches = relationship(
+        "ApplyPilotBatch", backref="user", cascade="all, delete-orphan"
+    )
+    goal = relationship(
+        "UserGoal", backref="user", uselist=False, cascade="all, delete-orphan"
     )
 
 
@@ -189,7 +198,8 @@ class SavedView(Base):
                      nullable=False, index=True)
     name = Column(String(120), nullable=False)
     view_type = Column(String(50), nullable=False, default="job_links")
-    filters = Column(JSONB, default=dict, nullable=False)
+    filters = Column(JSON, default=dict, nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -214,7 +224,47 @@ class ColumnPreference(Base):
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
                      primary_key=True)
-    hidden_columns = Column(JSONB, default=list, nullable=False)
-    column_order = Column(JSONB, default=list, nullable=False)
+    hidden_columns = Column(JSON, default=list, nullable=False)
+    column_order = Column(JSON, default=list, nullable=False)
 
     user = relationship("User", back_populates="preference")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    entity_type = Column(String(50), nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ApplyPilotBatch(Base):
+    __tablename__ = "applypilot_batches"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True)
+    name = Column(String(200))
+    payload_json = Column(JSON, nullable=False)
+    status = Column(String(50), default="downloaded", nullable=False)
+    job_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserGoal(Base):
+    __tablename__ = "user_goals"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    open_per_day = Column(Integer, default=30)
+    apply_per_day = Column(Integer, default=10)
+    followup_per_day = Column(Integer, default=5)
+    applypilot_per_day = Column(Integer, default=5)

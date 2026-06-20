@@ -30,6 +30,7 @@ class Settings:
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
     CLEANUP_INTERVAL_MINUTES = int(os.getenv("CLEANUP_INTERVAL_MINUTES", "60"))
     DELETE_AFTER_DAYS = int(os.getenv("DELETE_AFTER_DAYS", "2"))
+    TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
 
 
 settings = Settings()

@@ -22,7 +22,7 @@ function UploadResult({ result }) {
     result.missing_expected_columns.length > 0
 
   return (
-    <div className="upload-result">
+    <div className="upload-result" role="region" aria-label="Upload result details">
       <div className="upload-result-header">
         <strong>{result.filename}</strong>
         <span className="upload-result-summary">
@@ -40,6 +40,7 @@ function UploadResult({ result }) {
         <button
           className="btn btn-grey btn-sm"
           onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
         >
           {expanded ? 'Less' : 'Details'}
         </button>
@@ -127,11 +128,20 @@ export default function CsvUpload({ onUploaded }) {
           accept=".csv"
           onChange={handleChange}
           disabled={uploading}
+          aria-label="Upload CSV file"
         />
-        {uploading && <span className="upload-spinner">Uploading...</span>}
+        {uploading && (
+          <span className="upload-spinner" role="progressbar" aria-label="Uploading file">
+            Uploading...
+          </span>
+        )}
       </div>
-      {error && <div className="upload-error">{error}</div>}
-      {result && <UploadResult result={result} />}
+      {error && <div className="upload-error" role="alert">{error}</div>}
+      {result && (
+        <div aria-live="polite">
+          <UploadResult result={result} />
+        </div>
+      )}
     </div>
   )
 }

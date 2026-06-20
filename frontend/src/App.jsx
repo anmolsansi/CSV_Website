@@ -8,7 +8,15 @@ import Analytics from './pages/Analytics'
 import Pipeline from './pages/Pipeline'
 import Sessions from './pages/Sessions'
 import SavedViews from './pages/SavedViews'
+import ApplyPilotBatches from './pages/ApplyPilotBatches'
+import Duplicates from './pages/Duplicates'
+import CompanyHistory from './pages/CompanyHistory'
+import ImportExternal from './pages/ImportExternal'
 import Navigation from './components/Navigation'
+import ActiveSessionBar from './components/ActiveSessionBar'
+import CommandPalette from './components/CommandPalette'
+import DarkModeToggle from './components/DarkModeToggle'
+import SkipToContent from './components/SkipToContent'
 
 const ToastContext = createContext(null)
 
@@ -36,32 +44,53 @@ function ToastProvider({ children }) {
 }
 
 function AuthenticatedApp({ user, onLogout }) {
+  const [cmdOpen, setCmdOpen] = useState(false)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setCmdOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   return (
     <BrowserRouter>
       <ToastProvider>
         <div className="app-shell">
+          <SkipToContent />
           <div className="topbar">
             <strong className="topbar-brand">JobGrid</strong>
             <Navigation />
-            <div>
-              <span style={{ marginRight: 12 }}>{user.email}</span>
-              <button
-                className="btn btn-grey"
-                onClick={() => api.logout().then(onLogout)}
-              >
-                Logout
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <DarkModeToggle />
+              <button className="btn btn-grey btn-sm" onClick={() => setCmdOpen(true)} title="Command Palette (Cmd+K)">
+                ⌘K
               </button>
+              <span>{user.email}</span>
+              <button className="btn btn-grey" onClick={() => api.logout().then(onLogout)}>Logout</button>
             </div>
           </div>
-          <Routes>
-            <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
-            <Route path="/applications" element={<Applications />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/sessions" element={<Sessions />} />
-            <Route path="/saved-views" element={<SavedViews />} />
-          </Routes>
+          <ActiveSessionBar />
+          <main id="main-content" tabIndex={-1}>
+            <Routes>
+              <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
+              <Route path="/applications" element={<Applications />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/sessions" element={<Sessions />} />
+              <Route path="/saved-views" element={<SavedViews />} />
+              <Route path="/applypilot" element={<ApplyPilotBatches />} />
+              <Route path="/duplicates" element={<Duplicates />} />
+              <Route path="/companies" element={<CompanyHistory />} />
+              <Route path="/import" element={<ImportExternal />} />
+            </Routes>
+          </main>
         </div>
+        <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} />
       </ToastProvider>
     </BrowserRouter>
   )
@@ -70,6 +99,17 @@ function AuthenticatedApp({ user, onLogout }) {
 export default function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('jobgrid-theme')
+      const theme = saved || 'system'
+      const resolved = theme === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        : theme
+      document.documentElement.setAttribute('data-theme', resolved)
+    } catch {}
+  }, [])
 
   useEffect(() => {
     api

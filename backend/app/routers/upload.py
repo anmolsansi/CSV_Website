@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, CsvRow, UrlHistory, User
+from .crm import emit_event
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -157,6 +158,12 @@ async def upload_csv(
             db.commit()
 
     skipped_history_duplicates = len(seen_in_upload) - len(incoming_rows)
+
+    emit_event(db, user.id, "csv_uploaded", "upload", metadata={"batch_id": batch_id, "inserted": inserted, "filename": filename})
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
     # Build invalid rows CSV in memory for download
     invalid_rows_csv = None
