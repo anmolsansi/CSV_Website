@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, ApplyPilotBatch, AuditEvent, CsvRow, JobTrack, SavedView, SearchSession, User, UserGoal
+from ..scoring import _parse_score, priority_score as scoring_priority_score, improved_triage as scoring_triage, skills_extraction
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
@@ -94,75 +95,11 @@ def _parse_score(value):
 
 
 def calculate_priority_score(row, track=None):
-    try:
-        score = 0.0
-        resume_score = _parse_score(getattr(row, 'resume_match_score', None) or "0")
-        score += resume_score * 0.4
-        if getattr(row, 'sponsorship_status', None) == "positive":
-            score += 15
-        elif getattr(row, 'sponsorship_status', None) == "unclear":
-            score += 5
-        elif getattr(row, 'sponsorship_status', None) == "negative":
-            score -= 10
-        loc = (getattr(row, 'location_group', None) or "").lower()
-        if "remote" in loc and "restricted" not in loc:
-            score += 10
-        elif "onsite" in loc or "hybrid" in loc:
-            score += 5
-        try:
-            age = float(getattr(row, 'posted_age_days', None) or "999")
-            if age <= 7:
-                score += 15
-            elif age <= 14:
-                score += 10
-            elif age <= 30:
-                score += 5
-            else:
-                score -= 5
-        except (ValueError, TypeError):
-            pass
-        if getattr(row, 'is_duplicate', False):
-            score -= 20
-        jd_len = _parse_score(getattr(row, 'jd_text_length', None))
-        if jd_len == 0 or not getattr(row, 'jd_text', None):
-            score -= 10
-        if track:
-            if track.status == "rejected":
-                score -= 25
-            if track.follow_up_at and hasattr(track.follow_up_at, 'timestamp') and track.follow_up_at < datetime.utcnow():
-                score += 5
-        return max(0, min(100, round(score, 1)))
-    except Exception:
-        return 0
+    return scoring_priority_score(row, track)
 
 
 def calculate_triage(row, track=None, priority_score=0):
-    try:
-        if getattr(row, 'is_duplicate', False):
-            return "skip"
-        if getattr(row, 'sponsorship_status', None) == "negative":
-            return "skip"
-        if track and track.status == "rejected":
-            return "skip"
-        jd_len = _parse_score(getattr(row, 'jd_text_length', None))
-        if jd_len == 0 or not getattr(row, 'jd_text', None):
-            return "needs_review"
-        if getattr(row, 'error', None):
-            return "needs_review"
-        try:
-            age = float(getattr(row, 'posted_age_days', None) or "999")
-            if age > 60:
-                return "skip"
-        except (ValueError, TypeError):
-            pass
-        if priority_score >= 70:
-            return "apply_now"
-        elif priority_score >= 40:
-            return "maybe"
-        else:
-            return "skip"
-    except Exception:
-        return "needs_review"
+    return scoring_triage(row, track, score=priority_score)
 
 
 def generate_job_summary(row):
@@ -171,22 +108,22 @@ def generate_job_summary(row):
         return {"summary": "No JD text available", "matched_skills": [], "missing_skills": [], "bullets": [], "outreach": "", "risks": ["Missing job description"]}
     sentences = [s.strip() for s in jd.replace("\n", " ").split(".") if len(s.strip()) > 10]
     summary = ". ".join(sentences[:3]) + "." if sentences else "No summary available"
-    tech_keywords = ["python", "javascript", "typescript", "react", "node", "aws", "docker", "kubernetes", "sql", "postgresql", "fastapi", "django", "flask", "java", "go", "rust", "c++", "machine learning", "ai", "data", "analytics", "devops", "ci/cd", "git", "rest", "graphql", "microservices", "agile", "scrum"]
-    found = [kw for kw in tech_keywords if kw.lower() in jd.lower()]
+    extracted = skills_extraction(jd)
+    found = extracted["all_matched"]
     return {
         "summary": summary[:500],
         "matched_skills": found[:10],
         "missing_skills": [],
         "bullets": [f"Experience with {skill}" for skill in found[:3]],
         "outreach": f"Hi, I'm interested in the {row.title or 'open'} role at {row.company_guess or 'your company'}.",
-        "risks": [] if jd_len > 200 else ["Short JD"],
+        "risks": [] if len(jd) > 200 else ["Short JD"],
     }
 
 
 def generate_resume_checklist(row):
     jd = row.jd_text or ""
-    tech_keywords = ["python", "javascript", "typescript", "react", "node", "aws", "docker", "kubernetes", "sql", "postgresql", "fastapi", "django", "flask", "java", "go", "rust", "c++", "machine learning", "ai", "data", "analytics", "devops", "ci/cd", "git", "rest", "graphql", "microservices", "agile", "scrum"]
-    required = [kw for kw in tech_keywords if kw.lower() in jd.lower()]
+    extracted = skills_extraction(jd)
+    required = extracted["all_matched"]
     return {
         "required_skills": required[:15],
         "found_in_resume": [],

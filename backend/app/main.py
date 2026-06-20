@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from alembic.config import Config as AlembicConfig
@@ -27,7 +28,23 @@ else:
     from .database import Base, engine
     Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="CSV URL Tracker")
+scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.add_job(
+        cleanup_clicked_rows,
+        "interval",
+        minutes=settings.CLEANUP_INTERVAL_MINUTES,
+        id="cleanup_clicked_rows",
+    )
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title="CSV URL Tracker", lifespan=lifespan)
 
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(
@@ -47,24 +64,6 @@ app.include_router(upload.router)
 app.include_router(rows.router)
 app.include_router(crm.router)
 app.include_router(email.router)
-
-scheduler = BackgroundScheduler()
-
-
-@app.on_event("startup")
-def start_scheduler():
-    scheduler.add_job(
-        cleanup_clicked_rows,
-        "interval",
-        minutes=settings.CLEANUP_INTERVAL_MINUTES,
-        id="cleanup_clicked_rows",
-    )
-    scheduler.start()
-
-
-@app.on_event("shutdown")
-def stop_scheduler():
-    scheduler.shutdown()
 
 
 @app.get("/health")
