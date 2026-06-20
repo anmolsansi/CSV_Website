@@ -9,6 +9,7 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
 from ..schemas import ColumnPrefIn, RowDeleteIn
+from .crm import emit_event, calculate_priority_score, calculate_triage
 
 router = APIRouter(tags=["rows"])
 
@@ -142,6 +143,8 @@ def list_rows(
     jd_missing: bool = Query(False),
     clicked_today_start: str | None = Query(None),
     clicked_today_end: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -172,7 +175,6 @@ def list_rows(
             | func.lower(CsvRow.title).contains(needle)
         )
 
-    # Subquery for clicked status
     clicked_sub = db.query(JobTrack.csv_row_id).filter(JobTrack.user_id == user.id).correlate(CsvRow).scalar_subquery()
 
     if opened_only:
@@ -180,13 +182,16 @@ def list_rows(
     if unopened_only:
         query = query.filter(clicked_sub.is_(None))
 
+    total_count = query.count()
+
     rows = (
         query
         .order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
 
-    # Build a map of csv_row_id -> JobTrack for application data
     row_ids = [r.id for r in rows]
     track_map = {}
     if row_ids:
@@ -225,9 +230,15 @@ def list_rows(
                 "applied_at": str(track_map[row.id].applied_at) if row.id in track_map and track_map[row.id].applied_at else None,
                 "follow_up_at": str(track_map[row.id].follow_up_at) if row.id in track_map and track_map[row.id].follow_up_at else None,
                 "app_notes": (track_map[row.id].notes or "")[:80] if row.id in track_map else None,
+                "priority_score": calculate_priority_score(row, track_map.get(row.id)) if hasattr(row, 'is_duplicate') else 0,
+                "triage": calculate_triage(row, track_map.get(row.id)) if hasattr(row, 'is_duplicate') else "needs_review",
             }
             for row in rows
         ],
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "has_next": (page * page_size) < total_count,
     }
 
 
@@ -245,57 +256,10 @@ def record_click(
     # Mark clicked
     if not row.clicked:
         row.clicked = True
-        row.clicked_at = now
-
-    # Upsert JobTrack atomically
-    from ..models import SearchSession
-    active_session = db.query(SearchSession).filter(
-        SearchSession.user_id == user.id,
-        SearchSession.ended_at.is_(None),
-    ).first()
-
-    track = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
-    if track:
-        track.csv_row_id = row.id
-        track.open_count = (track.open_count or 0) + 1
-        track.last_opened_at = now
-        track.updated_at = now
-        track.company = track.company or row.company_guess
-        track.title = track.title or row.title
-        track.ats_group = track.ats_group or row.ats_group
-        track.search_bucket = track.search_bucket or row.search_bucket
-        track.resume_match_score = track.resume_match_score or row.resume_match_score
-        if active_session and not track.session_id:
-            track.session_id = str(active_session.id)
-    else:
-        track = JobTrack(
-            user_id=user.id,
-            csv_row_id=row.id,
-            url=row.url,
-            company=row.company_guess,
-            title=row.title,
-            ats_group=row.ats_group,
-            search_bucket=row.search_bucket,
-            resume_match_score=row.resume_match_score,
-            status="opened",
-            opened_at=now,
-            last_opened_at=now,
-            open_count=1,
-            session_id=str(active_session.id) if active_session else None,
-        )
-        db.add(track)
-
-    db.commit()
-    db.refresh(row)
-    db.refresh(track)
-
-    return {
-        "id": row.id,
-        "clicked": row.clicked,
-        "clicked_at": row.clicked_at,
-        "app_id": track.id,
-        "app_status": track.status,
-    }
+        row.clicked_at = datetime.utcnow()
+        emit_event(db, user.id, "row_opened", "csv_row", entity_id=row.id, metadata={"url": row.url})
+        db.commit()
+    return {"id": row.id, "clicked": row.clicked, "clicked_at": row.clicked_at}
 
 
 @router.delete("/rows")

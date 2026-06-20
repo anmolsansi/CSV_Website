@@ -3,11 +3,21 @@ __pycache__/
 *.pyc
 .venv/
 backend/.env
+backend/test_verify.db
 
 # Node
 node_modules/
 frontend/.env
 dist/
+
+# Production
+backend/.env.prod
+backups/
+
+# Testing
+playwright-report/
+test-results/
+*.db
 
 # Misc
 .DS_Store

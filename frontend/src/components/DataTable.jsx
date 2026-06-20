@@ -12,6 +12,25 @@ function sortIndicator(columnId, sort) {
   return sort.sortDir === 'asc' ? ' ↑' : ' ↓'
 }
 
+function StatusBadge({ status }) {
+  if (!status) return null
+  return <span className={`app-status-badge ${status}`}>{status.replace('_', ' ')}</span>
+}
+
+function PriorityScore({ score, triage }) {
+  if (score == null) return null
+  let cls = 'priority-none'
+  if (score >= 80) cls = 'priority-high'
+  else if (score >= 50) cls = 'priority-medium'
+  else if (score > 0) cls = 'priority-low'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span className={`priority-score ${cls}`}>{score}</span>
+      {triage && <span className={`triage-badge triage-${triage}`}>{triage.replace('_', ' ')}</span>}
+    </div>
+  )
+}
+
 export default function DataTable({
   columns,
   rows,
@@ -22,6 +41,9 @@ export default function DataTable({
   onToggleAllRows,
   onSortChange,
   onUrlClick,
+  onRowClick,
+  pinnedColumns = [],
+  density = 'comfortable',
 }) {
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hidden.includes(c)),
@@ -29,8 +51,8 @@ export default function DataTable({
   )
 
   const tableColumns = useMemo(
-    () =>
-      visibleColumns.map((col) => ({
+    () => [
+      ...visibleColumns.map((col) => ({
         accessorFn: (row) => row.data[col],
         id: col,
         header: col,
@@ -39,15 +61,41 @@ export default function DataTable({
             const row = ctx.row.original
             const cls = row.clicked ? 'btn btn-green' : 'btn btn-blue'
             return (
-              <button className={cls} onClick={() => onUrlClick(row)}>
+              <button className={cls} onClick={(e) => { e.stopPropagation(); onUrlClick(row) }}>
                 {row.clicked ? 'Visited' : 'Open'}
               </button>
             )
           }
           return ctx.getValue()
         },
+        meta: { pinned: pinnedColumns.includes(col) ? 'left' : undefined },
       })),
-    [visibleColumns, onUrlClick]
+      {
+        id: '_priority',
+        header: 'Priority',
+        accessorFn: (row) => row.priority_score,
+        cell: (ctx) => {
+          const row = ctx.row.original
+          return <PriorityScore score={row.priority_score} triage={row.triage} />
+        },
+      },
+      {
+        id: '_app_status',
+        header: 'App Status',
+        accessorFn: (row) => row.app_status,
+        cell: (ctx) => {
+          const row = ctx.row.original
+          if (!row.app_status && !row.app_id) return null
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <StatusBadge status={row.app_status} />
+              {row.follow_up_at && <span className="follow-up-badge">Follow-up</span>}
+            </div>
+          )
+        },
+      },
+    ],
+    [visibleColumns, onUrlClick, pinnedColumns]
   )
 
   const table = useReactTable({
@@ -68,13 +116,15 @@ export default function DataTable({
     onSortChange(columnId, nextDirection)
   }
 
+  const densityClass = density === 'compact' ? 'density-compact' : density === 'dense' ? 'density-dense' : ''
+
   return (
-    <div className="table-wrap">
-      <table>
+    <div className={`table-wrap ${densityClass}`}>
+      <table role="table">
         <thead>
           {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id}>
-              <th className="row-select-cell">
+            <tr key={hg.id} role="row">
+              <th className="row-select-cell" scope="col">
                 <input
                   aria-label="Select all rows on page"
                   type="checkbox"
@@ -83,19 +133,28 @@ export default function DataTable({
                   onChange={onToggleAllRows}
                 />
               </th>
-              {hg.headers.map((h) => (
-                <th key={h.id}>
-                  <button
-                    className="table-header-button"
-                    type="button"
-                    onClick={() => handleHeaderClick(h.column.id)}
-                    title={`Sort by ${h.column.id}`}
+              {hg.headers.map((h) => {
+                const isPinned = pinnedColumns.includes(h.column.id)
+                const isSorted = sort?.sortBy === h.column.id
+                return (
+                  <th
+                    key={h.id}
+                    scope="col"
+                    className={isPinned ? 'pin-left' : ''}
+                    aria-sort={isSorted ? (sort.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                   >
-                    {flexRender(h.column.columnDef.header, h.getContext())}
-                    {sortIndicator(h.column.id, sort)}
-                  </button>
-                </th>
-              ))}
+                    <button
+                      className="table-header-button"
+                      type="button"
+                      onClick={() => handleHeaderClick(h.column.id)}
+                      title={`Sort by ${h.column.id}`}
+                    >
+                      {flexRender(h.column.columnDef.header, h.getContext())}
+                      {sortIndicator(h.column.id, sort)}
+                    </button>
+                  </th>
+                )
+              })}
             </tr>
           ))}
         </thead>
@@ -103,27 +162,40 @@ export default function DataTable({
           {table.getRowModel().rows.map((r) => {
             const original = r.original
             return (
-              <tr key={r.id} className={selectedRowIds?.has(original.id) ? 'selected-row' : ''}>
-                <td className="row-select-cell">
+              <tr
+                key={r.id}
+                role="row"
+                className={selectedRowIds?.has(original.id) ? 'selected-row' : ''}
+                onClick={() => onRowClick?.(original)}
+                style={{ cursor: onRowClick ? 'pointer' : 'default' }}
+              >
+                <td className="row-select-cell" role="cell">
                   <input
                     aria-label={`Select row ${original.id}`}
                     type="checkbox"
                     checked={selectedRowIds?.has(original.id) || false}
                     onChange={() => onToggleRowSelection(original.id)}
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </td>
-                {r.getVisibleCells().map((c) => (
-                  <td key={c.id}>
-                    {flexRender(c.column.columnDef.cell, c.getContext())}
-                  </td>
-                ))}
+                {r.getVisibleCells().map((c) => {
+                  const isPinned = pinnedColumns.includes(c.column.id)
+                  return (
+                    <td key={c.id} role="cell" className={isPinned ? 'pin-left' : ''}>
+                      {flexRender(c.column.columnDef.cell, c.getContext())}
+                    </td>
+                  )
+                })}
               </tr>
             )
           })}
         </tbody>
       </table>
       {rows.length === 0 && (
-        <p style={{ padding: '1rem' }}>No rows yet. Upload a CSV to begin.</p>
+        <div className="empty-state">
+          <h3>No rows found</h3>
+          <p>No results match your current filters. Try adjusting your search criteria.</p>
+        </div>
       )}
     </div>
   )

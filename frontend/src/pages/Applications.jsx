@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../App'
 
@@ -8,16 +8,13 @@ const DEFAULT_FILTERS = {
   status: '',
   company: '',
   atsGroup: '',
-  locationGroup: '',
-  decision: '',
-  sponsorshipStatus: '',
+  searchBucket: '',
   quickRange: '',
   dateFrom: '',
   dateTo: '',
   minScore: '',
   maxScore: '',
-  q: '',
-  onlyOpenedNotApplied: false,
+  openedNotApplied: false,
   followUpDue: false,
   followUpToday: false,
   followUpOverdue: false,
@@ -25,34 +22,54 @@ const DEFAULT_FILTERS = {
   hasError: false,
   jdMissing: false,
 }
-
-function parseDate(value) {
-  if (!value) return null
-  const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)
-  const parsed = new Date(hasTimezone ? value : `${value}Z`)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
+const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 
 function formatDateTime(value) {
-  const date = parseDate(value)
-  return date ? date.toLocaleString() : ''
+  if (!value) return ''
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString()
 }
 
 function localInputValue(value) {
-  const date = parseDate(value)
-  if (!date) return ''
-  const offset = date.getTimezoneOffset() * 60000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+  if (!value) return ''
+  const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)
+  const parsed = new Date(hasTimezone ? value : `${value}Z`)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const offset = parsed.getTimezoneOffset() * 60000
+  return new Date(parsed.getTime() - offset).toISOString().slice(0, 16)
 }
 
 function inputToIso(value) {
   return value ? new Date(value).toISOString() : ''
 }
 
-function startOfLocalDay(date = new Date()) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function buildApiParams(filters, sort, pagination) {
+  return {
+    sort_by: sort.field === 'clickedAt' ? 'opened_at' : sort.field,
+    sort_dir: sort.direction,
+    page: pagination.page,
+    page_size: pagination.pageSize,
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.company ? { company: filters.company } : {}),
+    ...(filters.atsGroup ? { ats_group: filters.atsGroup } : {}),
+    ...(filters.searchBucket ? { search_bucket: filters.searchBucket } : {}),
+    ...(filters.quickRange ? { quick_range: filters.quickRange } : {}),
+    ...(filters.dateFrom ? { date_from: new Date(filters.dateFrom).toISOString() } : {}),
+    ...(filters.dateTo ? { date_to: new Date(filters.dateTo).toISOString() } : {}),
+    ...(filters.minScore ? { min_score: Number(filters.minScore) } : {}),
+    ...(filters.maxScore ? { max_score: Number(filters.maxScore) } : {}),
+    ...(filters.followUpDue ? { follow_up_due: true } : {}),
+    ...(filters.followUpToday ? { follow_up_today: true } : {}),
+    ...(filters.followUpOverdue ? { follow_up_overdue: true } : {}),
+    ...(filters.followUpNone ? { follow_up_none: true } : {}),
+    ...(filters.openedNotApplied ? { opened_not_applied: true } : {}),
+    ...(filters.hasError ? { has_error: true } : {}),
+    ...(filters.jdMissing ? { jd_missing: true } : {}),
+    ...(filters.locationGroup ? { location_group: filters.locationGroup } : {}),
+    ...(filters.decision ? { decision: filters.decision } : {}),
+    ...(filters.sponsorshipStatus ? { sponsorship_status: filters.sponsorshipStatus } : {}),
+    ...(filters.q ? { q: filters.q } : {}),
+  }
 }
 
 export default function Applications() {
@@ -63,47 +80,16 @@ export default function Applications() {
   const [sort, setSort] = useState({ field: 'opened_at', direction: 'desc' })
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [pageSize] = useState(50)
+  const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
   const toast = useToast()
 
-  const buildParams = (overrides = {}) => {
-    const f = { ...filters, ...overrides }
-    const params = {
-      sort_by: sort.field === 'clickedAt' ? 'opened_at' : sort.field,
-      sort_dir: sort.direction,
-      page,
-      page_size: pageSize,
-    }
-    if (f.status) params.status = f.status
-    if (f.company) params.company = f.company
-    if (f.atsGroup) params.ats_group = f.atsGroup
-    if (f.locationGroup) params.location_group = f.locationGroup
-    if (f.decision) params.decision = f.decision
-    if (f.sponsorshipStatus) params.sponsorship_status = f.sponsorshipStatus
-    if (f.quickRange) params.quick_range = f.quickRange
-    if (f.dateFrom) params.date_from = f.dateFrom
-    if (f.dateTo) params.date_to = f.dateTo
-    if (f.minScore !== '') params.min_score = Number(f.minScore)
-    if (f.maxScore !== '') params.max_score = Number(f.maxScore)
-    if (f.q) params.q = f.q
-    if (f.onlyOpenedNotApplied) params.opened_not_applied = true
-    if (f.followUpDue) params.follow_up_due = true
-    if (f.followUpToday) params.follow_up_today = true
-    if (f.followUpOverdue) params.follow_up_overdue = true
-    if (f.followUpNone) params.follow_up_none = true
-    if (f.hasError) params.has_error = true
-    if (f.jdMissing) params.jd_missing = true
-    return params
-  }
-
-  const refresh = (overrides = {}) => {
+  const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page) => {
     setLoading(true)
-    api.getApplications(buildParams(overrides)).then((data) => {
+    const params = buildApiParams(nextFilters, nextSort, { ...pagination, page: nextPage })
+    api.getApplications(params).then((data) => {
       setApplications(data.rows || [])
       setFilterOptions(data.filter_options || { ats_groups: [] })
-      setTotal(data.total || 0)
+      setPagination({ page: data.page || nextPage, pageSize: data.page_size || 50, totalCount: data.total_count || (data.rows || []).length, hasNext: data.has_next || false })
     }).finally(() => setLoading(false))
   }
 
@@ -111,21 +97,26 @@ export default function Applications() {
     refresh()
   }, [])
 
-  useEffect(() => {
-    setPage(1)
-  }, [filters, sort])
-
-  useEffect(() => {
-    refresh()
-  }, [page])
-
-  const handleFilterChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }))
+  const updateFilter = (key, value) => {
+    const nextFilters = { ...filters, [key]: value }
+    setFilters(nextFilters)
+    refresh(nextFilters, sort, 1)
   }
 
-  const handleFilterCommit = () => {
-    setPage(1)
-    refresh({ page: 1 })
+  const updateSort = (field) => {
+    const direction = sort.field === field && sort.direction === 'asc' ? 'desc' : 'asc'
+    const nextSort = { field, direction }
+    setSort(nextSort)
+    refresh(filters, nextSort, 1)
+  }
+
+  const clearFilters = () => {
+    setFilters(DEFAULT_FILTERS)
+    refresh(DEFAULT_FILTERS, sort, 1)
+  }
+
+  const goToPage = (newPage) => {
+    refresh(filters, sort, newPage)
   }
 
   const updateApp = async (itemId, payload) => {
@@ -187,7 +178,7 @@ export default function Applications() {
       params.company = filters.company || undefined
       params.atsGroup = filters.atsGroup || undefined
       params.followUpDue = filters.followUpDue || undefined
-      params.openedNotApplied = filters.onlyOpenedNotApplied || undefined
+      params.openedNotApplied = filters.openedNotApplied || undefined
       params.q = filters.q || undefined
     } else if (exportScope === 'applied') {
       params.status = 'applied'
@@ -210,6 +201,31 @@ export default function Applications() {
     }
   }
 
+  const handleKeyDown = useCallback((e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+      return
+    }
+    switch (e.key.toLowerCase()) {
+      case 'a':
+        e.preventDefault()
+        if (selectedIds.size > 0) bulkMarkApplied()
+        break
+      case 'o':
+        e.preventDefault()
+        if (selectedIds.size > 0) {
+          applications.filter((a) => selectedIds.has(a.id)).forEach((app) => window.open(app.url, '_blank', 'noopener'))
+        }
+        break
+      default:
+        break
+    }
+  }, [selectedIds.size, applications, bulkMarkApplied])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
+
   const columns = [
     ['company', 'Company'],
     ['title', 'Title'],
@@ -231,10 +247,11 @@ export default function Applications() {
           <h2>Applications</h2>
           <p>Track opened jobs, applied dates, follow-ups, notes, and statuses.</p>
         </div>
-        <button className="btn btn-blue" onClick={refresh}>Refresh</button>
+        <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
       </div>
 
       <div className="stats-grid app-stats-grid">
+        <div className="stat-card"><span>Total</span><strong>{pagination.totalCount}</strong></div>
         <div className="stat-card"><span>Total opened</span><strong>{total}</strong></div>
         <div className="stat-card"><span>Shown</span><strong>{applications.length}</strong></div>
       </div>
@@ -256,29 +273,43 @@ export default function Applications() {
       </div>
 
       <div className="table-controls">
-        <div><label>Status</label><select value={filters.status} onChange={(e) => { handleFilterChange('status', e.target.value); handleFilterCommit() }}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-        <div><label>Company</label><input value={filters.company} onChange={(e) => handleFilterChange('company', e.target.value)} onBlur={handleFilterCommit} placeholder="Company" /></div>
-        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => { handleFilterChange('atsGroup', e.target.value); handleFilterCommit() }}><option value="">All</option>{filterOptions.ats_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
-        <div><label>Location</label><select value={filters.locationGroup} onChange={(e) => { handleFilterChange('locationGroup', e.target.value); handleFilterCommit() }}><option value="">All</option>{filterOptions.location_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
-        <div><label>Decision</label><select value={filters.decision} onChange={(e) => { handleFilterChange('decision', e.target.value); handleFilterCommit() }}><option value="">All</option>{filterOptions.decisions?.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
-        <div><label>Sponsorship</label><select value={filters.sponsorshipStatus} onChange={(e) => { handleFilterChange('sponsorshipStatus', e.target.value); handleFilterCommit() }}><option value="">All</option>{filterOptions.sponsorship_statuses?.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-        <div><label>Range</label><select value={filters.quickRange} onChange={(e) => { handleFilterChange('quickRange', e.target.value); handleFilterCommit() }}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
-        <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => handleFilterChange('dateFrom', e.target.value)} onBlur={handleFilterCommit} /></div>
-        <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => handleFilterChange('dateTo', e.target.value)} onBlur={handleFilterCommit} /></div>
-        <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => handleFilterChange('minScore', e.target.value)} onBlur={handleFilterCommit} /></div>
-        <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => handleFilterChange('maxScore', e.target.value)} onBlur={handleFilterCommit} /></div>
-        <div><label>Search</label><input value={filters.q} onChange={(e) => handleFilterChange('q', e.target.value)} onBlur={handleFilterCommit} placeholder="Title, company, URL" /></div>
+        <div><label>Status</label><select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)}><option value="">All</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div><label>Company</label><input value={filters.company} onChange={(e) => updateFilter('company', e.target.value)} placeholder="Company" /></div>
+        <div><label>ATS group</label><select value={filters.atsGroup} onChange={(e) => updateFilter('atsGroup', e.target.value)}><option value="">All</option>{filterOptions.ats_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>Location</label><select value={filters.locationGroup} onChange={(e) => updateFilter('locationGroup', e.target.value)}><option value="">All</option>{filterOptions.location_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+        <div><label>Decision</label><select value={filters.decision} onChange={(e) => updateFilter('decision', e.target.value)}><option value="">All</option>{filterOptions.decisions?.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
+        <div><label>Sponsorship</label><select value={filters.sponsorshipStatus} onChange={(e) => updateFilter('sponsorshipStatus', e.target.value)}><option value="">All</option>{filterOptions.sponsorship_statuses?.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div><label>Range</label><select value={filters.quickRange} onChange={(e) => updateFilter('quickRange', e.target.value)}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
+        <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
+        <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => updateFilter('minScore', e.target.value)} /></div>
+        <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => updateFilter('maxScore', e.target.value)} /></div>
+        <div><label>Search</label><input value={filters.q} onChange={(e) => updateFilter('q', e.target.value)} placeholder="Title, company, URL" /></div>
         <div className="checkbox-filter">
-          <label><input type="checkbox" checked={filters.onlyOpenedNotApplied} onChange={(e) => { handleFilterChange('onlyOpenedNotApplied', e.target.checked); handleFilterCommit() }} /> Opened, not applied</label>
-          <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => { handleFilterChange('followUpDue', e.target.checked); handleFilterCommit() }} /> Follow-up due</label>
-          <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => { handleFilterChange('followUpToday', e.target.checked); handleFilterCommit() }} /> Follow-up today</label>
-          <label><input type="checkbox" checked={filters.followUpOverdue} onChange={(e) => { handleFilterChange('followUpOverdue', e.target.checked); handleFilterCommit() }} /> Overdue</label>
-          <label><input type="checkbox" checked={filters.followUpNone} onChange={(e) => { handleFilterChange('followUpNone', e.target.checked); handleFilterCommit() }} /> No follow-up</label>
-          <label><input type="checkbox" checked={filters.hasError} onChange={(e) => { handleFilterChange('hasError', e.target.checked); handleFilterCommit() }} /> Has error</label>
-          <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => { handleFilterChange('jdMissing', e.target.checked); handleFilterCommit() }} /> JD missing</label>
+          <label><input type="checkbox" checked={filters.openedNotApplied} onChange={(e) => updateFilter('openedNotApplied', e.target.checked)} /> Opened, not applied</label>
+          <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => updateFilter('followUpDue', e.target.checked)} /> Follow-up due</label>
+          <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => updateFilter('followUpToday', e.target.checked)} /> Follow-up today</label>
+          <label><input type="checkbox" checked={filters.followUpOverdue} onChange={(e) => updateFilter('followUpOverdue', e.target.checked)} /> Overdue</label>
+          <label><input type="checkbox" checked={filters.followUpNone} onChange={(e) => updateFilter('followUpNone', e.target.checked)} /> No follow-up</label>
+          <label><input type="checkbox" checked={filters.hasError} onChange={(e) => updateFilter('hasError', e.target.checked)} /> Has error</label>
+          <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => updateFilter('jdMissing', e.target.checked)} /> JD missing</label>
         </div>
-        <div className="table-control-actions"><label>Rows shown</label><span>{applications.length} of {total}</span><button className="btn btn-grey" onClick={clearFilters}>Clear filters</button></div>
+        <div className="table-control-actions">
+          <label>Rows shown</label>
+          <span>{applications.length} of {pagination.totalCount}</span>
+          <button className="btn btn-grey" onClick={clearFilters}>Clear filters</button>
+        </div>
       </div>
+
+      {pagination.totalCount > pagination.pageSize && (
+        <div className="pagination-controls">
+          <button className="btn btn-grey btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(1)}>First</button>
+          <button className="btn btn-grey btn-sm" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}>Prev</button>
+          <span className="pagination-info">Page {pagination.page} of {Math.ceil(pagination.totalCount / pagination.pageSize)}</span>
+          <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(pagination.page + 1)}>Next</button>
+          <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(Math.ceil(pagination.totalCount / pagination.pageSize))}>Last</button>
+        </div>
+      )}
 
       <div className="col-toggles compact-toggles">
         <strong style={{ width: '100%' }}>Application columns</strong>
@@ -294,11 +325,6 @@ export default function Applications() {
           <button className="btn btn-grey" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
         </div>
       )}
-
-      <div className="delete-actions">
-        <div><strong>{selectedIds.size}</strong> selected</div>
-        <button className="btn btn-green" onClick={bulkMarkApplied} disabled={selectedIds.size === 0}>Mark selected as applied</button>
-      </div>
 
       <div className="table-wrap">
         {loading ? (
@@ -321,16 +347,9 @@ export default function Applications() {
                   onChange={toggleSelectAll}
                 />
               </th>
-              {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => handleSort(key)}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
+              {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => updateSort(key)}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
             <tbody>
-              {applications.map((app) => {
-                const followUpDate = parseDate(app.follow_up_at)
-                const isOverdue = followUpDate && followUpDate < new Date()
-                const isDueToday = followUpDate && (() => {
-                  const today = startOfLocalDay()
-                  return followUpDate >= today && followUpDate < new Date(today.getTime() + 86400000)
-                })()
-                return (
+              {applications.map((app) => (
                 <tr key={app.id} className={selectedIds.has(app.id) ? 'selected-row' : ''}>
                   <td className="row-select-cell">
                     <input
@@ -360,8 +379,6 @@ export default function Applications() {
                           }}>Mon</button>
                           {app.follow_up_at && <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: '' })}>Clear</button>}
                         </div>
-                        {isOverdue && <span className="follow-up-badge overdue">Overdue</span>}
-                        {isDueToday && <span className="follow-up-badge due-today">Due today</span>}
                       </div>
                     </td>
                   )}
@@ -369,8 +386,7 @@ export default function Applications() {
                   {!hiddenColumns.includes('url') && <td><button className="btn btn-blue" onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button></td>}
                   <td><button className="btn btn-green" onClick={() => markApplied(app)}>Mark applied</button></td>
                 </tr>
-                )
-              })}
+              ))}
             </tbody>
           </table>
         )}
