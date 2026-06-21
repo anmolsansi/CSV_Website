@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from alembic.config import Config as AlembicConfig
@@ -14,8 +15,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
+from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
 from .routers import auth_router, crm, email, rows, upload
+from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
     alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
@@ -25,21 +28,11 @@ else:
     from .database import Base, engine
     Base.metadata.create_all(bind=engine)
 
-api_app = FastAPI(title="CSV URL Tracker")
-
-api_app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
-
-app.include_router(auth_router.router)
-app.include_router(upload.router)
-app.include_router(rows.router)
-app.include_router(crm.router)
-app.include_router(email.router)
-
 scheduler = BackgroundScheduler()
 
 
-@api_app.on_event("startup")
-def start_scheduler():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     scheduler.add_job(
         cleanup_clicked_rows,
         "interval",
@@ -47,11 +40,30 @@ def start_scheduler():
         id="cleanup_clicked_rows",
     )
     scheduler.start()
-
-
-@api_app.on_event("shutdown")
-def stop_scheduler():
+    yield
     scheduler.shutdown()
+
+
+app = FastAPI(title="CSV URL Tracker", lifespan=lifespan)
+
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.FRONTEND_URL],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(MetricsMiddleware)
+
+if settings.SENTRY_DSN:
+    init_sentry(settings.SENTRY_DSN, settings.ENVIRONMENT)
+
+app.include_router(auth_router.router)
+app.include_router(upload.router)
+app.include_router(rows.router)
+app.include_router(crm.router)
+app.include_router(email.router)
 
 
 @api_app.get("/health")

@@ -136,6 +136,12 @@ def list_rows(
     search_bucket: str | None = Query(None),
     decision: str | None = Query(None),
     sponsorship_status: str | None = Query(None),
+    fit_category: str | None = Query(None),
+    seniority_level: str | None = Query(None),
+    work_model: str | None = Query(None),
+    role_family: str | None = Query(None),
+    salary_min: float | None = Query(None),
+    salary_max: float | None = Query(None),
     q: str | None = Query(None),
     opened_only: bool = Query(False),
     unopened_only: bool = Query(False),
@@ -163,6 +169,20 @@ def list_rows(
         query = query.filter(func.lower(CsvRow.decision) == decision.lower())
     if sponsorship_status:
         query = query.filter(func.lower(CsvRow.sponsorship_status) == sponsorship_status.lower())
+    if fit_category:
+        query = query.filter(func.lower(CsvRow.fit_category) == fit_category.lower())
+    if seniority_level:
+        query = query.filter(func.lower(CsvRow.seniority_level) == seniority_level.lower())
+    if work_model:
+        query = query.filter(func.lower(CsvRow.work_model_extracted) == work_model.lower())
+    if role_family:
+        query = query.filter(func.lower(CsvRow.role_family) == role_family.lower())
+    if salary_min is not None:
+        query = query.filter(CsvRow.salary_min_extracted.isnot(None))
+        query = query.filter(func.cast(CsvRow.salary_min_extracted, Float) >= salary_min)
+    if salary_max is not None:
+        query = query.filter(CsvRow.salary_max_extracted.isnot(None))
+        query = query.filter(func.cast(CsvRow.salary_max_extracted, Float) <= salary_max)
     if has_error:
         query = query.filter(CsvRow.error.isnot(None), CsvRow.error != "")
     if jd_missing:
@@ -209,6 +229,10 @@ def list_rows(
             "search_buckets": _filter_option_values(db, user.id, CsvRow.search_bucket),
             "decisions": _filter_option_values(db, user.id, CsvRow.decision),
             "sponsorship_statuses": _filter_option_values(db, user.id, CsvRow.sponsorship_status),
+            "fit_categories": _filter_option_values(db, user.id, CsvRow.fit_category),
+            "seniority_levels": _filter_option_values(db, user.id, CsvRow.seniority_level),
+            "work_models": _filter_option_values(db, user.id, CsvRow.work_model_extracted),
+            "role_families": _filter_option_values(db, user.id, CsvRow.role_family),
         },
         "stats": _row_stats(
             db,

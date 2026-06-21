@@ -64,6 +64,13 @@ function GoalProgress({ goals, today }) {
   )
 }
 
+function SectionSpinner() {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', color: '#6b7280', fontSize: 13 }}>
+    <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+    <span>Loading...</span>
+  </div>
+}
+
 export default function Analytics() {
   const [data, setData] = useState(null)
   const [funnel, setFunnel] = useState(null)
@@ -71,41 +78,92 @@ export default function Analytics() {
   const [bucketPerf, setBucketPerf] = useState([])
   const [goalData, setGoalData] = useState(null)
   const [weekly, setWeekly] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loadingData, setLoadingData] = useState(true)
+  const [loadingFunnel, setLoadingFunnel] = useState(true)
+  const [loadingAts, setLoadingAts] = useState(true)
+  const [loadingBucket, setLoadingBucket] = useState(true)
+  const [loadingGoals, setLoadingGoals] = useState(true)
+  const [loadingWeekly, setLoadingWeekly] = useState(true)
   const [showGoals, setShowGoals] = useState(false)
   const [goals, setGoals] = useState({ open_per_day: 30, apply_per_day: 10, followup_per_day: 5, applypilot_per_day: 5 })
 
-  const refresh = () => {
-    setLoading(true)
-    Promise.all([
-      api.getAnalytics(),
-      api.getFunnelAnalytics(),
-      api.getAtsPerformance(),
-      api.getBucketPerformance(),
-      api.getGoalProgress(),
-      api.getWeeklyReport(),
-    ]).then(([analytics, f, ats, buckets, g, w]) => {
-      setData(analytics)
-      setFunnel(f)
-      setAtsPerf(ats)
-      setBucketPerf(buckets)
-      setGoalData(g)
-      setWeekly(w)
-      if (g?.goals) setGoals(g.goals)
-    }).finally(() => setLoading(false))
-  }
+  const anyLoading = loadingData || loadingFunnel || loadingAts || loadingBucket || loadingGoals || loadingWeekly
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    setLoadingData(true)
+    api.getAnalytics().then((d) => {
+      setData(d)
+    }).catch(() => {}).finally(() => setLoadingData(false))
+  }, [])
+
+  useEffect(() => {
+    setLoadingFunnel(true)
+    api.getFunnelAnalytics().then((f) => {
+      setFunnel(f)
+    }).catch(() => {}).finally(() => setLoadingFunnel(false))
+  }, [])
+
+  useEffect(() => {
+    setLoadingAts(true)
+    api.getAtsPerformance().then((ats) => {
+      setAtsPerf(ats)
+    }).catch(() => {}).finally(() => setLoadingAts(false))
+  }, [])
+
+  useEffect(() => {
+    setLoadingBucket(true)
+    api.getBucketPerformance().then((buckets) => {
+      setBucketPerf(buckets)
+    }).catch(() => {}).finally(() => setLoadingBucket(false))
+  }, [])
+
+  useEffect(() => {
+    setLoadingGoals(true)
+    api.getGoalProgress().then((g) => {
+      setGoalData(g)
+      if (g?.goals) setGoals(g.goals)
+    }).catch(() => {}).finally(() => setLoadingGoals(false))
+  }, [])
+
+  useEffect(() => {
+    setLoadingWeekly(true)
+    api.getWeeklyReport().then((w) => {
+      setWeekly(w)
+    }).catch(() => {}).finally(() => setLoadingWeekly(false))
+  }, [])
+
+  const refresh = () => {
+    setLoadingData(true)
+    setLoadingFunnel(true)
+    setLoadingAts(true)
+    setLoadingBucket(true)
+    setLoadingGoals(true)
+    setLoadingWeekly(true)
+    Promise.allSettled([
+      api.getAnalytics().then((d) => { setData(d) }),
+      api.getFunnelAnalytics().then((f) => { setFunnel(f) }),
+      api.getAtsPerformance().then((ats) => { setAtsPerf(ats) }),
+      api.getBucketPerformance().then((buckets) => { setBucketPerf(buckets) }),
+      api.getGoalProgress().then((g) => { setGoalData(g); if (g?.goals) setGoals(g.goals) }),
+      api.getWeeklyReport().then((w) => { setWeekly(w) }),
+    ]).finally(() => {
+      setLoadingData(false)
+      setLoadingFunnel(false)
+      setLoadingAts(false)
+      setLoadingBucket(false)
+      setLoadingGoals(false)
+      setLoadingWeekly(false)
+    })
+  }
 
   const saveGoals = async () => {
     await api.updateGoals(goals)
     setShowGoals(false)
+    setLoadingGoals(true)
     const g = await api.getGoalProgress()
     setGoalData(g)
+    setLoadingGoals(false)
   }
-
-  if (loading) return <div className="container"><div className="empty-state"><div className="loading-spinner" /><p>Loading analytics...</p></div></div>
-  if (!data) return <div className="container"><div className="empty-state"><h3>Failed to load analytics</h3><p>Please try refreshing.</p></div></div>
 
   return (
     <div className="container">
@@ -116,7 +174,7 @@ export default function Analytics() {
         </div>
         <div>
           <button className="btn btn-grey" style={{ marginRight: 8 }} onClick={() => setShowGoals(!showGoals)}>Goals</button>
-          <button className="btn btn-blue" onClick={refresh}>Refresh</button>
+          <button className="btn btn-blue" onClick={refresh} disabled={anyLoading}>Refresh</button>
         </div>
       </div>
 
@@ -130,104 +188,174 @@ export default function Analytics() {
         </div>
       )}
 
-      <div className="stats-grid app-stats-grid">
-        <div className="stat-card"><span>Total URLs uploaded</span><strong>{data.total_urls}</strong></div>
-        <div className="stat-card"><span>Total opened</span><strong>{data.total_opened}</strong></div>
-        <div className="stat-card"><span>Total applied</span><strong>{data.total_applied}</strong></div>
-        <div className="stat-card"><span>Applied today</span><strong>{data.applied_today}</strong></div>
-        <div className="stat-card"><span>Applied last 7 days</span><strong>{data.applied_7d}</strong></div>
-        <div className="stat-card"><span>Opened not applied</span><strong>{data.opened_not_applied}</strong></div>
-        <div className="stat-card"><span>Follow-ups due</span><strong>{data.follow_ups_due}</strong></div>
-        <div className="stat-card"><span>Interviews</span><strong>{data.interviews}</strong></div>
-        <div className="stat-card"><span>Rejections</span><strong>{data.rejected}</strong></div>
-        <div className="stat-card"><span>Offers</span><strong>{data.offers}</strong></div>
-        <div className="stat-card"><span>Avg match score (applied)</span><strong>{data.avg_applied_score}%</strong></div>
-      </div>
+      {!loadingData && data ? (
+        <div className="stats-grid app-stats-grid">
+          <div className="stat-card"><span>Total URLs uploaded</span><strong>{data.total_urls}</strong></div>
+          <div className="stat-card"><span>Total opened</span><strong>{data.total_opened}</strong></div>
+          <div className="stat-card"><span>Total applied</span><strong>{data.total_applied}</strong></div>
+          <div className="stat-card"><span>Applied today</span><strong>{data.applied_today}</strong></div>
+          <div className="stat-card"><span>Applied last 7 days</span><strong>{data.applied_7d}</strong></div>
+          <div className="stat-card"><span>Opened not applied</span><strong>{data.opened_not_applied}</strong></div>
+          <div className="stat-card"><span>Follow-ups due</span><strong>{data.follow_ups_due}</strong></div>
+          <div className="stat-card"><span>Interviews</span><strong>{data.interviews}</strong></div>
+          <div className="stat-card"><span>Rejections</span><strong>{data.rejected}</strong></div>
+          <div className="stat-card"><span>Offers</span><strong>{data.offers}</strong></div>
+          <div className="stat-card"><span>Avg match score (applied)</span><strong>{data.avg_applied_score}%</strong></div>
+        </div>
+      ) : loadingData ? (
+        <div className="stats-grid app-stats-grid">
+          {Array.from({ length: 11 }).map((_, i) => (
+            <div className="stat-card" key={i}><SectionSpinner /></div>
+          ))}
+        </div>
+      ) : null}
 
-      {goalData && (
+      {!loadingGoals && goalData ? (
         <div className="chart-section" style={{ marginBottom: 16 }}>
           <h3>Today's Progress</h3>
           <GoalProgress goals={goalData.goals} today={goalData.today} />
         </div>
-      )}
+      ) : loadingGoals ? (
+        <div className="chart-section" style={{ marginBottom: 16 }}><h3>Today's Progress</h3><SectionSpinner /></div>
+      ) : null}
 
       <div className="analytics-charts">
-        <div className="chart-section">
-          <h3>Application Funnel</h3>
-          <FunnelChart stages={funnel?.stages} />
-          {funnel?.rates && (
-            <div className="funnel-rates">
-              <span>Open rate: {funnel.rates.open_rate}%</span>
-              <span>Application rate: {funnel.rates.application_rate}%</span>
-              <span>Interview rate: {funnel.rates.interview_rate}%</span>
-              <span>Rejection rate: {funnel.rates.rejection_rate}%</span>
-            </div>
-          )}
-        </div>
-
-        <div className="chart-section">
-          <h3>Applications by Status</h3>
-          <BarChart data={data.by_status} labelKey="name" countKey="count" />
-        </div>
-
-        <div className="chart-section">
-          <h3>ATS Performance</h3>
-          {atsPerf.length > 0 ? (
-            <table style={{ fontSize: 12 }}>
-              <thead><tr><th>ATS</th><th>Total</th><th>Applied</th><th>Interviews</th><th>Avg Score</th></tr></thead>
-              <tbody>{atsPerf.map((a) => <tr key={a.name}><td>{a.name}</td><td>{a.total}</td><td>{a.applied}</td><td>{a.interviews}</td><td>{a.avg_score}%</td></tr>)}</tbody>
-            </table>
-          ) : <p style={{ color: '#9ca3af', fontSize: 13 }}>No data</p>}
-        </div>
-
-        <div className="chart-section">
-          <h3>Search Bucket Performance</h3>
-          {bucketPerf.length > 0 ? (
-            <table style={{ fontSize: 12 }}>
-              <thead><tr><th>Bucket</th><th>Total</th><th>Applied</th><th>Opened not applied</th><th>Avg Score</th></tr></thead>
-              <tbody>{bucketPerf.map((b) => <tr key={b.name}><td>{b.name}</td><td>{b.total}</td><td>{b.applied}</td><td>{b.opened_not_applied}</td><td>{b.avg_score}%</td></tr>)}</tbody>
-            </table>
-          ) : <p style={{ color: '#9ca3af', fontSize: 13 }}>No data</p>}
-        </div>
-
-        <div className="chart-section">
-          <h3>Daily Applications (last 30 days)</h3>
-          <BarChart data={data.daily_applied} labelKey="date" countKey="count" />
-        </div>
-
-        <div className="chart-section">
-          <h3>Top Companies Opened</h3>
-          <BarChart data={data.top_companies_opened} labelKey="name" countKey="count" />
-        </div>
-
-        <div className="chart-section">
-          <h3>Top Companies Applied</h3>
-          <BarChart data={data.top_companies_applied} labelKey="name" countKey="count" />
-        </div>
-
-        {weekly && (
+        {!loadingFunnel ? (
           <div className="chart-section">
-            <h3>This Week's Summary</h3>
-            <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 8 }}>
-              <div className="stat-card"><span>Uploaded</span><strong>{weekly.uploaded}</strong></div>
-              <div className="stat-card"><span>Opened</span><strong>{weekly.opened}</strong></div>
-              <div className="stat-card"><span>Applied</span><strong>{weekly.applied}</strong></div>
-              <div className="stat-card"><span>Interviews</span><strong>{weekly.interviews}</strong></div>
-              <div className="stat-card"><span>Follow-ups done</span><strong>{weekly.followups_completed}</strong></div>
-            </div>
-            {weekly.top_companies?.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <strong style={{ fontSize: 13 }}>Top companies this week:</strong>
-                {weekly.top_companies.map((c) => <div key={c.name} style={{ fontSize: 12, color: '#374151' }}>{c.name} ({c.count})</div>)}
-              </div>
-            )}
-            {weekly.upcoming_followups?.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <strong style={{ fontSize: 13 }}>Upcoming follow-ups:</strong>
-                {weekly.upcoming_followups.map((f) => <div key={f.id} style={{ fontSize: 12, color: '#374151' }}>{f.company} - {f.title} ({new Date(f.follow_up_at).toLocaleDateString()})</div>)}
+            <h3>Application Funnel</h3>
+            <FunnelChart stages={funnel?.stages} />
+            {funnel?.rates && (
+              <div className="funnel-rates">
+                <span>Open rate: {funnel.rates.open_rate}%</span>
+                <span>Application rate: {funnel.rates.application_rate}%</span>
+                <span>Interview rate: {funnel.rates.interview_rate}%</span>
+                <span>Rejection rate: {funnel.rates.rejection_rate}%</span>
               </div>
             )}
           </div>
+        ) : (
+          <div className="chart-section"><h3>Application Funnel</h3><SectionSpinner /></div>
+        )}
+
+        {!loadingData && data ? (
+          <div className="chart-section">
+            <h3>Applications by Status</h3>
+            <BarChart data={data.by_status} labelKey="name" countKey="count" />
+          </div>
+        ) : loadingData ? (
+          <div className="chart-section"><h3>Applications by Status</h3><SectionSpinner /></div>
+        ) : null}
+
+        {!loadingAts ? (
+          <div className="chart-section">
+            <h3>ATS Performance</h3>
+            {atsPerf.length > 0 ? (
+              <table style={{ fontSize: 12 }}>
+                <thead><tr><th>ATS</th><th>Total</th><th>Applied</th><th>Interviews</th><th>Avg Score</th></tr></thead>
+                <tbody>{atsPerf.map((a) => <tr key={a.name}><td>{a.name}</td><td>{a.total}</td><td>{a.applied}</td><td>{a.interviews}</td><td>{a.avg_score}%</td></tr>)}</tbody>
+              </table>
+            ) : <p style={{ color: '#9ca3af', fontSize: 13 }}>No data</p>}
+          </div>
+        ) : (
+          <div className="chart-section"><h3>ATS Performance</h3><SectionSpinner /></div>
+        )}
+
+        {!loadingBucket ? (
+          <div className="chart-section">
+            <h3>Search Bucket Performance</h3>
+            {bucketPerf.length > 0 ? (
+              <table style={{ fontSize: 12 }}>
+                <thead><tr><th>Bucket</th><th>Total</th><th>Applied</th><th>Opened not applied</th><th>Avg Score</th></tr></thead>
+                <tbody>{bucketPerf.map((b) => <tr key={b.name}><td>{b.name}</td><td>{b.total}</td><td>{b.applied}</td><td>{b.opened_not_applied}</td><td>{b.avg_score}%</td></tr>)}</tbody>
+              </table>
+            ) : <p style={{ color: '#9ca3af', fontSize: 13 }}>No data</p>}
+          </div>
+        ) : (
+          <div className="chart-section"><h3>Search Bucket Performance</h3><SectionSpinner /></div>
+        )}
+
+        {!loadingData && data ? (
+          <div className="chart-section">
+            <h3>Daily Applications (last 30 days)</h3>
+            <BarChart data={data.daily_applied} labelKey="date" countKey="count" />
+          </div>
+        ) : loadingData ? (
+          <div className="chart-section"><h3>Daily Applications (last 30 days)</h3><SectionSpinner /></div>
+        ) : null}
+
+        {!loadingData && data ? (
+          <div className="chart-section">
+            <h3>Top Companies Opened</h3>
+            <BarChart data={data.top_companies_opened} labelKey="name" countKey="count" />
+          </div>
+        ) : loadingData ? (
+          <div className="chart-section"><h3>Top Companies Opened</h3><SectionSpinner /></div>
+        ) : null}
+
+        {!loadingData && data ? (
+          <div className="chart-section">
+            <h3>Top Companies Applied</h3>
+            <BarChart data={data.top_companies_applied} labelKey="name" countKey="count" />
+          </div>
+        ) : loadingData ? (
+          <div className="chart-section"><h3>Top Companies Applied</h3><SectionSpinner /></div>
+        ) : null}
+
+        {!loadingData && data?.by_fit_category?.length > 0 ? (
+          <div className="chart-section">
+            <h3>Fit Category Breakdown</h3>
+            <BarChart data={data.by_fit_category} labelKey="name" countKey="count" />
+          </div>
+        ) : null}
+
+        {!loadingData && data?.by_seniority?.length > 0 ? (
+          <div className="chart-section">
+            <h3>Seniority Level Breakdown</h3>
+            <BarChart data={data.by_seniority} labelKey="name" countKey="count" />
+          </div>
+        ) : null}
+
+        {!loadingData && data?.by_work_model?.length > 0 ? (
+          <div className="chart-section">
+            <h3>Work Model Breakdown</h3>
+            <BarChart data={data.by_work_model} labelKey="name" countKey="count" />
+          </div>
+        ) : null}
+
+        {!loadingData && data?.by_role_family?.length > 0 ? (
+          <div className="chart-section">
+            <h3>Role Family Breakdown</h3>
+            <BarChart data={data.by_role_family} labelKey="name" countKey="count" />
+          </div>
+        ) : null}
+
+        {!loadingWeekly ? (
+          weekly ? (
+            <div className="chart-section">
+              <h3>This Week's Summary</h3>
+              <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 8 }}>
+                <div className="stat-card"><span>Uploaded</span><strong>{weekly.uploaded}</strong></div>
+                <div className="stat-card"><span>Opened</span><strong>{weekly.opened}</strong></div>
+                <div className="stat-card"><span>Applied</span><strong>{weekly.applied}</strong></div>
+                <div className="stat-card"><span>Interviews</span><strong>{weekly.interviews}</strong></div>
+                <div className="stat-card"><span>Follow-ups done</span><strong>{weekly.followups_completed}</strong></div>
+              </div>
+              {weekly.top_companies?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <strong style={{ fontSize: 13 }}>Top companies this week:</strong>
+                  {weekly.top_companies.map((c) => <div key={c.name} style={{ fontSize: 12, color: '#374151' }}>{c.name} ({c.count})</div>)}
+                </div>
+              )}
+              {weekly.upcoming_followups?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <strong style={{ fontSize: 13 }}>Upcoming follow-ups:</strong>
+                  {weekly.upcoming_followups.map((f) => <div key={f.id} style={{ fontSize: 12, color: '#374151' }}>{f.company} - {f.title} ({new Date(f.follow_up_at).toLocaleDateString()})</div>)}
+                </div>
+              )}
+            </div>
+          ) : null
+        ) : (
+          <div className="chart-section"><h3>This Week's Summary</h3><SectionSpinner /></div>
         )}
       </div>
     </div>

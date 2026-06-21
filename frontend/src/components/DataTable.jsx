@@ -3,7 +3,8 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useMemo, useRef } from 'react'
 
 function sortIndicator(columnId, sort) {
   if (!sort || sort.sortBy !== columnId) {
@@ -45,6 +46,8 @@ export default function DataTable({
   pinnedColumns = [],
   density = 'comfortable',
 }) {
+  const parentRef = useRef(null)
+
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hidden.includes(c)),
     [columns, hidden]
@@ -118,6 +121,13 @@ export default function DataTable({
 
   const densityClass = density === 'compact' ? 'density-compact' : density === 'dense' ? 'density-dense' : ''
 
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => density === 'dense' ? 32 : density === 'compact' ? 40 : 52,
+    overscan: 10,
+  })
+
   return (
     <div className={`table-wrap ${densityClass}`}>
       <table role="table">
@@ -158,8 +168,13 @@ export default function DataTable({
             </tr>
           ))}
         </thead>
-        <tbody>
-          {table.getRowModel().rows.map((r) => {
+        <tbody ref={parentRef} style={{ overflow: 'auto', position: 'relative', maxHeight: '70vh' }}>
+          <tr>
+            <td colSpan={visibleColumns.length + 2} style={{ height: `${rowVirtualizer.getTotalSize()}px`, padding: 0, border: 'none' }} />
+          </tr>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const r = table.getRowModel().rows[virtualRow.index]
+            if (!r) return null
             const original = r.original
             return (
               <tr
@@ -167,7 +182,12 @@ export default function DataTable({
                 role="row"
                 className={selectedRowIds?.has(original.id) ? 'selected-row' : ''}
                 onClick={() => onRowClick?.(original)}
-                style={{ cursor: onRowClick ? 'pointer' : 'default' }}
+                style={{
+                  cursor: onRowClick ? 'pointer' : 'default',
+                  position: 'absolute',
+                  transform: `translateY(${virtualRow.start}px)`,
+                  width: '100%',
+                }}
               >
                 <td className="row-select-cell" role="cell">
                   <input
