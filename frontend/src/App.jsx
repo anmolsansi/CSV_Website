@@ -17,6 +17,7 @@ import ActiveSessionBar from './components/ActiveSessionBar'
 import CommandPalette from './components/CommandPalette'
 import DarkModeToggle from './components/DarkModeToggle'
 import SkipToContent from './components/SkipToContent'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const ToastContext = createContext(null)
 
@@ -76,18 +77,20 @@ function AuthenticatedApp({ user, onLogout }) {
           </div>
           <ActiveSessionBar />
           <main id="main-content" tabIndex={-1}>
-            <Routes>
-              <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
-              <Route path="/applications" element={<Applications />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/pipeline" element={<Pipeline />} />
-              <Route path="/sessions" element={<Sessions />} />
-              <Route path="/saved-views" element={<SavedViews />} />
-              <Route path="/applypilot" element={<ApplyPilotBatches />} />
-              <Route path="/duplicates" element={<Duplicates />} />
-              <Route path="/companies" element={<CompanyHistory />} />
-              <Route path="/import" element={<ImportExternal />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
+                <Route path="/applications" element={<Applications />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/pipeline" element={<Pipeline />} />
+                <Route path="/sessions" element={<Sessions />} />
+                <Route path="/saved-views" element={<SavedViews />} />
+                <Route path="/applypilot" element={<ApplyPilotBatches />} />
+                <Route path="/duplicates" element={<Duplicates />} />
+                <Route path="/companies" element={<CompanyHistory />} />
+                <Route path="/import" element={<ImportExternal />} />
+              </Routes>
+            </ErrorBoundary>
           </main>
         </div>
         <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} />

@@ -11,6 +11,13 @@ const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 const DENSITY_OPTIONS = ['comfortable', 'compact', 'dense']
 
+const COLUMN_PRESETS = {
+  essentials: ['url', 'company_guess', 'title', 'ats_group', 'search_bucket', 'location_group', 'decision', 'sponsorship_status', 'resume_match_score', 'posted_age_days', 'error'],
+  scoring: ['url', 'company_guess', 'title', 'resume_match_score', 'fit_category', 'score_confidence', 'seniority_level', 'role_family', 'required_years_min', 'core_languages_extracted', 'core_frameworks_extracted', 'matched_resume_skills', 'missing_or_weaker_skills', 'score_reason'],
+  location_salary: ['url', 'company_guess', 'title', 'is_usa_role', 'location_country', 'location_city', 'location_state', 'work_model_extracted', 'salary_min_extracted', 'salary_max_extracted', 'salary_currency_extracted'],
+  all: null,
+}
+
 function mergeColumnOrder(savedOrder, columns) {
   const validSaved = savedOrder.filter((col) => columns.includes(col))
   const missing = columns.filter((col) => !validSaved.includes(col))
@@ -143,6 +150,8 @@ export default function Dashboard() {
   const [pinnedColumns, setPinnedColumns] = useState(() => {
     try { return JSON.parse(localStorage.getItem('pinnedColumns') || '[]') } catch { return [] }
   })
+  const [columnSearch, setColumnSearch] = useState('')
+  const [activePreset, setActivePreset] = useState(null)
   const toast = useToast()
 
   const orderedColumns = useMemo(
@@ -196,6 +205,7 @@ export default function Dashboard() {
       ? hidden.filter((c) => c !== col)
       : [...hidden, col]
     setHidden(nextHidden)
+    setActivePreset(null)
     await savePreferences(nextHidden, columnOrder)
   }
 
@@ -380,6 +390,19 @@ export default function Dashboard() {
     })
   }
 
+  const applyPreset = async (presetName) => {
+    const presetColumns = COLUMN_PRESETS[presetName]
+    let nextHidden
+    if (presetColumns === null) {
+      nextHidden = []
+    } else {
+      nextHidden = columns.filter((col) => !presetColumns.includes(col))
+    }
+    setActivePreset(presetName)
+    setHidden(nextHidden)
+    await savePreferences(nextHidden, columnOrder)
+  }
+
   const handleBackupExport = async () => {
     try {
       const res = await api.exportBackup()
@@ -442,6 +465,10 @@ export default function Dashboard() {
       params.rowIds = [...selectedRowIds]
     } else if (exportScope === 'filtered') {
       params.atsGroup = filters.atsGroup || undefined
+    }
+    const visibleCols = orderedColumns.filter((col) => !hidden.includes(col))
+    if (visibleCols.length > 0 && visibleCols.length < orderedColumns.length) {
+      params.columns = visibleCols.join(',')
     }
     try {
       const res = await api.exportDashboard(params)
@@ -744,7 +771,40 @@ export default function Dashboard() {
             )}
           </div>
 
-          {!columnsCollapsed && orderedColumns.map((col, index) => (
+          {!columnsCollapsed && (
+            <>
+              <div className="col-presets">
+                <span className="col-presets-label">Presets:</span>
+                <div className="col-presets-group">
+                  {Object.keys(COLUMN_PRESETS).map((name) => (
+                    <button
+                      key={name}
+                      className={`btn btn-sm ${activePreset === name ? 'btn-blue' : 'btn-grey'}`}
+                      onClick={() => applyPreset(name)}
+                    >
+                      {name === 'essentials' ? 'Essentials' : name === 'scoring' ? 'Scoring' : name === 'location_salary' ? 'Location & Salary' : 'All'}
+                    </button>
+                  ))}
+                </div>
+                <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 8px' }} />
+                <button className="btn btn-sm btn-grey" onClick={() => { setHidden([]); setActivePreset(null); savePreferences([], columnOrder) }}>Show All</button>
+                <button className="btn btn-sm btn-grey" onClick={() => { setHidden([...columns]); setActivePreset(null); savePreferences([...columns], columnOrder) }}>Hide All</button>
+              </div>
+              <div className="col-search">
+                <input
+                  type="text"
+                  placeholder="Search columns..."
+                  value={columnSearch}
+                  onChange={(e) => setColumnSearch(e.target.value)}
+                  style={{ width: '100%', padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 13 }}
+                />
+              </div>
+            </>
+          )}
+
+          {!columnsCollapsed && orderedColumns
+            .filter((col) => !columnSearch || col.toLowerCase().includes(columnSearch.toLowerCase()))
+            .map((col, index) => (
             <div className="column-control" key={col}>
               <label>
                 <input

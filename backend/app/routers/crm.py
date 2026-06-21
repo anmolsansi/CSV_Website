@@ -415,6 +415,11 @@ def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_us
     top_opened = db.query(JobTrack.company, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "").group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(10).all()
     top_applied = db.query(JobTrack.company, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "", JobTrack.applied_at.isnot(None)).group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(10).all()
 
+    by_fit = db.query(CsvRow.fit_category, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.fit_category.isnot(None), CsvRow.fit_category != "").group_by(CsvRow.fit_category).order_by(desc(func.count(CsvRow.id))).all()
+    by_seniority = db.query(CsvRow.seniority_level, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.seniority_level.isnot(None), CsvRow.seniority_level != "").group_by(CsvRow.seniority_level).order_by(desc(func.count(CsvRow.id))).all()
+    by_work_model = db.query(CsvRow.work_model_extracted, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.work_model_extracted.isnot(None), CsvRow.work_model_extracted != "").group_by(CsvRow.work_model_extracted).order_by(desc(func.count(CsvRow.id))).all()
+    by_role_family = db.query(CsvRow.role_family, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.role_family.isnot(None), CsvRow.role_family != "").group_by(CsvRow.role_family).order_by(desc(func.count(CsvRow.id))).all()
+
     return {
         "total_urls": total_urls, "total_opened": total_opened, "total_applied": total_applied,
         "applied_today": applied_today, "applied_7d": applied_7d,
@@ -427,6 +432,10 @@ def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_us
         "daily_applied": [{"date": str(d), "count": c} for d, c in daily],
         "top_companies_opened": [{"name": n, "count": c} for n, c in top_opened],
         "top_companies_applied": [{"name": n, "count": c} for n, c in top_applied],
+        "by_fit_category": [{"name": n, "count": c} for n, c in by_fit],
+        "by_seniority": [{"name": n, "count": c} for n, c in by_seniority],
+        "by_work_model": [{"name": n, "count": c} for n, c in by_work_model],
+        "by_role_family": [{"name": n, "count": c} for n, c in by_role_family],
     }
 
 
@@ -1154,6 +1163,7 @@ def export_dashboard(
     format: Literal["csv", "json"] = Query("csv"),
     ats_group: str | None = Query(None),
     row_ids: str | None = Query(None),
+    columns: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1165,7 +1175,12 @@ def export_dashboard(
         if id_list:
             query = query.filter(CsvRow.id.in_(id_list))
     rows = query.order_by(CsvRow.id.desc()).all()
-    data = [_serialize_dashboard_row(r) for r in rows]
+    if columns:
+        col_list = [c.strip() for c in columns.split(",") if c.strip()]
+        export_cols = [c for c in col_list if c in CSV_COLUMNS]
+    else:
+        export_cols = CSV_COLUMNS
+    data = [{col: getattr(r, col) for col in export_cols} | {"clicked": r.clicked, "clicked_at": str(r.clicked_at) if r.clicked_at else ""} for r in rows]
     emit_event(db, user.id, "rows_exported", "dashboard", metadata={"count": len(data), "format": format})
     db.commit()
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

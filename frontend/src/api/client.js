@@ -7,6 +7,19 @@ const client = axios.create({
   withCredentials: true,
 })
 
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response) {
+      const { status } = error.response
+      if (status === 401 || status === 403) {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
 function todayWindowParams() {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
@@ -154,6 +167,7 @@ export const api = {
     if (params.format) qs.set('format', params.format)
     if (params.atsGroup) qs.set('ats_group', params.atsGroup)
     if (params.rowIds && params.rowIds.length) qs.set('row_ids', params.rowIds.join(','))
+    if (params.columns) qs.set('columns', params.columns)
     return client.get(`/crm/export/dashboard?${qs.toString()}`, { responseType: 'blob' })
   },
   exportApplications: (params = {}) => {
