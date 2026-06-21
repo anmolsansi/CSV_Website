@@ -17,16 +17,55 @@ from .database import Base
 
 # All CSV columns are stored as nullable text.
 CSV_COLUMNS = [
+    # Core job fields
     "ats_group", "location_group", "search_bucket", "title",
     "title_match_status", "title_reject_reason", "url", "display_domain",
     "company_guess", "job_id_guess", "canonical_company_job_key",
-    "page_number", "decision", "rejection_reasons", "posted_status",
-    "posted_value", "posted_source", "posted_age_days", "location_status",
-    "location_evidence", "sponsorship_status", "positive_sponsorship_matches",
+    "application_url", "application_dedupe_key",
+    "page_number", "decision", "rejection_reasons",
+    # Posting metadata
+    "posted_status", "posted_value", "posted_source", "posted_age_days",
+    # Location
+    "location_status", "location_evidence",
+    "is_usa_role", "location_country", "location_city", "location_state",
+    "location_raw_extracted", "location_confidence", "location_source",
+    # Sponsorship
+    "sponsorship_status", "positive_sponsorship_matches",
     "negative_sponsorship_matches", "sponsorship_evidence_snippet",
-    "positive_sponsorship_evidence_snippet", "clearance_matches",
-    "clearance_evidence_snippet", "jd_text_length", "jd_text",
-    "extraction_method", "retry_attempted", "error", "resume_match_score",
+    "positive_sponsorship_evidence_snippet",
+    # Clearance
+    "clearance_matches", "clearance_evidence_snippet",
+    # Job description
+    "jd_quality_status", "jd_quality_reasons",
+    "jd_text_length", "jd_text",
+    "extraction_method", "retry_attempted", "error", "source_file",
+    # Work model & salary
+    "work_model_extracted",
+    "salary_min_extracted", "salary_max_extracted", "salary_currency_extracted",
+    # Extracted posting metadata
+    "posted_status_extracted", "posted_value_extracted",
+    "posted_source_extracted", "posted_age_days_extracted",
+    # Extracted sponsorship
+    "sponsorship_status_extracted",
+    "positive_sponsorship_matches_extracted",
+    "negative_sponsorship_matches_extracted",
+    "positive_sponsorship_evidence_extracted",
+    "negative_sponsorship_evidence_extracted",
+    # Extracted clearance
+    "clearance_or_citizenship_extracted",
+    "clearance_or_citizenship_evidence_extracted",
+    # Education & employment
+    "education_requirement_extracted", "employment_type_extracted",
+    # Scoring & fit
+    "resume_match_score", "resume_score", "fit_category",
+    "score_confidence", "role_family", "seniority_level", "required_years_min",
+    # Skills extraction
+    "core_languages_extracted", "core_frameworks_extracted",
+    "core_cloud_devops_extracted", "database_requirements_extracted",
+    "ai_ml_requirements_extracted",
+    "matched_resume_skills", "missing_or_weaker_skills", "score_reason",
+    # JD usability
+    "closed_or_unusable_jd", "closed_or_unusable_reason",
 ]
 
 JOB_TRACK_STATUS_VALUES = [
@@ -125,6 +164,8 @@ class CsvRow(Base):
     company_guess = Column(Text)
     job_id_guess = Column(Text)
     canonical_company_job_key = Column(Text)
+    application_url = Column(Text)
+    application_dedupe_key = Column(Text)
     page_number = Column(Text)
     decision = Column(Text)
     rejection_reasons = Column(Text)
@@ -134,6 +175,13 @@ class CsvRow(Base):
     posted_age_days = Column(Text)
     location_status = Column(Text)
     location_evidence = Column(Text)
+    is_usa_role = Column(Text)
+    location_country = Column(Text)
+    location_city = Column(Text)
+    location_state = Column(Text)
+    location_raw_extracted = Column(Text)
+    location_confidence = Column(Text)
+    location_source = Column(Text)
     sponsorship_status = Column(Text)
     positive_sponsorship_matches = Column(Text)
     negative_sponsorship_matches = Column(Text)
@@ -141,12 +189,48 @@ class CsvRow(Base):
     positive_sponsorship_evidence_snippet = Column(Text)
     clearance_matches = Column(Text)
     clearance_evidence_snippet = Column(Text)
+    jd_quality_status = Column(Text)
+    jd_quality_reasons = Column(Text)
     jd_text_length = Column(Text)
     jd_text = Column(Text)
     extraction_method = Column(Text)
     retry_attempted = Column(Text)
     error = Column(Text)
+    source_file = Column(Text)
+    work_model_extracted = Column(Text)
+    salary_min_extracted = Column(Text)
+    salary_max_extracted = Column(Text)
+    salary_currency_extracted = Column(Text)
+    posted_status_extracted = Column(Text)
+    posted_value_extracted = Column(Text)
+    posted_source_extracted = Column(Text)
+    posted_age_days_extracted = Column(Text)
+    sponsorship_status_extracted = Column(Text)
+    positive_sponsorship_matches_extracted = Column(Text)
+    negative_sponsorship_matches_extracted = Column(Text)
+    positive_sponsorship_evidence_extracted = Column(Text)
+    negative_sponsorship_evidence_extracted = Column(Text)
+    clearance_or_citizenship_extracted = Column(Text)
+    clearance_or_citizenship_evidence_extracted = Column(Text)
+    education_requirement_extracted = Column(Text)
+    employment_type_extracted = Column(Text)
     resume_match_score = Column(Text)
+    resume_score = Column(Text)
+    fit_category = Column(Text)
+    score_confidence = Column(Text)
+    role_family = Column(Text)
+    seniority_level = Column(Text)
+    required_years_min = Column(Text)
+    core_languages_extracted = Column(Text)
+    core_frameworks_extracted = Column(Text)
+    core_cloud_devops_extracted = Column(Text)
+    database_requirements_extracted = Column(Text)
+    ai_ml_requirements_extracted = Column(Text)
+    matched_resume_skills = Column(Text)
+    missing_or_weaker_skills = Column(Text)
+    score_reason = Column(Text)
+    closed_or_unusable_jd = Column(Text)
+    closed_or_unusable_reason = Column(Text)
 
     user = relationship("User", back_populates="rows")
     job_track = relationship("JobTrack", back_populates="csv_row", uselist=False)
