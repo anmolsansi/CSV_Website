@@ -66,7 +66,7 @@ app.include_router(crm.router)
 app.include_router(email.router)
 
 
-@app.get("/health")
+@api_app.get("/health")
 def health():
     return {"status": "ok"}
 

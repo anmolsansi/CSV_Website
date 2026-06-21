@@ -65,6 +65,7 @@ export const api = {
       })
       .then((r) => r.data),
   recordClick: (rowId) => client.post(`/rows/${rowId}/click`).then((r) => r.data),
+  openRow: (rowId) => client.post(`/rows/${rowId}/click`).then((r) => r.data),
   deleteRows: (rowIds, mode = 'delete') =>
     client.delete('/rows', { data: { row_ids: rowIds, mode } }).then((r) => r.data),
   getPreferences: () => client.get('/preferences').then((r) => r.data),
