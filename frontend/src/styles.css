@@ -269,6 +269,7 @@ th { background: #f3f4f6; position: sticky; top: 0; }
 /* CSV Upload */
 .csv-upload { margin: 1rem 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; }
 .csv-upload-input { display: flex; align-items: center; gap: 12px; }
+.upload-template-link { text-decoration: none; white-space: nowrap; }
 .upload-spinner { color: #2563eb; font-weight: 600; font-size: 14px; }
 .upload-error { margin-top: 8px; color: #dc2626; font-size: 13px; }
 

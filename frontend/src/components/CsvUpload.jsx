@@ -14,12 +14,16 @@ function downloadInvalidRows(csvContent, filename) {
 
 function UploadResult({ result }) {
   const [expanded, setExpanded] = useState(false)
+  const missingOptionalColumns = result.missing_optional_columns || result.missing_expected_columns || []
+  const missingRequiredColumns = result.missing_required_columns || []
+  const unknownExtraColumns = result.unknown_extra_columns || []
 
   const hasIssues =
     result.duplicate_in_upload > 0 ||
     result.duplicate_from_history > 0 ||
     result.rows_missing_url > 0 ||
-    result.missing_expected_columns.length > 0
+    missingRequiredColumns.length > 0 ||
+    unknownExtraColumns.length > 0
 
   return (
     <div className="upload-result" role="region" aria-label="Upload result details">
@@ -58,16 +62,22 @@ function UploadResult({ result }) {
               <tr><td>Duplicates from history</td><td>{result.duplicate_from_history}</td></tr>
               <tr><td>Rows skipped (URL missing)</td><td className={result.rows_missing_url > 0 ? 'negative' : ''}>{result.rows_missing_url}</td></tr>
               <tr><td>Columns detected</td><td>{result.columns_detected.length}</td></tr>
-              {result.missing_expected_columns.length > 0 && (
+              {missingRequiredColumns.length > 0 && (
                 <tr>
-                  <td>Missing expected columns</td>
-                  <td className="negative">{result.missing_expected_columns.join(', ')}</td>
+                  <td>Missing required columns</td>
+                  <td className="negative">{missingRequiredColumns.join(', ')}</td>
                 </tr>
               )}
-              {result.unknown_extra_columns.length > 0 && (
+              {missingOptionalColumns.length > 0 && (
+                <tr>
+                  <td>Optional columns not included</td>
+                  <td className="muted">{missingOptionalColumns.join(', ')}</td>
+                </tr>
+              )}
+              {unknownExtraColumns.length > 0 && (
                 <tr>
                   <td>Unknown extra columns</td>
-                  <td className="muted">{result.unknown_extra_columns.join(', ')}</td>
+                  <td className="muted">{unknownExtraColumns.join(', ')}</td>
                 </tr>
               )}
             </tbody>
@@ -135,6 +145,9 @@ export default function CsvUpload({ onUploaded }) {
             Uploading...
           </span>
         )}
+        <a className="btn btn-grey btn-sm upload-template-link" href="/jobgrid_sample.csv" download>
+          Download CSV template
+        </a>
       </div>
       {error && <div className="upload-error" role="alert">{error}</div>}
       {result && (

@@ -1,0 +1,2 @@
+url,title,company_guess,ats_group,search_bucket,resume_match_score,location_group,sponsorship_status,posted_age_days,jd_text
+https://example.com/jobs/software-engineer,Software Engineer,ExampleCorp,greenhouse,backend,85,remote,positive,3,"Build APIs, own services, and collaborate with product teams."
