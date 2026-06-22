@@ -61,9 +61,11 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install backend dependencies
+        working-directory: ${{ github.workspace }}
         run: pip install -r backend/requirements.txt
 
       - name: Start backend server
+        working-directory: ${{ github.workspace }}
         run: |
           cd backend
           DATABASE_URL="postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_test" \
