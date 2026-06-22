@@ -81,8 +81,8 @@ def weekly_digest(subject: str, data: dict) -> str:
           <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:32px 40px;text-align:center;">
-              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;">JobGrid</h1>
-              <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Weekly Job Search Digest</p>
+              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;">{subject}</h1>
+              <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">JobGrid Weekly Job Search Digest</p>
             </td>
           </tr>
 
