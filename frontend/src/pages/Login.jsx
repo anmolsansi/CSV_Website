@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import { api } from '../api/client'
+
+const DEV_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 
 const PROVIDERS = [
   { id: 'google', label: 'Continue with Google', icon: 'G' },
@@ -9,6 +12,20 @@ const PROVIDERS = [
 export default function Login() {
   const params = new URLSearchParams(window.location.search)
   const error = params.get('error')
+  const [devLoginError, setDevLoginError] = useState('')
+  const [devLoginLoading, setDevLoginLoading] = useState(false)
+
+  const handleDevLogin = async () => {
+    setDevLoginError('')
+    setDevLoginLoading(true)
+    try {
+      await api.devLogin()
+      window.location.href = '/'
+    } catch {
+      setDevLoginError('Local test login is not available. Start the backend with TEST_AUTH=true.')
+      setDevLoginLoading(false)
+    }
+  }
 
   return (
     <div className="auth-page">
@@ -24,6 +41,7 @@ export default function Login() {
             Login failed. Please try again or use a different provider.
           </div>
         )}
+        {devLoginError && <div className="auth-error">{devLoginError}</div>}
 
         <div className="oauth-list">
           {PROVIDERS.map((provider) => (
@@ -41,6 +59,13 @@ export default function Login() {
             <span className="oauth-icon phone">☎</span>
             <span>Continue with phone</span>
           </button>
+
+          {DEV_LOGIN_ENABLED && (
+            <button className="oauth-button" type="button" onClick={handleDevLogin} disabled={devLoginLoading}>
+              <span className="oauth-icon">D</span>
+              <span>{devLoginLoading ? 'Signing in...' : 'Continue as local test user'}</span>
+            </button>
+          )}
         </div>
 
         <div className="auth-divider">
@@ -62,6 +87,7 @@ export default function Login() {
 
         <p className="auth-note">
           OAuth login is active now. Email and phone login can be added next.
+          {DEV_LOGIN_ENABLED && ' Local test login is enabled for this environment.'}
         </p>
       </div>
     </div>

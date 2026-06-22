@@ -35,6 +35,8 @@ function todayWindowParams() {
 
 export const api = {
   loginUrl: (provider) => `${API_URL}/auth/login/${provider}`,
+  devLogin: (email = 'test@jobgrid.dev') =>
+    client.post('/auth/dev-login', { email }).then((r) => r.data),
   me: () => client.get('/auth/me').then((r) => r.data),
   logout: () => client.post('/auth/logout'),
   uploadCsv: (file) => {
