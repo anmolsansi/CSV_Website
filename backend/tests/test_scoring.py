@@ -36,8 +36,12 @@ class TestSkills:
     def test_extract_skills(self):
         text = "We need Python, JavaScript, and React experience"
         skills = skills_extraction(text)
-        assert isinstance(skills, list)
+        assert isinstance(skills, dict)
+        assert "python" in skills["all_matched"]
+        assert "javascript" in skills["all_matched"]
+        assert "react" in skills["all_matched"]
 
     def test_empty_text(self):
         skills = skills_extraction("")
-        assert isinstance(skills, list)
+        assert isinstance(skills, dict)
+        assert skills["all_matched"] == []

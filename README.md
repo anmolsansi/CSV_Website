@@ -43,6 +43,8 @@ docker compose up --build
 
 - Frontend: <http://localhost:5173>
 - Backend API: <http://localhost:8000>
+- The dev compose file waits for Postgres to pass `pg_isready`, then waits for
+  the backend `/health` endpoint before starting the frontend.
 
 ### 3. Run locally (without Docker)
 
@@ -50,9 +52,9 @@ Backend:
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+TEST_AUTH=true DATABASE_URL=sqlite:///./dev.db uvicorn app.main:app --reload
 ```
 
 Frontend:
@@ -62,6 +64,41 @@ cd frontend
 npm install
 npm run dev
 ```
+
+For local development without OAuth credentials, set `TEST_AUTH=true` in
+`backend/.env` and `VITE_ENABLE_DEV_LOGIN=true` in `frontend/.env`, then use
+the "Continue as local test user" button.
+
+## Verification
+
+Backend tests require Python 3.12:
+
+```bash
+cd backend
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pytest tests/
+```
+
+Frontend build:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+Minimum usable API smoke test:
+
+```bash
+# Start the backend with TEST_AUTH=true first.
+python scripts/smoke_jobgrid.py --base-url http://localhost:8000
+```
+
+The smoke test logs in through `/auth/dev-login`, uploads a unique CSV, verifies
+rows, records a click, sends rows to Applications, and updates application
+status plus follow-up data. For non-test environments, pass `--cookie` or
+`--no-dev-login`.
 
 ## How it works
 
