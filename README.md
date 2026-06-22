@@ -1,58 +1,40 @@
-# CSV URL Tracker
+# JobGrid
 
-<!-- scaffold -->
-A per-user web app where authenticated users upload CSVs that render as a table.
-The `url` column appears as a button: **blue** when unvisited, **green** after a
-click (which opens the URL in a new tab). Rows are auto-deleted **2 days** after
-the button turns green. Multiple uploads are appended and deduplicated per user
-by `url`. Users can show/hide columns, and the preference is saved.
+JobGrid is a local-first job search command center. It turns job-list CSVs into
+an authenticated dashboard where you can review URLs, mark visited jobs, send
+rows into an Applications tracker, manage follow-ups, analyze progress, export
+data, and create ApplyPilot batches.
 
 ## Stack
 
-- **Frontend:** React (Vite) + TanStack Table
-- **Backend:** FastAPI + SQLAlchemy + APScheduler (cleanup job)
-- **Database:** PostgreSQL
-- **Auth:** OAuth 2.0 via Authlib (Google, Microsoft, Apple). OAuth-only (no
-  passwords). Accounts are linked by email, so signing in with any provider
-  that shares your email resolves to the same account.
+- Frontend: React, Vite, TanStack Table, Playwright.
+- Backend: FastAPI, SQLAlchemy, Alembic, APScheduler.
+- Database: PostgreSQL for Docker/prod, SQLite for local smoke and test runs.
+- Auth: OAuth for real accounts, plus gated local dev login with `TEST_AUTH=true`.
 
-## Setup
-
-### 1. Configure environment
+## Quick Start
 
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
-```
-
-Create Google OAuth credentials at
-<https://console.cloud.google.com/apis/credentials> with the redirect URI:
-
-```
-http://localhost:8000/auth/callback/google
-```
-
-Then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `backend/.env`, and set
-a long random `SECRET_KEY`.
-
-### 2. Run with Docker
-
-```bash
 docker compose up --build
 ```
 
 - Frontend: <http://localhost:5173>
 - Backend API: <http://localhost:8000>
-- The dev compose file waits for Postgres to pass `pg_isready`, then waits for
-  the backend `/health` endpoint before starting the frontend.
 
-### 3. Run locally (without Docker)
+The dev Compose stack waits for Postgres to pass `pg_isready`, waits for backend
+`/health`, then starts the frontend. The example env enables local test login so
+you can use the app without OAuth credentials while developing.
+
+## Local Run
 
 Backend:
 
 ```bash
 cd backend
-python3.12 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 TEST_AUTH=true DATABASE_URL=sqlite:///./dev.db uvicorn app.main:app --reload
 ```
@@ -65,9 +47,45 @@ npm install
 npm run dev
 ```
 
-For local development without OAuth credentials, set `TEST_AUTH=true` in
-`backend/.env` and `VITE_ENABLE_DEV_LOGIN=true` in `frontend/.env`, then use
-the "Continue as local test user" button.
+Open the frontend and choose "Continue as local test user". For real OAuth,
+configure provider credentials in `backend/.env` and disable `TEST_AUTH`.
+
+## CSV Uploads
+
+The only required CSV column is `url`. A URL-only CSV is valid and enough to
+start using the dashboard.
+
+Recommended optional columns unlock richer filtering, scoring, and tracking:
+
+- `title`
+- `company_guess`
+- `ats_group`
+- `search_bucket`
+- `resume_match_score`
+- `location_group`
+- `sponsorship_status`
+- `posted_age_days`
+- `jd_text`
+
+Download the sample template from the upload panel or open
+`frontend/public/jobgrid_sample.csv`.
+
+Upload behavior:
+
+- URLs are deduplicated per user.
+- Duplicate URLs in one upload are skipped and reported.
+- Rows missing `url` are skipped and can be downloaded as an invalid-rows CSV.
+- Missing optional columns are shown as context, not as upload errors.
+
+## Core Workflow
+
+1. Upload a CSV.
+2. Review and filter jobs on the Dashboard.
+3. Open a job URL to mark it visited.
+4. Send selected rows to Applications.
+5. Update status, applied date, follow-up date, and notes.
+6. Use Analytics, Pipeline, Saved Views, Duplicates, Company History, and
+   ApplyPilot pages for follow-through.
 
 ## Verification
 
@@ -75,7 +93,8 @@ Backend tests require Python 3.12:
 
 ```bash
 cd backend
-python3.12 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 pytest tests/
 ```
@@ -96,41 +115,35 @@ python scripts/smoke_jobgrid.py --base-url http://localhost:8000
 ```
 
 The smoke test logs in through `/auth/dev-login`, uploads a unique CSV, verifies
-rows, records a click, sends rows to Applications, and updates application
-status plus follow-up data. For non-test environments, pass `--cookie` or
-`--no-dev-login`.
+rows, records a click, sends rows to Applications, updates application status and
+follow-up data, and checks exports. For non-test environments, pass `--cookie`
+or `--no-dev-login`.
 
-## How it works
+## Database Migrations
 
-- **Dedup:** a unique constraint on `(user_id, url)` plus
-  `ON CONFLICT DO NOTHING` means re-uploading the same URL keeps only one row
-  (and preserves its click state/timer).
-- **Click tracking:** clicking the button calls `POST /rows/{id}/click`, which
-  sets `clicked=true` and `clicked_at=now()` server-side, so the green state
-  survives refresh/logout.
-- **Auto-delete:** an APScheduler job (default hourly) deletes rows where
-  `clicked_at < now() - 2 days`. Unvisited (blue) rows are never auto-deleted.
-- **Column visibility:** stored per user in `column_preferences.hidden_columns`.
+Alembic is the schema source of truth. The app runs `alembic upgrade head` on
+startup for non-SQLite databases. Any model or `CSV_COLUMNS` change must include
+a matching migration under `backend/alembic/versions`.
 
-## OAuth providers
+Schema parity is guarded by backend tests:
 
-Google, Microsoft, and Apple are supported via generic
-`/auth/login/{provider}` and `/auth/callback/{provider}` routes.
+- every `CSV_COLUMNS` entry must exist on `CsvRow`;
+- migration files must cover every CSV column;
+- Alembic must have a single current head.
+
+The older manual `backend/app/schema.py` patch path has been removed.
+
+## OAuth Providers
+
+Google, Microsoft, and Apple are supported through
+`/auth/login/{provider}` and `/auth/callback/{provider}`.
 
 Configure credentials in `backend/.env`:
 
-- **Google / Microsoft:** standard client id + secret. Add the redirect URI
+- Google and Microsoft: set client id and secret, then add redirect URI
   `http://localhost:8000/auth/callback/<provider>`.
-- **Apple:** requires an Apple Developer account. Create a Services ID
-  (`APPLE_CLIENT_ID`), note your `APPLE_TEAM_ID` and `APPLE_KEY_ID`, and download
-  the `.p8` private key. Mount it into the backend and point
-  `APPLE_PRIVATE_KEY_PATH` at it. The client secret is generated automatically
-  as a signed ES256 JWT at request time.
+- Apple: set `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and
+  `APPLE_PRIVATE_KEY_PATH`.
 
-To add another provider, register it in `backend/app/auth.py` and add its name
-to `SUPPORTED_PROVIDERS`.
-
-## Add new CSV columns
-
-The expected columns are defined in `CSV_COLUMNS` in `backend/app/models.py`.
-Update that list and add matching `Column(Text)` fields, then create a migration.
+To add another provider, register it in `backend/app/auth.py` and add its name to
+`SUPPORTED_PROVIDERS`.

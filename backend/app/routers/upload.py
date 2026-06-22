@@ -1,3 +1,4 @@
+import csv
 import io
 import uuid
 
@@ -14,6 +15,18 @@ from .crm import emit_event
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 EXPECTED_COLUMNS = set(CSV_COLUMNS)
+REQUIRED_COLUMNS = {"url"}
+OPTIONAL_COLUMNS = EXPECTED_COLUMNS - REQUIRED_COLUMNS
+
+
+def _read_csv(raw: bytes) -> pd.DataFrame:
+    sample = raw[:4096].decode("utf-8-sig", errors="ignore")
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
+        sep = dialect.delimiter
+    except csv.Error:
+        sep = ","
+    return pd.read_csv(io.BytesIO(raw), sep=sep, dtype=str)
 
 
 def _clean_url(url) -> str | None:
@@ -38,22 +51,24 @@ async def upload_csv(
     raw = await file.read()
     filename = file.filename or "unknown.csv"
 
-    # sep=None lets pandas sniff comma vs tab delimiter.
-    df = pd.read_csv(io.BytesIO(raw), sep=None, engine="python", dtype=str)
+    df = _read_csv(raw)
     df = df.where(pd.notnull(df), None)
 
     detected_columns = list(df.columns)
-    missing_expected = sorted(EXPECTED_COLUMNS - set(detected_columns))
+    missing_required = sorted(REQUIRED_COLUMNS - set(detected_columns))
+    missing_optional = sorted(OPTIONAL_COLUMNS - set(detected_columns))
     unknown_extra = sorted(set(detected_columns) - EXPECTED_COLUMNS)
 
-    if "url" not in df.columns:
+    if missing_required:
         raise HTTPException(
             400,
             detail={
                 "error": "CSV must contain a 'url' column",
                 "filename": filename,
                 "columns_detected": detected_columns,
-                "missing_expected_columns": missing_expected,
+                "required_columns": sorted(REQUIRED_COLUMNS),
+                "missing_required_columns": missing_required,
+                "missing_expected_columns": missing_required,
             },
         )
 
@@ -183,7 +198,11 @@ async def upload_csv(
         "duplicate_from_history": skipped_history_duplicates,
         "rows_missing_url": missing_url_count,
         "columns_detected": detected_columns,
-        "missing_expected_columns": missing_expected,
+        "required_columns": sorted(REQUIRED_COLUMNS),
+        "optional_columns_supported": sorted(OPTIONAL_COLUMNS),
+        "missing_required_columns": missing_required,
+        "missing_optional_columns": missing_optional,
+        "missing_expected_columns": missing_optional,
         "unknown_extra_columns": unknown_extra,
         "invalid_rows_csv": invalid_rows_csv,
     }

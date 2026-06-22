@@ -30,6 +30,20 @@ class TestUpload:
         data = resp.json()
         assert "batch_id" in data
         assert "inserted" in data
+        assert data["required_columns"] == ["url"]
+
+    def test_upload_url_only_csv_is_valid(self, auth_client):
+        csv_content = b"url\nhttps://minimal.example.com/job/1\n"
+        resp = auth_client.post(
+            "/upload",
+            files={"file": ("minimal.csv", csv_content, "text/csv")},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["inserted"] == 1
+        assert data["missing_required_columns"] == []
+        assert "missing_optional_columns" in data
+        assert "title" in data["missing_optional_columns"]
 
     def test_upload_csv_with_duplicate_urls(self, auth_client):
         csv_content = (
@@ -53,6 +67,8 @@ class TestUpload:
             files={"file": ("bad.csv", csv_content, "text/csv")},
         )
         assert resp.status_code == 400
+        data = resp.json()["detail"]
+        assert data["missing_required_columns"] == ["url"]
 
 
 class TestRows:
