@@ -1,8 +1,9 @@
 import { test as setup, expect } from '@playwright/test';
 
-const DEV_LOGIN_URL = '/auth/dev-login';
-const TEST_SEED_URL = '/test/seed';
-const TEST_RESET_URL = '/test/reset';
+const API_URL = 'http://localhost:8000';
+const DEV_LOGIN_URL = `${API_URL}/auth/dev-login`;
+const TEST_SEED_URL = `${API_URL}/test/seed`;
+const TEST_RESET_URL = `${API_URL}/test/reset`;
 
 setup('authenticate and seed test data', async ({ request }) => {
   // Reset test data first
