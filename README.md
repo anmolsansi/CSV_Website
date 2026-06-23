@@ -133,6 +133,7 @@ Schema parity is guarded by backend tests:
 
 The older manual `backend/app/schema.py` patch path has been removed.
 
+
 ## OAuth Providers
 
 Google, Microsoft, and Apple are supported through

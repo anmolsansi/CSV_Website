@@ -67,7 +67,7 @@ jobs:
       - name: Start backend server
         working-directory: ${{ github.workspace }}
         run: |
-          cd backend
+          cd ../backend
           DATABASE_URL="postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_test" \
           TEST_AUTH=true \
           SECRET_KEY=test-secret-ci \
