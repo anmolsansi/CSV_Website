@@ -87,7 +87,7 @@ test.describe('Analytics', () => {
 
   test('refresh button reloads analytics data', async ({ page }) => {
     const refreshBtn = page.locator('.page-header-row button', { hasText: 'Refresh' });
-    await expect(refreshBtn).Visible();
+    await expect(refreshBtn).toBeVisible();
     await refreshBtn.click();
     await page.waitForTimeout(2000);
     await expect(page.locator('.stats-grid.app-stats-grid')).toBeVisible();
@@ -95,11 +95,6 @@ test.describe('Analytics', () => {
 
   test('weekly summary section loads', async ({ page }) => {
     const section = page.locator('.chart-section', { hasText: "This Week's Summary" });
-    const isVisible = await section.isVisible().catch(() => false);
-    if (isVisible) {
-      const statCards = section.locator('.stat-card');
-      const count = await statCards.count();
-      expect(count).toBeGreaterThan(0);
-    }
+    await expect(section.locator('.stat-card').first()).toBeVisible({ timeout: 10000 });
   });
 });

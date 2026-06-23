@@ -10,6 +10,13 @@ const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', dec
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 const DENSITY_OPTIONS = ['comfortable', 'compact', 'dense']
+const EMPTY_FILTER_OPTIONS = {
+  atsGroups: [],
+  locationGroups: [],
+  searchBuckets: [],
+  decisions: [],
+  sponsorshipStatuses: [],
+}
 
 const COLUMN_PRESETS = {
   essentials: ['url', 'company_guess', 'title', 'ats_group', 'search_bucket', 'location_group', 'decision', 'sponsorship_status', 'resume_match_score', 'posted_age_days', 'error'],
@@ -68,6 +75,20 @@ function normalizeStats(stats) {
     totalUrls: stats.total_urls || 0,
     greenUrls: stats.green_urls || 0,
     greenToday: stats.green_today || 0,
+  }
+}
+
+function normalizeFilterOptions(options) {
+  if (!options) {
+    return EMPTY_FILTER_OPTIONS
+  }
+
+  return {
+    atsGroups: options.atsGroups || options.ats_groups || [],
+    locationGroups: options.locationGroups || options.location_groups || [],
+    searchBuckets: options.searchBuckets || options.search_buckets || [],
+    decisions: options.decisions || [],
+    sponsorshipStatuses: options.sponsorshipStatuses || options.sponsorship_statuses || [],
   }
 }
 
@@ -140,7 +161,7 @@ export default function Dashboard() {
   const [columnOrder, setColumnOrder] = useState([])
   const [sort, setSort] = useState(DEFAULT_SORT)
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
-  const [filterOptions, setFilterOptions] = useState({ atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
+  const [filterOptions, setFilterOptions] = useState(EMPTY_FILTER_OPTIONS)
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [columnsCollapsed, setColumnsCollapsed] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -172,7 +193,7 @@ export default function Dashboard() {
       setColumns(d.columns)
       setRows(d.rows)
       setStats(normalizeStats(d.stats))
-      setFilterOptions(d.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
+      setFilterOptions(normalizeFilterOptions(d.filter_options))
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
       setSelectedRowIds(new Set())
       setPagination({ page: d.page || nextPage, pageSize: d.page_size || nextPageSize, totalCount: d.total_count || d.rows.length, hasNext: d.has_next || false })
@@ -192,7 +213,7 @@ export default function Dashboard() {
       setColumns(rowData.columns)
       setRows(rowData.rows)
       setStats(normalizeStats(rowData.stats))
-      setFilterOptions(rowData.filter_options || { atsGroups: [], locationGroups: [], searchBuckets: [], decisions: [], sponsorshipStatuses: [] })
+      setFilterOptions(normalizeFilterOptions(rowData.filter_options))
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
       setSelectedRowIds(new Set())
