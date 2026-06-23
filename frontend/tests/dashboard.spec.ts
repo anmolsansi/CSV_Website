@@ -20,8 +20,10 @@ test.describe('Dashboard', () => {
     const totalCard = statsGrid.locator('.stat-card').filter({ hasText: 'Total URLs counted' });
     await expect(totalCard).toBeVisible();
 
-    const totalValue = await totalCard.locator('strong').textContent();
-    expect(Number(totalValue)).toBeGreaterThanOrEqual(20);
+    await expect.poll(async () => {
+      const totalValue = await totalCard.locator('strong').textContent();
+      return Number(totalValue);
+    }).toBeGreaterThanOrEqual(20);
   });
 
   test('loads data table with rows', async ({ page }) => {
@@ -137,13 +139,14 @@ test.describe('Dashboard', () => {
     const sortSelect = page.locator('#sort-column');
     await expect(sortSelect).toBeVisible();
 
-    const firstRowBefore = await page.locator('tbody tr').first().textContent();
+    const dataRows = page.locator('tbody tr[role="row"]');
+    const firstRowBefore = await dataRows.first().textContent();
 
     await sortSelect.selectOption('company_guess');
 
     await page.waitForTimeout(1500);
 
-    const firstRowAfter = await page.locator('tbody tr').first().textContent();
+    const firstRowAfter = await dataRows.first().textContent();
     expect(firstRowAfter).toBeTruthy();
   });
 

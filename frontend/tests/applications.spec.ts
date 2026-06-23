@@ -48,8 +48,10 @@ test.describe('Applications', () => {
     const totalCard = page.locator('.stat-card').filter({ hasText: 'Total' });
     await expect(totalCard).toBeVisible();
 
-    const value = await totalCard.locator('strong').textContent();
-    expect(Number(value)).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      const value = await totalCard.locator('strong').textContent();
+      return Number(value);
+    }).toBeGreaterThan(0);
   });
 
   test('multi-select rows with checkboxes', async ({ page }) => {

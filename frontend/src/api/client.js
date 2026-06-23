@@ -12,7 +12,9 @@ client.interceptors.response.use(
   (error) => {
     if (error.response) {
       const { status } = error.response
-      if (status === 401 || status === 403) {
+      const skipAuthRedirect = error.config?.skipAuthRedirect
+      const alreadyOnLogin = window.location.pathname === '/login'
+      if ((status === 401 || status === 403) && !skipAuthRedirect && !alreadyOnLogin) {
         window.location.href = '/login'
       }
     }
@@ -37,7 +39,7 @@ export const api = {
   loginUrl: (provider) => `${API_URL}/auth/login/${provider}`,
   devLogin: (email = 'test@jobgrid.dev') =>
     client.post('/auth/dev-login', { email }).then((r) => r.data),
-  me: () => client.get('/auth/me').then((r) => r.data),
+  me: () => client.get('/auth/me', { skipAuthRedirect: true }).then((r) => r.data),
   logout: () => client.post('/auth/logout'),
   uploadCsv: (file) => {
     const fd = new FormData()
