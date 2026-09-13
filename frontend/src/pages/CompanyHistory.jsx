@@ -14,39 +14,53 @@ const STATUS_COLORS = {
 export default function CompanyHistory() {
   const [company, setCompany] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [directory, setDirectory] = useState(null)
   const [history, setHistory] = useState(null)
   const [loading, setLoading] = useState(false)
-
-  const search = async () => {
-    if (!company.trim()) return
-    setLoading(true)
-    try {
-      const data = await api.getCompanyHistory(company.trim())
-      setHistory(data)
-    } catch {
-      setHistory(null)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      setCompany(searchInput)
-      search()
-    }
-  }
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
 
   useEffect(() => {
-    if (company) search()
-  }, [company])
+    let active = true
+    setLoading(true)
+    setError('')
+    api.getCompanies({ q: query, page }).then((data) => {
+      if (active) setDirectory(data)
+    }).catch(() => {
+      if (active) setError('Could not load remembered companies. Please retry.')
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [query, page, retry])
+
+  useEffect(() => {
+    if (!company) return
+    let active = true
+    setHistory(null)
+    setError('')
+    api.getCompanyHistory(company).then((data) => {
+      if (active) setHistory(data)
+    }).catch(() => {
+      if (active) setError('Could not load company history. Please retry.')
+    })
+    return () => { active = false }
+  }, [company, retry])
+
+  const search = () => {
+    setQuery(searchInput.trim())
+    setPage(1)
+    setCompany('')
+    setHistory(null)
+  }
+  const handleKeyDown = (e) => { if (e.key === 'Enter') search() }
 
   return (
     <div className="container">
       <div className="page-header-row">
         <div>
           <h2>Company History</h2>
-          <p>View all roles and status history for a company</p>
+          <p>Your saved jobs and companies, remembered across visits. Mark jobs applied after submitting.</p>
         </div>
       </div>
 
@@ -59,9 +73,27 @@ export default function CompanyHistory() {
           placeholder="Search company name..."
           style={{ flex: 1, padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14 }}
         />
-        <button className="btn btn-blue" onClick={() => { setCompany(searchInput); search() }}>Search</button>
+        <button className="btn btn-blue" onClick={search}>Search</button>
       </div>
 
+      {error && <div role="alert">{error} <button className="btn btn-grey" onClick={() => setRetry((value) => value + 1)}>Retry</button></div>}
+      {!loading && directory && (
+        <section aria-label="Remembered companies">
+          <h3>{directory.total_count} remembered companies</h3>
+          {directory.companies.length === 0 && <p>No companies found. Select jobs on the Dashboard and mark them applied to remember them here.</p>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {directory.companies.map((item) => (
+              <button className="btn btn-grey" key={item.company} onClick={() => setCompany(item.company)}>
+                {item.company} · {item.total} jobs · {item.applied} applied
+              </button>
+            ))}
+          </div>
+          <button className="btn btn-grey" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous companies</button>
+          <span> Page {page} </span>
+          <button className="btn btn-grey" disabled={!directory.has_next} onClick={() => setPage(page + 1)}>Next companies</button>
+        </section>
+      )}
+      {company && !history && !error && <p role="status">Loading company history…</p>}
       {loading && (
         <div className="empty-state"><div className="loading-spinner" /><p>Loading...</p></div>
       )}
@@ -87,7 +119,8 @@ export default function CompanyHistory() {
                 return (
                   <div key={role.track_id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{role.title}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{role.title || role.url}</div>
+                      {/^(https?):\/\//i.test(role.url) && <a href={role.url} target="_blank" rel="noopener noreferrer">View job</a>}
                       <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                         {role.ats_group && <span style={{ marginRight: 8 }}>{role.ats_group}</span>}
                         {role.opened_at && <span style={{ marginRight: 8 }}>Opened: {new Date(role.opened_at).toLocaleDateString()}</span>}
@@ -109,8 +142,8 @@ export default function CompanyHistory() {
 
       {!loading && !history && (
         <div className="empty-state">
-          <h3>Search for a company</h3>
-          <p>Enter a company name above to see all roles and application history.</p>
+          <h3>Select a remembered company</h3>
+          <p>Choose a company above to see its saved roles and application dates.</p>
         </div>
       )}
     </div>

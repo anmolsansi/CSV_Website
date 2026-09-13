@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { api } from '../api/client'
+import { reserveTabs, openJobs } from '../api/openJobs'
 import { useToast } from '../App'
 import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
@@ -174,6 +175,8 @@ export default function Dashboard() {
   const [columnSearch, setColumnSearch] = useState('')
   const [activePreset, setActivePreset] = useState(null)
   const toast = useToast()
+  const batchLock = useRef(false)
+  const [openingBatch, setOpeningBatch] = useState(false)
 
   const orderedColumns = useMemo(
     () => mergeColumnOrder(columnOrder, columns),
@@ -267,6 +270,8 @@ export default function Dashboard() {
 
   const updateFilter = async (key, value) => {
     const nextFilters = { ...filters, [key]: value }
+    if (key === 'openedOnly' && value) nextFilters.unopenedOnly = false
+    if (key === 'unopenedOnly' && value) nextFilters.openedOnly = false
     setFilters(nextFilters)
     await loadRows(sort, nextFilters, 1)
   }
@@ -284,8 +289,12 @@ export default function Dashboard() {
   const bulkStatusAction = async (status) => {
     if (selectedRowIds.size === 0) return
     const ids = [...selectedRowIds]
-    await api.bulkCreateApplicationsFromRows(ids)
-    await api.bulkUpdateApplications(ids, { status })
+    try {
+      await api.bulkCreateApplicationsFromRows(ids, status)
+    } catch {
+      toast('Could not save application status. Please retry.', 'error')
+      return
+    }
     toast(`Marked ${ids.length} as ${status}`, 'success')
     setSelectedRowIds(new Set())
     await loadRows(sort, filters)
@@ -294,9 +303,12 @@ export default function Dashboard() {
   const bulkFollowUp = async (preset) => {
     if (selectedRowIds.size === 0) return
     const ids = [...selectedRowIds]
-    await api.bulkCreateApplicationsFromRows(ids)
-    for (const id of ids) {
-      await api.setFollowUpPreset(id, preset).catch(() => {})
+    try {
+      const result = await api.bulkCreateApplicationsFromRows(ids)
+      await Promise.all(result.application_ids.map((id) => api.setFollowUpPreset(id, preset)))
+    } catch {
+      toast('Could not save all follow-ups. Please retry.', 'error')
+      return
     }
     toast(`Set follow-up for ${ids.length} applications`, 'success')
     setSelectedRowIds(new Set())
@@ -368,31 +380,40 @@ export default function Dashboard() {
     await loadRows(sort, filters)
   }
 
-  const openSelected = async () => {
-    if (selectedRowIds.size === 0) return
-    const toOpen = rows.filter((r) => selectedRowIds.has(r.id))
-    let blocked = 0
-    for (const row of toOpen) {
-      const win = window.open(row.data.url, '_blank', 'noopener')
-      if (!win) { blocked++; continue }
-      api.openRow(row.id).catch(() => {})
+  const openBatch = async (selectedRows = null) => {
+    if (batchLock.current) return
+    batchLock.current = true
+    setOpeningBatch(true)
+    let tabs = []
+    try {
+      tabs = reserveTabs(selectedRows ? selectedRows.length : 5)
+      if (!tabs.length) {
+        toast('Allow pop-ups for JobGrid in Chrome, then retry.', 'warning')
+        return
+      }
+      const candidates = selectedRows || (await api.getRows({
+        ...sort, ...filters, unopenedOnly: true, openableOnly: true, page: 1, pageSize: 5,
+      })).rows
+      const result = await openJobs(tabs, candidates, api.openRow)
+      if (!candidates.length) toast('No unopened links match the current filters.', 'warning')
+      else if (result.failed) toast(`Opened ${result.opened} tabs, but ${result.failed} visits could not be saved. Refresh before retrying.`, 'error')
+      else toast(`Opened ${result.opened} links.`, 'success')
+      if (candidates.length > tabs.length) toast('Some tabs were blocked. Allow pop-ups for JobGrid, then retry.', 'warning')
+      if (result.invalid) toast('Skipped an invalid or unavailable link.', 'warning')
+      await loadRows(sort, filters)
+    } catch {
+      tabs.forEach((tab) => { try { if (tab.location.href === 'about:blank') tab.close() } catch { /* Already navigated. */ } })
+      toast('Could not load or refresh jobs. Please retry.', 'error')
+    } finally {
+      batchLock.current = false
+      setOpeningBatch(false)
     }
-    if (blocked > 0) toast(`Browser blocked ${blocked} popup(s)`, 'warning')
-    await loadRows(sort, filters)
   }
 
-  const openNext5 = async () => {
-    const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
-    if (unclicked.length === 0) { toast('No unclicked rows remaining', 'warning'); return }
-    let blocked = 0
-    for (const row of unclicked) {
-      const win = window.open(row.data.url, '_blank', 'noopener')
-      if (!win) { blocked++; continue }
-      api.openRow(row.id).catch(() => {})
-    }
-    if (blocked > 0) toast(`Browser blocked ${blocked} popup(s)`, 'warning')
-    await loadRows(sort, filters)
+  const openSelected = () => {
+    if (selectedRowIds.size) return openBatch(rows.filter((row) => selectedRowIds.has(row.id)))
   }
+  const openNext5 = () => openBatch()
 
   const toggleDensity = () => {
     const idx = DENSITY_OPTIONS.indexOf(density)
@@ -505,12 +526,7 @@ export default function Dashboard() {
     }
   }
 
-  const handleClick = async (row) => {
-    const url = row.data.url
-    window.open(url, '_blank', 'noopener')
-    await api.openRow(row.id)
-    await loadRows(sort, filters)
-  }
+  const handleClick = (row) => openBatch([row])
 
   const handleKeyDown = useCallback((e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
@@ -759,7 +775,7 @@ export default function Dashboard() {
             <strong>{selectedRowIds.size}</strong> selected
           </div>
           <button className="btn btn-blue" onClick={openSelected} disabled={selectedRowIds.size === 0}>Open selected</button>
-          <button className="btn btn-blue" onClick={openNext5}>Open next 5</button>
+          <button className="btn btn-blue" onClick={openNext5} disabled={openingBatch || loading}>{openingBatch ? 'Opening…' : 'Open top 5 unopened'}</button>
           <button className="btn btn-blue" onClick={sendToApplications} disabled={selectedRowIds.size === 0}>Send selected to Applications</button>
           <button className="btn btn-blue" onClick={sendNext5ToApplications}>Send next 5 to Applications</button>
           <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size === 0}>Send 5 to ApplyPilot</button>

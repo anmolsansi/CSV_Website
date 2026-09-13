@@ -21,3 +21,6 @@ test-results/
 
 # Misc
 .DS_Store
+
+# Local browser authentication state
+frontend/tests/.auth/

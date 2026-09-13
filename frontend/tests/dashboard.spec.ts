@@ -255,7 +255,7 @@ test.describe('Dashboard', () => {
   });
 
   test('open next 5 button works', async ({ page }) => {
-    const openNext5Btn = page.locator('button', { hasText: 'Open next 5' });
+    const openNext5Btn = page.locator('button', { hasText: 'Open top 5 unopened' });
     await expect(openNext5Btn).toBeVisible();
 
     const [popup] = await Promise.all([

@@ -43,6 +43,7 @@ class BulkUpdateIn(BaseModel):
 
 class BulkFromRowsIn(BaseModel):
     row_ids: List[int]
+    status: Optional[Literal['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']] = None
 
 
 class SavedViewIn(BaseModel):

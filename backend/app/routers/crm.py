@@ -297,9 +297,9 @@ def bulk_update_apps(payload: BulkUpdateIn, db: Session = Depends(get_db), user:
             item.applied_at = parse_dt(data["applied_at"])
         if "follow_up_at" in data:
             item.follow_up_at = parse_dt(data["follow_up_at"])
-        if data.get("mark_applied"):
+        if data.get("mark_applied") or data.get("status") == "applied":
             item.status = "applied"
-            item.applied_at = now
+            item.applied_at = item.applied_at or now
         item.updated_at = now
         updated += 1
     db.commit()
@@ -309,36 +309,36 @@ def bulk_update_apps(payload: BulkUpdateIn, db: Session = Depends(get_db), user:
 @router.post("/from-rows/bulk")
 def bulk_create_from_rows(payload: BulkFromRowsIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.query(CsvRow).filter(CsvRow.id.in_(payload.row_ids), CsvRow.user_id == user.id).all()
+    if not payload.row_ids or len(rows) != len(set(payload.row_ids)):
+        raise HTTPException(404, "One or more rows not found")
     now = datetime.utcnow()
     created = 0
-    updated_count = 0
-    skipped = 0
+    items = []
     for row in rows:
-        existing = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
-        if existing:
-            existing.csv_row_id = row.id
-            existing.open_count = (existing.open_count or 0) + 1
-            existing.last_opened_at = now
-            existing.updated_at = now
-            existing.company = existing.company or row.company_guess
-            existing.title = existing.title or row.title
-            existing.ats_group = existing.ats_group or row.ats_group
-            existing.search_bucket = existing.search_bucket or row.search_bucket
-            existing.resume_match_score = existing.resume_match_score or row.resume_match_score
-            updated_count += 1
-        else:
-            item = JobTrack(
-                user_id=user.id, csv_row_id=row.id, url=row.url,
-                company=row.company_guess, title=row.title,
-                ats_group=row.ats_group, search_bucket=row.search_bucket,
-                resume_match_score=row.resume_match_score,
-                status="opened", opened_at=now, last_opened_at=now, open_count=1,
-            )
+        item = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
+        if item is None:
+            item = JobTrack(user_id=user.id, url=row.url, status="opened",
+                            opened_at=row.clicked_at, last_opened_at=row.clicked_at,
+                            open_count=1 if row.clicked else 0)
             db.add(item)
             created += 1
-    emit_event(db, user.id, "row_sent_to_applications", "bulk", metadata={"count": created + updated_count})
+        item.csv_row_id = row.id
+        for field, source in [("company", "company_guess"), ("title", "title"),
+                              ("ats_group", "ats_group"), ("search_bucket", "search_bucket"),
+                              ("resume_match_score", "resume_match_score")]:
+            setattr(item, field, getattr(item, field) or getattr(row, source))
+        if payload.status:
+            item.status = payload.status
+            if payload.status == "applied":
+                item.applied_at = item.applied_at or now
+        item.updated_at = now
+        items.append(item)
+    emit_event(db, user.id, "row_sent_to_applications", "bulk", metadata={"count": len(items)})
+    db.flush()
+    application_ids = [item.id for item in items]
     db.commit()
-    return {"created": created, "updated": updated_count, "skipped": skipped}
+    return {"created": created, "updated": len(items) - created, "skipped": 0,
+            "application_ids": application_ids}
 
 
 @router.patch("/applications/{item_id}")
@@ -354,9 +354,9 @@ def update_app(item_id: int, payload: JobTrackUpdateIn, db: Session = Depends(ge
         item.applied_at = parse_dt(data["applied_at"])
     if "follow_up_at" in data:
         item.follow_up_at = parse_dt(data["follow_up_at"])
-    if data.get("mark_applied"):
+    if data.get("mark_applied") or data.get("status") == "applied":
         item.status = "applied"
-        item.applied_at = datetime.utcnow()
+        item.applied_at = item.applied_at or datetime.utcnow()
     item.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(item)
@@ -1015,9 +1015,27 @@ def merge_duplicates(primary_id: int, duplicate_ids: list[int], db: Session = De
 
 # ─── Company History ──────────────────────────────────────────────────
 
-@router.get("/companies/{company}")
+@router.get("/companies")
+def list_companies(q: str = Query(""), page: int = Query(1, ge=1),
+                   page_size: int = Query(50, ge=1, le=100),
+                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    name = func.coalesce(func.nullif(func.trim(JobTrack.company), ""), "Unknown company")
+    key = func.lower(name)
+    query = db.query(func.min(name).label("company"), func.count(JobTrack.id).label("total"),
+                     func.count(JobTrack.applied_at).label("applied")).filter(JobTrack.user_id == user.id)
+    if q.strip():
+        query = query.filter(key.contains(q.strip().lower(), autoescape=True))
+    query = query.group_by(key)
+    total = query.count()
+    companies = query.order_by(key).offset((page - 1) * page_size).limit(page_size).all()
+    return {"companies": [dict(company=c.company, total=c.total, applied=c.applied) for c in companies],
+            "total_count": total, "page": page, "page_size": page_size,
+            "has_next": page * page_size < total}
+
+
+@router.get("/companies/{company:path}")
 def company_history(company: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id, func.lower(JobTrack.company) == company.lower()).all()
+    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id, func.lower(func.coalesce(func.nullif(func.trim(JobTrack.company), ""), "Unknown company")) == company.strip().lower()).all()
     rows = []
     for t in tracks:
         rows.append({

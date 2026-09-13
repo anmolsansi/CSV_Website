@@ -145,6 +145,7 @@ def list_rows(
     q: str | None = Query(None),
     opened_only: bool = Query(False),
     unopened_only: bool = Query(False),
+    openable_only: bool = Query(False),
     has_error: bool = Query(False),
     jd_missing: bool = Query(False),
     clicked_today_start: str | None = Query(None),
@@ -195,12 +196,13 @@ def list_rows(
             | func.lower(CsvRow.title).contains(needle)
         )
 
-    clicked_sub = db.query(JobTrack.csv_row_id).filter(JobTrack.user_id == user.id).correlate(CsvRow).scalar_subquery()
-
     if opened_only:
-        query = query.filter(clicked_sub.isnot(None))
+        query = query.filter(CsvRow.clicked.is_(True))
     if unopened_only:
-        query = query.filter(clicked_sub.is_(None))
+        query = query.filter(CsvRow.clicked.is_(False))
+    if openable_only:
+        url = func.lower(func.trim(CsvRow.url))
+        query = query.filter(url.like('https://%') | url.like('http://%'))
 
     total_count = query.count()
 
@@ -305,6 +307,13 @@ def delete_rows(
         db.commit()
         return {"archived": updated, "deleted": 0}
 
+    # Application snapshots outlive their source CSV rows.
+    db.query(JobTrack).filter(
+        JobTrack.user_id == user.id, JobTrack.csv_row_id.in_(payload.row_ids),
+    ).update({JobTrack.csv_row_id: None}, synchronize_session=False)
+    db.query(CsvRow).filter(
+        CsvRow.user_id == user.id, CsvRow.duplicate_of_id.in_(payload.row_ids),
+    ).update({CsvRow.duplicate_of_id: None}, synchronize_session=False)
     deleted = query.delete(synchronize_session=False)
     db.commit()
     return {"archived": 0, "deleted": deleted}

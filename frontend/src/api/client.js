@@ -46,7 +46,7 @@ export const api = {
     fd.append('file', file)
     return client.post('/upload', fd).then((r) => r.data)
   },
-  getRows: ({ sortBy = 'created_at', sortDir = 'desc', atsGroup = '', locationGroup = '', searchBucket = '', decision = '', sponsorshipStatus = '', q = '', openedOnly = false, unopenedOnly = false, hasError = false, jdMissing = false, page = 1, pageSize = 50 } = {}) =>
+  getRows: ({ sortBy = 'created_at', sortDir = 'desc', atsGroup = '', locationGroup = '', searchBucket = '', decision = '', sponsorshipStatus = '', q = '', openedOnly = false, unopenedOnly = false, openableOnly = false, hasError = false, jdMissing = false, page = 1, pageSize = 50 } = {}) =>
     client
       .get('/rows', {
         params: {
@@ -63,6 +63,7 @@ export const api = {
           ...(q ? { q } : {}),
           ...(openedOnly ? { opened_only: true } : {}),
           ...(unopenedOnly ? { unopened_only: true } : {}),
+          ...(openableOnly ? { openable_only: true } : {}),
           ...(hasError ? { has_error: true } : {}),
           ...(jdMissing ? { jd_missing: true } : {}),
         },
@@ -117,8 +118,8 @@ export const api = {
     client.post(`/crm/from-row/${rowId}`).then((r) => r.data),
   bulkUpdateApplications: (ids, patch) =>
     client.patch('/crm/applications/bulk', { ids, patch }).then((r) => r.data),
-  bulkCreateApplicationsFromRows: (rowIds) =>
-    client.post('/crm/from-rows/bulk', { row_ids: rowIds }).then((r) => r.data),
+  bulkCreateApplicationsFromRows: (rowIds, status) =>
+    client.post('/crm/from-rows/bulk', { row_ids: rowIds, ...(status ? { status } : {}) }).then((r) => r.data),
   getApplicationStats: (params = {}) =>
     client.get('/crm/stats', { params }).then((r) => r.data),
 
@@ -222,6 +223,7 @@ export const api = {
   getBatchIntelligence: (rowIds) => client.get(`/crm/intelligence/batch?row_ids=${rowIds.join(',')}`).then((r) => r.data),
 
   // CRM - Company history
+  getCompanies: (params = {}) => client.get('/crm/companies', { params }).then((r) => r.data),
   getCompanyHistory: (company) => client.get(`/crm/companies/${encodeURIComponent(company)}`).then((r) => r.data),
 
   // CRM - Duplicates

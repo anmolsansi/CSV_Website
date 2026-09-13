@@ -32,7 +32,7 @@ test.describe('Company History', () => {
 
   test('loads company history page with header', async ({ page }) => {
     await expect(page.locator('h2')).toContainText('Company History');
-    await expect(page.locator('.page-header-row p')).toContainText('View all roles and status history');
+    await expect(page.locator('.page-header-row p')).toContainText('Your saved jobs and companies');
   });
 
   test('search input and button are visible', async ({ page }) => {
@@ -46,7 +46,7 @@ test.describe('Company History', () => {
   test('empty state shown before search', async ({ page }) => {
     const emptyState = page.locator('.empty-state');
     await expect(emptyState).toBeVisible();
-    await expect(emptyState).toContainText('Search for a company');
+    await expect(emptyState).toContainText('Select a remembered company');
   });
 
   test('can search for a company', async ({ page }) => {
