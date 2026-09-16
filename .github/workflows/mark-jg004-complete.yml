@@ -1,0 +1,88 @@
+name: Mark JG-004 complete
+
+on:
+  push:
+    branches:
+      - docs/jg-004-complete
+    paths:
+      - .github/workflows/mark-jg004-complete.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-roadmap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/jg-004-complete
+          fetch-depth: 0
+      - name: Mark only JG-004 completed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md')
+          text = path.read_text()
+          start_marker = '<a id="jg-004"></a>'
+          end_marker = '<a id="jg-005"></a>'
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          section = text[start:end]
+
+          status_old = '**Status:** PROPOSED / unchecked  '
+          status_new = '**Status:** COMPLETED / locally verified  '
+          if section.count(status_old) != 1:
+              raise SystemExit(f'Expected one JG-004 proposed status, found {section.count(status_old)}')
+          section = section.replace(status_old, status_new, 1)
+
+          issue_old = '- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.'
+          issue_new = '- External issue: [#34](https://github.com/anmolsansi/CSV_Website/issues/34), closed as completed.'
+          if section.count(issue_old) != 1:
+              raise SystemExit(f'Expected one JG-004 external issue placeholder, found {section.count(issue_old)}')
+          section = section.replace(issue_old, issue_new, 1)
+
+          intake_old = '**PLANNED; waits for JG-003 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.'
+          intake_new = '**COMPLETED / locally verified.** JG-004 was implemented in PR #35 and merged to `main` at `29e5f3a`. The Dashboard now provides complete v2 backup export, verify-only restore preview, deliberate merge restore, explicit legacy limitations, retry-safe failure handling, privacy-safe restore summaries, and post-restore Dashboard/Applications/Companies refresh. The two-account recoverability flow is exercised by Playwright with exact company/status/date assertions after reload. GitHub Actions CI run #44 passed frontend build, backend compile, backend pytest, and the Playwright E2E suite. Issue #34 is closed as completed. This completion does not claim staging acceptance or release.'
+          if section.count(intake_old) != 1:
+              raise SystemExit(f'Expected one JG-004 planned intake result, found {section.count(intake_old)}')
+          section = section.replace(intake_old, intake_new, 1)
+
+          acceptance_start = section.index('#### Acceptance criteria')
+          acceptance_end = section.index('#### Release, rollout and rollback', acceptance_start)
+          acceptance = section[acceptance_start:acceptance_end]
+          unchecked = acceptance.count('- [ ]')
+          if unchecked != 7:
+              raise SystemExit(f'Expected 7 unchecked JG-004 acceptance items, found {unchecked}')
+          acceptance = acceptance.replace('- [ ]', '- [x]')
+          section = section[:acceptance_start] + acceptance + section[acceptance_end:]
+
+          text = text[:start] + section + text[end:]
+
+          checklist_old = '- [ ] [JG-004 — Build restore preview and prove recoverability in the UI](#jg-004)'
+          checklist_new = '- [x] [JG-004 — Build restore preview and prove recoverability in the UI](#jg-004)'
+          if text.count(checklist_old) != 1:
+              raise SystemExit(f'Expected one unchecked ordered JG-004 item, found {text.count(checklist_old)}')
+          text = text.replace(checklist_old, checklist_new, 1)
+
+          # Final scoped assertions before writing.
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          final = text[start:end]
+          assert '**Status:** COMPLETED / locally verified' in final
+          assert final[final.index('#### Acceptance criteria'):final.index('#### Release, rollout and rollback')].count('- [ ]') == 0
+          assert '[#34](https://github.com/anmolsansi/CSV_Website/issues/34)' in final
+          assert 'PR #35' in final and 'CI run #44' in final
+          assert checklist_new in text
+          path.write_text(text)
+          PY
+      - name: Commit roadmap completion and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md
+          git commit -m "docs(roadmap): mark JG-004 completed (#34)"
+          git rm .github/workflows/mark-jg004-complete.yml
+          git commit -m "chore(docs): remove JG-004 completion helper (#34)"
+          git push origin HEAD:docs/jg-004-complete
