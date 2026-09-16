@@ -139,7 +139,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **R2 — Make filtered exports match browsing**
 
-- [ ] [JG-005 — Extract one account-scoped query builder without changing list behavior](#jg-005)
+- [x] [JG-005 — Extract one account-scoped query builder without changing list behavior](#jg-005)
 - [ ] [JG-006 — Route every export through the shared filter contract](#jg-006)
 - [ ] [JG-007 — Unify browser and saved-view query serialization](#jg-007)
 
@@ -1219,7 +1219,7 @@ Upload 61 matching jobs plus two controls; set ATS, remote, sponsorship and sear
 <a id="jg-005"></a>
 ### JG-005 — Extract one account-scoped query builder without changing list behavior
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 5/64; group step 1/3
@@ -1397,13 +1397,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-005 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: test_each_filter_and_pair: explicit expected IDs
-- [ ] Required regression passes: test_two_users_same_url: no query leaks ownership
-- [ ] Required regression passes: test_null_and_empty_columns: same semantics as current documented filters
-- [ ] Required regression passes: test_page_boundaries_and_ties: deterministic ordering with no missing IDs
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-005 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: test_each_filter_and_pair: explicit expected IDs
+- [x] Required regression passes: test_two_users_same_url: no query leaks ownership
+- [x] Required regression passes: test_null_and_empty_columns: same semantics as current documented filters
+- [x] Required regression passes: test_page_boundaries_and_ties: deterministic ordering with no missing IDs
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -1421,12 +1421,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -1439,7 +1439,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-004 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** JG-005 extracted the shared account-scoped query contract, migrated the live row and application lists, and passed the focused query-contract regression suite plus the complete backend test suite. Staging and released status are not claimed by this local completion.
 
 ---
 
