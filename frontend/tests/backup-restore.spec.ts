@@ -66,7 +66,17 @@ test('restore failure keeps the selected file and allows retry', async ({ page }
   await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Injected restore failure')
   await expect(page.getByText('retry.json', { exact: true })).toBeVisible()
+
+  const applicationsRefresh = page.waitForResponse(response =>
+    response.request().method() === 'GET' && response.url().includes('/crm/applications?')
+  )
+  const companiesRefresh = page.waitForResponse(response =>
+    response.request().method() === 'GET' && response.url().includes('/crm/companies?')
+  )
   await page.getByRole('button', { name: 'Retry restore', exact: true }).click()
+  const [applicationsResponse, companiesResponse] = await Promise.all([applicationsRefresh, companiesRefresh])
+  expect(applicationsResponse.ok()).toBeTruthy()
+  expect(companiesResponse.ok()).toBeTruthy()
   await expect(page.getByText('Restore completed.', { exact: false })).toBeVisible()
   expect(restoreAttempts).toBe(2)
 })
