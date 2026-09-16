@@ -233,6 +233,17 @@ export const api = {
 
   // CRM - Backup
   exportBackup: () => client.get('/crm/backup/export', { responseType: 'blob' }),
+  exportBackupV2: () => client.get('/crm/backup/export', { params: { version: '2' }, responseType: 'blob' }),
+  previewBackup: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return client.post('/crm/backup/import?mode=verify_only', fd).then((r) => r.data)
+  },
+  restoreBackup: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return client.post('/crm/backup/import?mode=merge_missing', fd).then((r) => r.data)
+  },
   importBackup: (file) => {
     const fd = new FormData()
     fd.append('file', file)

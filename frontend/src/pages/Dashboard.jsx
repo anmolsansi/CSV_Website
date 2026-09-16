@@ -5,6 +5,7 @@ import { useToast } from '../App'
 import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
 import RowDrawer from '../components/RowDrawer'
+import BackupRestore from '../components/BackupRestore'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
 const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false }
@@ -443,21 +444,6 @@ export default function Dashboard() {
     await savePreferences(nextHidden, columnOrder)
   }
 
-  const handleBackupExport = async () => {
-    try {
-      const res = await api.exportBackup()
-      const url = URL.createObjectURL(res.data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `jobgrid_backup_${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast('Backup exported', 'success')
-    } catch {
-      toast('Export failed', 'error')
-    }
-  }
-
   const sendNext5ToApplications = async () => {
     const unclicked = rows.filter((r) => !r.clicked).slice(0, 5)
     if (unclicked.length === 0) { toast('No unclicked rows remaining', 'warning'); return }
@@ -603,7 +589,14 @@ export default function Dashboard() {
           </select>
           <button className="btn btn-grey" onClick={handleExport}>Download</button>
           <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
-          <button className="btn btn-grey" onClick={handleBackupExport}>Export Backup</button>
+          <BackupRestore
+  onRestored={() => Promise.all([
+    loadRows(sort, filters, 1),
+    api.getApplications({ page: 1, page_size: 1 }),
+    api.getCompanies({ page: 1, page_size: 1 }),
+  ])}
+  toast={toast}
+/>
           <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
           <button className="btn btn-grey btn-sm" onClick={toggleDensity} title="Toggle density">
             {density === 'comfortable' ? 'Comfortable' : density === 'compact' ? 'Compact' : 'Dense'}

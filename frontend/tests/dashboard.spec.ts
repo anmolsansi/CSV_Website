@@ -42,7 +42,7 @@ test.describe('Dashboard', () => {
       'https://example.com/job/2,TestCo,Frontend Engineer,lever',
     ].join('\n');
 
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.getByLabel('Upload CSV file');
     await fileInput.setInputFiles({
       name: 'test-upload.csv',
       mimeType: 'text/csv',

@@ -166,6 +166,26 @@ not automatic detection of submissions on external sites: mark them applied or
 import your application history. Previously incorrect actions cannot reliably
 be reconstructed; verify existing records in Applications.
 
+## Portable backup and restore
+
+The Dashboard keeps ordinary CSV/JSON data export separate from portable account backup.
+Use **Export complete backup** to download the v2 backup that includes all nine durable
+backup sections. To restore, choose **Restore backup file**. JobGrid uploads the file for
+`verify_only` preflight first and shows section-level create/skip/conflict counts plus safe
+warning codes. Nothing is written until you click **Restore backup**.
+
+Restore uses `merge_missing`: missing records are created, but an existing destination
+record wins on a natural-key conflict and is not overwritten by older backup values. A
+failed restore keeps the selected browser file so you can retry. A successful restore
+refreshes Dashboard data and can download a summary containing only backup metadata,
+counts, and warning codes, not job descriptions, notes, or other private records.
+
+V1 files remain accepted for compatibility, but they are incomplete. The UI explicitly
+warns that omitted history, dates, relationships, and sections cannot be reconstructed or
+described as restored. The selected file is held only in browser memory for the current
+page session. Portable backup is separate from database disaster-recovery scripts under
+`scripts/backup.sh` and `scripts/restore.sh`.
+
 ## Open top 5 unopened
 
 The Dashboard button chooses the first five unvisited HTTP(S) links across the
