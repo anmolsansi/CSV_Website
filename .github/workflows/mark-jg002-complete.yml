@@ -1,0 +1,94 @@
+name: Mark JG-002 complete in roadmap
+
+on:
+  push:
+    branches:
+      - chore/mark-jg002-complete
+
+permissions:
+  contents: write
+
+jobs:
+  mark-complete:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/mark-jg002-complete
+          fetch-depth: 0
+
+      - name: Update JG-002 completion markers
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '| Total | 17 | 64 | JG-001 completed; JG-002–JG-064 remain proposed |',
+                  '| Total | 17 | 64 | JG-001–JG-002 completed; JG-003–JG-064 remain proposed |',
+              ),
+              (
+                  '- [ ] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)',
+                  '- [x] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one match for {old!r}, found {count}')
+              text = text.replace(old, new, 1)
+
+          start_marker = '<a id="jg-002"></a>'
+          end_marker = '<a id="jg-003"></a>'
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          section = text[start:end]
+
+          status_old = '**Status:** PROPOSED / unchecked'
+          status_new = '**Status:** COMPLETED / locally verified'
+          if section.count(status_old) != 1:
+              raise SystemExit(f'Expected one JG-002 status line, found {section.count(status_old)}')
+          section = section.replace(status_old, status_new, 1)
+
+          intake_old = '**PLANNED; waits for JG-001 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.'
+          intake_new = '**COMPLETED / locally verified.** JG-002 was implemented in PR #30 and merged to `main` at `62c659a`. `BackupImportMap` persistence and migration 003, snapshot-safe export of all nine v2 sections, deterministic backup-local references, reference translation, counts/checksum validation, v1-default compatibility, regression coverage, and build-guide documentation are in place. GitHub Actions CI run #32 passed, including backend tests, compile, frontend build, and Playwright. Issue #29 is closed as completed. This completion does not claim JG-003 v2 restore/preflight behavior, staging acceptance, or release.'
+          if section.count(intake_old) != 1:
+              raise SystemExit(f'Expected one JG-002 intake result, found {section.count(intake_old)}')
+          section = section.replace(intake_old, intake_new, 1)
+
+          issue_old = '- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.'
+          issue_new = '- External issue: [#29](https://github.com/anmolsansi/CSV_Website/issues/29), closed as completed.'
+          if section.count(issue_old) != 1:
+              raise SystemExit(f'Expected one JG-002 external issue line, found {section.count(issue_old)}')
+          section = section.replace(issue_old, issue_new, 1)
+
+          unchecked = section.count('- [ ]')
+          if unchecked != 13:
+              raise SystemExit(f'Expected 13 unchecked JG-002 completion criteria, found {unchecked}')
+          section = section.replace('- [ ]', '- [x]')
+
+          text = text[:start] + section + text[end:]
+          path.write_text(text, encoding='utf-8')
+
+          updated = path.read_text(encoding='utf-8')
+          jg2 = updated[updated.index(start_marker):updated.index(end_marker, updated.index(start_marker))]
+          assert '**Status:** COMPLETED / locally verified' in jg2
+          assert '- [ ]' not in jg2
+          assert '- [x] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)' in updated
+          assert 'JG-001–JG-002 completed; JG-003–JG-064 remain proposed' in updated
+          assert 'Issue #29 is closed as completed' in jg2
+
+      - name: Commit roadmap update and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/mark-jg002-complete.yml
+          git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md
+          git commit -m "docs: mark JG-002 complete"
+          git push origin HEAD:chore/mark-jg002-complete
