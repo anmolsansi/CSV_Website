@@ -1,0 +1,55 @@
+name: JG-004 implementation helper
+
+on:
+  push:
+    branches:
+      - vsc/jg-004-restore-preview-ui
+    paths:
+      - .github/workflows/jg004-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vsc/jg-004-restore-preview-ui
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Apply exact JG-004 patch
+        run: python .github/scripts/apply_jg004.py
+      - name: Validate production frontend build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Commit atomic implementation groups
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add frontend/src/api/client.js
+          git commit -m "feat(backup): add v2 preview and restore client calls [03-05/18] (#34)"
+
+          git add frontend/src/components/BackupRestore.jsx
+          git commit -m "feat(backup): build deliberate restore preview workflow [06-11/18] (#34)"
+
+          git add frontend/src/pages/Dashboard.jsx
+          git commit -m "feat(dashboard): integrate backup restore controls [12-13/18] (#34)"
+
+          git add frontend/tests/backup-restore.spec.ts
+          git commit -m "test(backup): cover restore preview and round trip [14/18] (#34)"
+
+          git add README.md docs/JOBGRID_BUILD_GUIDE.md
+          git commit -m "docs(backup): document restore UI and limitations [15-16/18] (#34)"
+
+          git rm .github/scripts/apply_jg004.py .github/workflows/jg004-apply.yml
+          git commit -m "chore(jg004): remove temporary patch helper (#34)"
+          git push origin HEAD:vsc/jg-004-restore-preview-ui
