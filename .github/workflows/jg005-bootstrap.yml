@@ -177,10 +177,22 @@ jobs:
           SECRET_KEY: test-secret-key-for-ci
           FRONTEND_URL: http://localhost:5173
           ENVIRONMENT: test
+        shell: bash
         run: |
-          python -m compileall app
-          pytest tests/test_query_contracts.py -q
-          pytest tests/ -q
+          set -o pipefail
+          {
+            python -m compileall app
+            pytest tests/test_query_contracts.py -q
+            pytest tests/ -q
+          } 2>&1 | tee jg005-validation.log
+
+      - name: Upload JG-005 validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jg005-validation-log
+          path: backend/jg005-validation.log
+          if-no-files-found: warn
 
       - name: Document and mark JG-005 complete
         shell: bash
