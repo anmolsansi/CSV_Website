@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Literal
 
-from sqlalchemy import Float, asc, desc, func, or_
+from sqlalchemy import Float, asc, case, desc, func, or_
 from sqlalchemy.orm import Query, Session
 
-from ..models import CsvRow, JobTrack
+from ..models import CSV_COLUMNS, CsvRow, JobTrack
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,33 @@ class ApplicationQuery:
     applied_only: bool = False
     sort_by: str = "opened_at"
     sort_dir: Literal["asc", "desc"] = "desc"
+
+
+ROW_NUMERIC_SORT_COLUMNS = frozenset({
+    "page_number",
+    "posted_age_days",
+    "jd_text_length",
+    "resume_match_score",
+})
+
+
+def resolve_row_sort_column(sort_by: str):
+    """Resolve the shared RowQuery sort expression without depending on a router."""
+    if sort_by == "created_at":
+        return CsvRow.created_at
+    if sort_by == "clicked_at":
+        return CsvRow.clicked_at
+    if sort_by not in CSV_COLUMNS:
+        raise ValueError("Invalid sort column")
+
+    column = getattr(CsvRow, sort_by)
+    if sort_by in ROW_NUMERIC_SORT_COLUMNS:
+        cleaned = func.nullif(func.regexp_replace(column, r"[%,$,\s]", "", "g"), "")
+        return case(
+            (cleaned.op("~")(r"^-?\d+(\.\d+)?$"), func.cast(cleaned, Float)),
+            else_=None,
+        )
+    return column
 
 
 def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
@@ -123,10 +150,11 @@ def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
 def order_row_query(
     query: Query,
     params: RowQuery,
-    sort_column_resolver: Callable[[str], object],
+    sort_column_resolver: Callable[[str], object] | None = None,
 ) -> Query:
-    """Apply the current row sort adapter plus the stable id-desc tie breaker."""
-    sort_column = sort_column_resolver(params.sort_by)
+    """Apply the shared row ordering plus the stable id-desc tie breaker."""
+    resolver = sort_column_resolver or resolve_row_sort_column
+    sort_column = resolver(params.sort_by)
     order_func = asc if params.sort_dir == "asc" else desc
     return query.order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
 
