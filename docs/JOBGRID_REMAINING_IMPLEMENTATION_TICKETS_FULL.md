@@ -135,7 +135,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 - [x] [JG-001 — Freeze and validate the complete backup v2 record schema](#jg-001)
 - [x] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)
 - [ ] [JG-003 — Implement preflight and transactional full restore](#jg-003)
-- [ ] [JG-004 — Build restore preview and prove recoverability in the UI](#jg-004)
+- [x] [JG-004 — Build restore preview and prove recoverability in the UI](#jg-004)
 
 **R2 — Make filtered exports match browsing**
 
@@ -965,7 +965,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-004"></a>
 ### JG-004 — Build restore preview and prove recoverability in the UI
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** P1  
 **Type:** interface integration  
 **Execution position:** 4/64; group step 4/4
@@ -1148,13 +1148,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-004 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: backup-restore.spec.ts: restore one applied job and verify company/date after reload
-- [ ] Required regression passes: test_invalid_file_has_no_restore_button: parse failure is visible
-- [ ] Required regression passes: test_legacy_backup_warning: missing history is never described as restored
-- [ ] Required regression passes: test_import_failure_does_not_clear_selection: retry remains possible
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-004 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: backup-restore.spec.ts: restore one applied job and verify company/date after reload
+- [x] Required regression passes: test_invalid_file_has_no_restore_button: parse failure is visible
+- [x] Required regression passes: test_legacy_backup_warning: missing history is never described as restored
+- [x] Required regression passes: test_import_failure_does_not_clear_selection: retry remains possible
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -1186,11 +1186,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-003` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: [#34](https://github.com/anmolsansi/CSV_Website/issues/34), closed as completed.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-003 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** JG-004 was implemented in PR #35 and merged to `main` at `29e5f3a`. The Dashboard now provides complete v2 backup export, verify-only restore preview, deliberate merge restore, explicit legacy limitations, retry-safe failure handling, privacy-safe restore summaries, and post-restore Dashboard/Applications/Companies refresh. The two-account recoverability flow is exercised by Playwright with exact company/status/date assertions after reload. GitHub Actions CI run #44 passed frontend build, backend compile, backend pytest, and the Playwright E2E suite. Issue #34 is closed as completed. This completion does not claim staging acceptance or release.
 
 ---
 
