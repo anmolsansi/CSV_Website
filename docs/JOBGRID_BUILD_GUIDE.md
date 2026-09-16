@@ -178,7 +178,7 @@ Every one of the nine sections is present in `counts` even when its values are a
 
 ## Preflight and validation order
 
-The route reads at most 20 MiB plus one byte from the uploaded file. Oversize input is rejected before JSON parsing. The domain service then:
+The application rejects a backup-import request whose declared multipart `Content-Length` exceeds 21 MiB before the multipart parser runs. This leaves up to 1 MiB for multipart framing while retaining the exact JSON-file boundary. The route independently reads at most 20 MiB plus one byte from the uploaded file, so a missing or inaccurate `Content-Length` cannot bypass the 20 MiB backup limit. Oversize input is rejected before JSON parsing. The domain service then:
 
 1. Parses strict UTF-8 JSON and rejects duplicate keys/non-finite numbers.
 2. Validates the full v2 schema.
@@ -238,6 +238,7 @@ The frozen JG-001/JG-003 contract enforces:
 
 | Limit/error | Result |
 |---|---|
+| Declared multipart request body over 21 MiB | `413 backup_too_large` before multipart parsing |
 | Uncompressed UTF-8 JSON over 20 MiB | `413 backup_too_large` |
 | More than 20,000 total records | `413 record_limit_exceeded` |
 | `notes` over 20,000 characters | `413 field_too_large` |
@@ -286,7 +287,7 @@ The JG-003 restore suite proves:
 - an existing destination application keeps its newer status/note/company values
 - a malicious reference containing another account's database ID is rejected before writes
 - v1 input returns explicit incomplete-history warnings while preserving known application memory
-- the 20 MiB + one byte boundary returns `413`
+- the 20 MiB + one byte file boundary returns `413`; the application also rejects declared multipart requests above its 21 MiB transport guard
 
 Run the wider backend suite, compile check, frontend build, and Playwright through repository CI before merge.
 
