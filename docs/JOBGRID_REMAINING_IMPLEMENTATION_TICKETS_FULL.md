@@ -25,7 +25,7 @@ The requested deliverable is this Markdown plan. It does not authorize deploymen
 |---|---:|---:|---|
 | Reliability repairs and release gates | 7 | 24 | JG-001–JG-024 |
 | Ranked product features | 10 | 40 | JG-025–JG-064 |
-| Total | 17 | 64 | JG-001 completed; JG-002–JG-064 remain proposed |
+| Total | 17 | 64 | JG-001–JG-002 completed; JG-003–JG-064 remain proposed |
 
 Each ticket contains smaller ordered implementation checkpoints. Ticket sizes vary with the risk and contract; 64 tickets are not 64 equal slices of effort. Do not use completion count alone as a delivery forecast. A ticket with several adapters is a review unit; execute and verify its numbered checkpoints one at a time, splitting further if they no longer fit one logical change.
 
@@ -133,7 +133,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 **R1 — Repair complete backup and restore**
 
 - [x] [JG-001 — Freeze and validate the complete backup v2 record schema](#jg-001)
-- [ ] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)
+- [x] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)
 - [ ] [JG-003 — Implement preflight and transactional full restore](#jg-003)
 - [ ] [JG-004 — Build restore preview and prove recoverability in the UI](#jg-004)
 
@@ -498,7 +498,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-002"></a>
 ### JG-002 — Add import identity mapping and complete v2 export
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** P1  
 **Type:** schema/contract  
 **Execution position:** 2/64; group step 2/4
@@ -682,13 +682,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-002 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: test_export_every_section: nonempty fixture for all nine sections
-- [ ] Required regression passes: test_foreign_user_absent: export contains only the authenticated account
-- [ ] Required regression passes: test_export_reference_graph: all references resolve or are documented legacy detached events
-- [ ] Required regression passes: test_migration_up_down_empty: constraints and index exist and safe empty downgrade works
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-002 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: test_export_every_section: nonempty fixture for all nine sections
+- [x] Required regression passes: test_foreign_user_absent: export contains only the authenticated account
+- [x] Required regression passes: test_export_reference_graph: all references resolve or are documented legacy detached events
+- [x] Required regression passes: test_migration_up_down_empty: constraints and index exist and safe empty downgrade works
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -706,12 +706,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -720,11 +720,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-001` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: [#29](https://github.com/anmolsansi/CSV_Website/issues/29), closed as completed.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-001 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** JG-002 was implemented in PR #30 and merged to `main` at `62c659a`. `BackupImportMap` persistence and migration 003, snapshot-safe export of all nine v2 sections, deterministic backup-local references, reference translation, counts/checksum validation, v1-default compatibility, regression coverage, and build-guide documentation are in place. GitHub Actions CI run #32 passed, including backend tests, compile, frontend build, and Playwright. Issue #29 is closed as completed. This completion does not claim JG-003 v2 restore/preflight behavior, staging acceptance, or release.
 
 ---
 
