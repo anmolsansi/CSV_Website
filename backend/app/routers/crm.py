@@ -16,6 +16,7 @@ from ..scoring import _parse_score, priority_score as scoring_priority_score, im
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
+from ..services.row_queries import ApplicationQuery, build_application_query, order_application_query
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 SORT_FIELDS = {"company", "title", "ats_group", "search_bucket", "resume_match_score", "status", "opened_at", "applied_at", "follow_up_at", "created_at", "updated_at", "priority_score", "triage"}
@@ -137,80 +138,22 @@ def filtered_query(db, user_id, status=None, company=None, ats_group=None, searc
                    location_group=None, decision=None, sponsorship_status=None, posted_age_min=None, posted_age_max=None,
                    follow_up_today=False, follow_up_overdue=False, follow_up_none=False, has_error=False, jd_missing=False,
                    date_applied_from=None, date_applied_to=None, applied_only=False):
-    query = db.query(JobTrack).filter(JobTrack.user_id == user_id)
-    if status:
-        query = query.filter(JobTrack.status == status)
-    if company:
-        query = query.filter(func.lower(JobTrack.company).contains(company.lower()))
-    if ats_group:
-        query = query.filter(func.lower(JobTrack.ats_group) == ats_group.lower())
-    if search_bucket:
-        query = query.filter(func.lower(JobTrack.search_bucket) == search_bucket.lower())
-    if location_group:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(func.lower(CsvRow.location_group) == location_group.lower())
-    if decision:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(func.lower(CsvRow.decision) == decision.lower())
-    if sponsorship_status:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(func.lower(CsvRow.sponsorship_status) == sponsorship_status.lower())
-    if has_error:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(CsvRow.error.isnot(None), CsvRow.error != "")
-    if jd_missing:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter((CsvRow.jd_text_length.is_(None)) | (CsvRow.jd_text_length == "") | (CsvRow.jd_text_length == "0"))
-    if q:
-        needle = q.lower()
-        query = query.filter(or_(func.lower(JobTrack.company).contains(needle), func.lower(JobTrack.title).contains(needle), func.lower(JobTrack.url).contains(needle), func.lower(JobTrack.notes).contains(needle)))
-    now = datetime.utcnow()
-    start = parse_dt(date_from)
-    end = parse_dt(date_to)
-    if quick_range == "last_24_hours":
-        start, end = now - timedelta(hours=24), now
-    elif quick_range == "last_7_days":
-        start, end = now - timedelta(days=7), now
-    elif quick_range == "last_30_days":
-        start, end = now - timedelta(days=30), now
-    elif quick_range == "today":
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start, end = today_start, today_start + timedelta(days=1)
-    elif quick_range == "yesterday":
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start, end = today_start - timedelta(days=1), today_start
-    if start:
-        query = query.filter(JobTrack.opened_at >= start)
-    if end:
-        query = query.filter(JobTrack.opened_at < end)
-    if posted_age_min is not None:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(num_expr(CsvRow.posted_age_days) >= posted_age_min)
-    if posted_age_max is not None:
-        query = query.join(CsvRow, CsvRow.id == JobTrack.csv_row_id, isouter=True).filter(num_expr(CsvRow.posted_age_days) <= posted_age_max)
-    score = num_expr(JobTrack.resume_match_score)
-    if min_score is not None:
-        query = query.filter(score >= min_score)
-    if max_score is not None:
-        query = query.filter(score <= max_score)
-    if follow_up_due:
-        query = query.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now)
-    if follow_up_today:
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        query = query.filter(JobTrack.follow_up_at >= today_start, JobTrack.follow_up_at < today_end)
-    if follow_up_overdue:
-        query = query.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at < now)
-    if follow_up_none:
-        query = query.filter(JobTrack.follow_up_at.is_(None))
-    if opened_not_applied:
-        query = query.filter(JobTrack.applied_at.is_(None), JobTrack.status == "opened")
-    if applied_only:
-        query = query.filter(JobTrack.applied_at.isnot(None))
-    if date_applied_from:
-        applied_start = parse_dt(date_applied_from)
-        if applied_start:
-            query = query.filter(JobTrack.applied_at >= applied_start)
-    if date_applied_to:
-        applied_end = parse_dt(date_applied_to)
-        if applied_end:
-            query = query.filter(JobTrack.applied_at < applied_end)
-    return query
-
+    """Compatibility wrapper for callers migrated in later R2 tickets."""
+    params = ApplicationQuery(
+        status=status, company=company, ats_group=ats_group, search_bucket=search_bucket,
+        quick_range=quick_range, date_from=date_from, date_to=date_to,
+        min_score=min_score, max_score=max_score, follow_up_due=follow_up_due,
+        opened_not_applied=opened_not_applied, q=q, location_group=location_group,
+        decision=decision, sponsorship_status=sponsorship_status,
+        posted_age_min=posted_age_min, posted_age_max=posted_age_max,
+        follow_up_today=follow_up_today, follow_up_overdue=follow_up_overdue,
+        follow_up_none=follow_up_none, has_error=has_error, jd_missing=jd_missing,
+        date_applied_from=date_applied_from, date_applied_to=date_applied_to,
+        applied_only=applied_only,
+    )
+    return build_application_query(
+        db, user_id, params, numeric_expression=num_expr, parse_datetime=parse_dt
+    )
 
 @router.post("/from-row/{row_id}")
 def create_from_row(row_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -231,24 +174,35 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
               date_applied_from: str | None = Query(None), date_applied_to: str | None = Query(None), applied_only: bool = Query(False),
               page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    query = filtered_query(db, user.id, status, company, ats_group, search_bucket, quick_range, date_from, date_to, min_score, max_score, follow_up_due, opened_not_applied, q,
-                           location_group, decision, sponsorship_status, posted_age_min, posted_age_max,
-                           follow_up_today, follow_up_overdue, follow_up_none, has_error, jd_missing,
-                           date_applied_from, date_applied_to, applied_only)
-    total = query.count()
     if sort_by not in SORT_FIELDS:
         sort_by = "opened_at"
-    sort_by_is_computed = sort_by in ("priority_score", "triage")
-    order = asc if sort_dir == "asc" else desc
-    if not sort_by_is_computed:
-        sort_col = num_expr(JobTrack.resume_match_score) if sort_by == "resume_match_score" else getattr(JobTrack, sort_by)
-
+    query_params = ApplicationQuery(
+        status=status, company=company, ats_group=ats_group, search_bucket=search_bucket,
+        quick_range=quick_range, date_from=date_from, date_to=date_to,
+        min_score=min_score, max_score=max_score, follow_up_due=follow_up_due,
+        opened_not_applied=opened_not_applied, q=q, location_group=location_group,
+        decision=decision, sponsorship_status=sponsorship_status,
+        posted_age_min=posted_age_min, posted_age_max=posted_age_max,
+        follow_up_today=follow_up_today, follow_up_overdue=follow_up_overdue,
+        follow_up_none=follow_up_none, has_error=has_error, jd_missing=jd_missing,
+        date_applied_from=date_applied_from, date_applied_to=date_applied_to,
+        applied_only=applied_only, sort_by=sort_by, sort_dir=sort_dir,
+    )
+    query = build_application_query(
+        db, user.id, query_params, numeric_expression=num_expr, parse_datetime=parse_dt
+    )
     total_count = query.count()
-
+    sort_by_is_computed = sort_by in ("priority_score", "triage")
     if sort_by_is_computed:
         rows = query.order_by(JobTrack.id.desc()).all()
     else:
-        rows = query.order_by(order(sort_col).nullslast(), JobTrack.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        rows = (
+            order_application_query(query, query_params, num_expr)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
     options = db.query(JobTrack.ats_group).filter(JobTrack.user_id == user.id, JobTrack.ats_group.isnot(None), JobTrack.ats_group != "").distinct().order_by(JobTrack.ats_group.asc()).all()
     location_options = db.query(CsvRow.location_group).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.location_group.isnot(None), CsvRow.location_group != "").distinct().order_by(CsvRow.location_group.asc()).all()
     decision_options = db.query(CsvRow.decision).join(JobTrack, JobTrack.csv_row_id == CsvRow.id).filter(JobTrack.user_id == user.id, CsvRow.decision.isnot(None), CsvRow.decision != "").distinct().order_by(CsvRow.decision.asc()).all()
