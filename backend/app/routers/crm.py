@@ -16,7 +16,15 @@ from ..scoring import _parse_score, priority_score as scoring_priority_score, im
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
-from ..services.row_queries import ApplicationQuery, build_application_query, order_application_query
+from ..services.row_queries import (
+    ApplicationQuery,
+    RowQuery,
+    build_application_query,
+    build_row_query,
+    order_application_query,
+    order_row_query,
+    resolve_row_sort_column,
+)
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 SORT_FIELDS = {"company", "title", "ats_group", "search_bucket", "resume_match_score", "status", "opened_at", "applied_at", "follow_up_at", "created_at", "updated_at", "priority_score", "triage"}
@@ -1093,10 +1101,13 @@ EXPORT_APPLICATION_FIELDS = CSV_COLUMNS + [
     "clicked", "clicked_at",
     "app_status", "applied_at", "follow_up_at", "notes", "last_updated",
 ]
+EXPORT_CHUNK_SIZE = 200
+MAX_SELECTED_EXPORT_IDS = 500
 
 
-def _serialize_dashboard_row(row):
-    out = {col: getattr(row, col) for col in CSV_COLUMNS}
+def _serialize_dashboard_row(row, export_cols=None):
+    cols = export_cols or CSV_COLUMNS
+    out = {col: getattr(row, col) for col in cols}
     out["clicked"] = row.clicked
     out["clicked_at"] = str(row.clicked_at) if row.clicked_at else ""
     return out
@@ -1115,77 +1126,443 @@ def _serialize_application_row(row):
     return out
 
 
-def _to_csv_response(rows_dict, filename):
-    if not rows_dict:
-        return StreamingResponse(io.BytesIO(b""), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+def _spreadsheet_safe_csv_value(value):
+    if not isinstance(value, str) or not value:
+        return value
+    stripped_control = value.lstrip("\t\r\n\v\f")
+    if value[0] in "=+-@" or (
+        stripped_control != value
+        and stripped_control
+        and stripped_control[0] in "=+-@"
+    ):
+        return "'" + value
+    return value
+
+
+def _csv_stream(rows, serializer, fieldnames, row_count):
+    if row_count == 0:
+        yield b""
+        return
+
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(rows_dict[0].keys()))
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
-    writer.writerows(rows_dict)
-    content = buf.getvalue().encode("utf-8")
-    return StreamingResponse(io.BytesIO(content), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    yield buf.getvalue().encode("utf-8")
+    buf.seek(0)
+    buf.truncate(0)
+
+    for row in rows:
+        serialized = serializer(row)
+        writer.writerow({key: _spreadsheet_safe_csv_value(serialized.get(key)) for key in fieldnames})
+        yield buf.getvalue().encode("utf-8")
+        buf.seek(0)
+        buf.truncate(0)
 
 
-def _to_json_response(rows_dict, filename):
-    content = json.dumps(rows_dict, indent=2, default=str).encode("utf-8")
-    return StreamingResponse(io.BytesIO(content), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+def _json_stream(rows, serializer):
+    yield b"["
+    first = True
+    for row in rows:
+        if not first:
+            yield b",\n"
+        yield json.dumps(serializer(row), ensure_ascii=False, default=str).encode("utf-8")
+        first = False
+    yield b"]"
+
+
+def _to_streaming_csv_response(rows, serializer, fieldnames, filename, row_count):
+    return StreamingResponse(
+        _csv_stream(rows, serializer, fieldnames, row_count),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _to_streaming_json_response(rows, serializer, filename):
+    return StreamingResponse(
+        _json_stream(rows, serializer),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _parse_export_ids(raw_ids: str | None, *, required: bool) -> list[int] | None:
+    if raw_ids is None:
+        if required:
+            raise HTTPException(422, "row_ids is required for selected scope")
+        return None
+    if not raw_ids.strip():
+        raise HTTPException(422, "row_ids must contain at least one positive integer")
+
+    parts = raw_ids.split(",")
+    if len(parts) > MAX_SELECTED_EXPORT_IDS:
+        raise HTTPException(422, f"row_ids supports at most {MAX_SELECTED_EXPORT_IDS} IDs")
+
+    parsed = []
+    for part in parts:
+        token = part.strip()
+        if not token.isdigit() or int(token) <= 0:
+            raise HTTPException(422, "row_ids must contain only positive integers")
+        parsed.append(int(token))
+
+    # Database IN predicates already collapse duplicates. Normalize them here so ownership
+    # checks and the documented 500-ID boundary have one deterministic representation.
+    return list(dict.fromkeys(parsed))
+
+
+def _dashboard_export_columns(columns: str | None) -> list[str]:
+    if columns is None:
+        return list(CSV_COLUMNS)
+    requested = [item.strip() for item in columns.split(",") if item.strip()]
+    if not requested:
+        raise HTTPException(400, "columns must contain at least one CSV column")
+    invalid = [item for item in requested if item not in CSV_COLUMNS]
+    if invalid:
+        raise HTTPException(400, "Unknown export column")
+    return list(dict.fromkeys(requested))
+
+
+def _filter_present(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return value is not None and value != ""
+
+
+def _bounded_filter_flags(values: dict) -> dict[str, bool]:
+    return {key: _filter_present(value) for key, value in values.items()}
+
+
+def _application_computed_sort_value(track, sort_by):
+    csv_row = track.csv_row
+    if not csv_row:
+        return 0 if sort_by == "priority_score" else "needs_review"
+    priority_score = calculate_priority_score(csv_row, track)
+    if sort_by == "priority_score":
+        return priority_score
+    return calculate_triage(csv_row, track, priority_score)
+
+
+def _ordered_application_export_rows(query, params):
+    if params.sort_by not in ("priority_score", "triage"):
+        return order_application_query(query, params, num_expr).yield_per(EXPORT_CHUNK_SIZE)
+
+    # The live applications table uses Python ordering for these two computed fields.
+    # Preserve that behavior while avoiding a second materialized list of serialized dicts.
+    rows = query.order_by(JobTrack.id.desc()).all()
+    rows.sort(
+        key=lambda track: _application_computed_sort_value(track, params.sort_by),
+        reverse=(params.sort_dir == "desc"),
+    )
+    return iter(rows)
 
 
 @router.get("/export/dashboard")
 def export_dashboard(
     format: Literal["csv", "json"] = Query("csv"),
+    scope: Literal["all", "filtered", "selected"] | None = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
     ats_group: str | None = Query(None),
+    location_group: str | None = Query(None),
+    search_bucket: str | None = Query(None),
+    decision: str | None = Query(None),
+    sponsorship_status: str | None = Query(None),
+    fit_category: str | None = Query(None),
+    seniority_level: str | None = Query(None),
+    work_model: str | None = Query(None),
+    role_family: str | None = Query(None),
+    salary_min: float | None = Query(None),
+    salary_max: float | None = Query(None),
+    q: str | None = Query(None, max_length=500),
+    opened_only: bool = Query(False),
+    unopened_only: bool = Query(False),
+    has_error: bool = Query(False),
+    jd_missing: bool = Query(False),
+    openable_only: bool = Query(False),
     row_ids: str | None = Query(None),
     columns: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    query = db.query(CsvRow).filter(CsvRow.user_id == user.id, CsvRow.archived.is_(False))
-    if ats_group:
-        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
-    if row_ids:
-        id_list = [int(x) for x in row_ids.split(",") if x.strip().isdigit()]
-        if id_list:
-            query = query.filter(CsvRow.id.in_(id_list))
-    rows = query.order_by(CsvRow.id.desc()).all()
-    if columns:
-        col_list = [c.strip() for c in columns.split(",") if c.strip()]
-        export_cols = [c for c in col_list if c in CSV_COLUMNS]
+    export_cols = _dashboard_export_columns(columns)
+    selected_ids = _parse_export_ids(row_ids, required=(scope == "selected"))
+    if scope in ("all", "filtered") and selected_ids is not None:
+        raise HTTPException(400, "row_ids requires scope=selected")
+
+    params = RowQuery(
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        ats_group=ats_group,
+        location_group=location_group,
+        search_bucket=search_bucket,
+        decision=decision,
+        sponsorship_status=sponsorship_status,
+        fit_category=fit_category,
+        seniority_level=seniority_level,
+        work_model=work_model,
+        role_family=role_family,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        q=q,
+        opened_only=opened_only,
+        unopened_only=unopened_only,
+        has_error=has_error,
+        jd_missing=jd_missing,
+        openable_only=openable_only,
+    )
+    try:
+        resolve_row_sort_column(sort_by)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    if scope == "all":
+        query = build_row_query(db, user.id, RowQuery(sort_by=sort_by, sort_dir=sort_dir))
+    elif scope == "selected":
+        owned_ids = {
+            row_id
+            for (row_id,) in db.query(CsvRow.id).filter(
+                CsvRow.user_id == user.id,
+                CsvRow.archived.is_(False),
+                CsvRow.id.in_(selected_ids),
+            ).all()
+        }
+        if owned_ids != set(selected_ids):
+            raise HTTPException(404, "One or more selected rows were not found")
+        query = db.query(CsvRow).filter(
+            CsvRow.user_id == user.id,
+            CsvRow.archived.is_(False),
+            CsvRow.id.in_(selected_ids),
+        )
     else:
-        export_cols = CSV_COLUMNS
-    data = [{col: getattr(r, col) for col in export_cols} | {"clicked": r.clicked, "clicked_at": str(r.clicked_at) if r.clicked_at else ""} for r in rows]
-    emit_event(db, user.id, "rows_exported", "dashboard", metadata={"count": len(data), "format": format})
+        # Omitted scope preserves the legacy behavior: supplied filters apply, and a
+        # supplied row_ids list intersects that result. Invalid/foreign IDs no longer
+        # fall back to exporting the account's full dataset.
+        query = build_row_query(db, user.id, params)
+        if selected_ids is not None:
+            owned_ids = {
+                row_id
+                for (row_id,) in db.query(CsvRow.id).filter(
+                    CsvRow.user_id == user.id,
+                    CsvRow.archived.is_(False),
+                    CsvRow.id.in_(selected_ids),
+                ).all()
+            }
+            if owned_ids != set(selected_ids):
+                raise HTTPException(404, "One or more selected rows were not found")
+            query = query.filter(CsvRow.id.in_(selected_ids))
+
+    row_count = query.count()
+    ordered_rows = order_row_query(query, RowQuery(sort_by=sort_by, sort_dir=sort_dir)).yield_per(EXPORT_CHUNK_SIZE)
+    filter_flags = _bounded_filter_flags({
+        "ats_group": ats_group,
+        "location_group": location_group,
+        "search_bucket": search_bucket,
+        "decision": decision,
+        "sponsorship_status": sponsorship_status,
+        "fit_category": fit_category,
+        "seniority_level": seniority_level,
+        "work_model": work_model,
+        "role_family": role_family,
+        "salary_min": salary_min,
+        "salary_max": salary_max,
+        "q": q,
+        "opened_only": opened_only,
+        "unopened_only": unopened_only,
+        "has_error": has_error,
+        "jd_missing": jd_missing,
+        "openable_only": openable_only,
+        "selected": selected_ids is not None,
+    })
+    emit_event(
+        db,
+        user.id,
+        "rows_exported",
+        "dashboard",
+        metadata={"count": row_count, "format": format, "filter_flags": filter_flags},
+    )
     db.commit()
+
+    serializer = lambda row: _serialize_dashboard_row(row, export_cols)
+    fieldnames = export_cols + ["clicked", "clicked_at"]
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     if format == "json":
-        return _to_json_response(data, f"dashboard_export_{ts}.json")
-    return _to_csv_response(data, f"dashboard_export_{ts}.csv")
+        return _to_streaming_json_response(ordered_rows, serializer, f"dashboard_export_{ts}.json")
+    return _to_streaming_csv_response(
+        ordered_rows,
+        serializer,
+        fieldnames,
+        f"dashboard_export_{ts}.csv",
+        row_count,
+    )
 
 
 @router.get("/export/applications")
 def export_applications(
     format: Literal["csv", "json"] = Query("csv"),
+    scope: Literal["all", "filtered", "selected"] | None = Query(None),
     status: str | None = Query(None),
     company: str | None = Query(None),
     ats_group: str | None = Query(None),
     search_bucket: str | None = Query(None),
+    quick_range: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    min_score: float | None = Query(None),
+    max_score: float | None = Query(None),
     follow_up_due: bool = Query(False),
     opened_not_applied: bool = Query(False),
-    q: str | None = Query(None),
+    q: str | None = Query(None, max_length=500),
+    location_group: str | None = Query(None),
+    decision: str | None = Query(None),
+    sponsorship_status: str | None = Query(None),
+    posted_age_min: float | None = Query(None),
+    posted_age_max: float | None = Query(None),
+    follow_up_today: bool = Query(False),
+    follow_up_overdue: bool = Query(False),
+    follow_up_none: bool = Query(False),
+    has_error: bool = Query(False),
+    jd_missing: bool = Query(False),
+    date_applied_from: str | None = Query(None),
+    date_applied_to: str | None = Query(None),
+    applied_only: bool = Query(False),
+    sort_by: str = Query("opened_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
     row_ids: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    query = filtered_query(db, user.id, status, company, ats_group, search_bucket, None, None, None, None, None, follow_up_due, opened_not_applied, q)
-    if row_ids:
-        id_list = [int(x) for x in row_ids.split(",") if x.strip().isdigit()]
-        if id_list:
-            query = query.filter(JobTrack.id.in_(id_list))
-    rows = query.order_by(JobTrack.id.desc()).all()
-    data = [_serialize_application_row(r) for r in rows]
-    emit_event(db, user.id, "rows_exported", "applications", metadata={"count": len(data), "format": format})
+    selected_ids = _parse_export_ids(row_ids, required=(scope == "selected"))
+    if scope in ("all", "filtered") and selected_ids is not None:
+        raise HTTPException(400, "row_ids requires scope=selected")
+    if sort_by not in SORT_FIELDS:
+        sort_by = "opened_at"
+
+    params = ApplicationQuery(
+        status=status,
+        company=company,
+        ats_group=ats_group,
+        search_bucket=search_bucket,
+        quick_range=quick_range,
+        date_from=date_from,
+        date_to=date_to,
+        min_score=min_score,
+        max_score=max_score,
+        follow_up_due=follow_up_due,
+        opened_not_applied=opened_not_applied,
+        q=q,
+        location_group=location_group,
+        decision=decision,
+        sponsorship_status=sponsorship_status,
+        posted_age_min=posted_age_min,
+        posted_age_max=posted_age_max,
+        follow_up_today=follow_up_today,
+        follow_up_overdue=follow_up_overdue,
+        follow_up_none=follow_up_none,
+        has_error=has_error,
+        jd_missing=jd_missing,
+        date_applied_from=date_applied_from,
+        date_applied_to=date_applied_to,
+        applied_only=applied_only,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+    try:
+        if scope == "all":
+            query = build_application_query(
+                db,
+                user.id,
+                ApplicationQuery(sort_by=sort_by, sort_dir=sort_dir),
+                numeric_expression=num_expr,
+                parse_datetime=parse_dt,
+            )
+        elif scope == "selected":
+            owned_ids = {
+                track_id
+                for (track_id,) in db.query(JobTrack.id).filter(
+                    JobTrack.user_id == user.id,
+                    JobTrack.id.in_(selected_ids),
+                ).all()
+            }
+            if owned_ids != set(selected_ids):
+                raise HTTPException(404, "One or more selected applications were not found")
+            query = db.query(JobTrack).filter(
+                JobTrack.user_id == user.id,
+                JobTrack.id.in_(selected_ids),
+            )
+        else:
+            query = build_application_query(
+                db,
+                user.id,
+                params,
+                numeric_expression=num_expr,
+                parse_datetime=parse_dt,
+            )
+            if selected_ids is not None:
+                owned_ids = {
+                    track_id
+                    for (track_id,) in db.query(JobTrack.id).filter(
+                        JobTrack.user_id == user.id,
+                        JobTrack.id.in_(selected_ids),
+                    ).all()
+                }
+                if owned_ids != set(selected_ids):
+                    raise HTTPException(404, "One or more selected applications were not found")
+                query = query.filter(JobTrack.id.in_(selected_ids))
+    except ValueError as exc:
+        raise HTTPException(422, "Invalid application export filter") from exc
+
+    row_count = query.count()
+    ordering_params = ApplicationQuery(sort_by=sort_by, sort_dir=sort_dir)
+    ordered_rows = _ordered_application_export_rows(query, ordering_params)
+    filter_flags = _bounded_filter_flags({
+        "status": status,
+        "company": company,
+        "ats_group": ats_group,
+        "search_bucket": search_bucket,
+        "quick_range": quick_range,
+        "date_from": date_from,
+        "date_to": date_to,
+        "min_score": min_score,
+        "max_score": max_score,
+        "follow_up_due": follow_up_due,
+        "opened_not_applied": opened_not_applied,
+        "q": q,
+        "location_group": location_group,
+        "decision": decision,
+        "sponsorship_status": sponsorship_status,
+        "posted_age_min": posted_age_min,
+        "posted_age_max": posted_age_max,
+        "follow_up_today": follow_up_today,
+        "follow_up_overdue": follow_up_overdue,
+        "follow_up_none": follow_up_none,
+        "has_error": has_error,
+        "jd_missing": jd_missing,
+        "date_applied_from": date_applied_from,
+        "date_applied_to": date_applied_to,
+        "applied_only": applied_only,
+        "selected": selected_ids is not None,
+    })
+    emit_event(
+        db,
+        user.id,
+        "rows_exported",
+        "applications",
+        metadata={"count": row_count, "format": format, "filter_flags": filter_flags},
+    )
     db.commit()
+
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     if format == "json":
-        return _to_json_response(data, f"applications_export_{ts}.json")
-    return _to_csv_response(data, f"applications_export_{ts}.csv")
+        return _to_streaming_json_response(
+            ordered_rows,
+            _serialize_application_row,
+            f"applications_export_{ts}.json",
+        )
+    return _to_streaming_csv_response(
+        ordered_rows,
+        _serialize_application_row,
+        EXPORT_APPLICATION_FIELDS,
+        f"applications_export_{ts}.csv",
+        row_count,
+    )
