@@ -39,7 +39,7 @@ The UI flow is deliberate:
    disabled while the request is active.
 6. A failed import keeps the selected file and verified preview so **Retry restore** is
    possible. HTTP failure never renders a completed state.
-7. Successful restore refreshes Dashboard rows. If refresh fails, restore success remains
+7. Successful restore refreshes Dashboard rows and re-fetches Applications and Companies. If refresh fails, restore success remains
    truthful and the UI asks the user to reload rather than implying the transaction failed.
 8. **Download restore summary** emits only `backup_id`, mode, verified flag, section counts,
    timestamp, and warning codes/sections. It never embeds restored records or private text.

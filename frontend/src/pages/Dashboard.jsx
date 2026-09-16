@@ -589,7 +589,14 @@ export default function Dashboard() {
           </select>
           <button className="btn btn-grey" onClick={handleExport}>Download</button>
           <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
-          <BackupRestore onRestored={() => loadRows(sort, filters, 1)} toast={toast} />
+          <BackupRestore
+  onRestored={() => Promise.all([
+    loadRows(sort, filters, 1),
+    api.getApplications({ page: 1, page_size: 1 }),
+    api.getCompanies({ page: 1, page_size: 1 }),
+  ])}
+  toast={toast}
+/>
           <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
           <button className="btn btn-grey btn-sm" onClick={toggleDensity} title="Toggle density">
             {density === 'comfortable' ? 'Comfortable' : density === 'compact' ? 'Compact' : 'Dense'}
