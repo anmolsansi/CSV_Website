@@ -2,7 +2,7 @@
 
 Prepared: **2026-09-12**  
 Project: **CSV_Website / JobGrid**  
-Status: **Proposed implementation backlog — no ticket in this document is claimed implemented**  
+Status: **Implementation backlog — completed tickets are marked per-ticket below; remaining tickets stay proposed until implemented**  
 Planning baseline: local checkout inspected during the September 12 audit; recorded HEAD `9bfea7e` plus existing uncommitted application-memory changes. Revalidate the working tree before coding.  
 Ticket IDs: **JG-001–JG-064 are document-local planning IDs, not created Linear/GitHub issues.**
 
@@ -25,7 +25,7 @@ The requested deliverable is this Markdown plan. It does not authorize deploymen
 |---|---:|---:|---|
 | Reliability repairs and release gates | 7 | 24 | JG-001–JG-024 |
 | Ranked product features | 10 | 40 | JG-025–JG-064 |
-| Total | 17 | 64 | All remain proposed |
+| Total | 17 | 64 | JG-001 completed; JG-002–JG-064 remain proposed |
 
 Each ticket contains smaller ordered implementation checkpoints. Ticket sizes vary with the risk and contract; 64 tickets are not 64 equal slices of effort. Do not use completion count alone as a delivery forecast. A ticket with several adapters is a review unit; execute and verify its numbered checkpoints one at a time, splitting further if they no longer fit one logical change.
 
@@ -132,7 +132,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **R1 — Repair complete backup and restore**
 
-- [ ] [JG-001 — Freeze and validate the complete backup v2 record schema](#jg-001)
+- [x] [JG-001 — Freeze and validate the complete backup v2 record schema](#jg-001)
 - [ ] [JG-002 — Add import identity mapping and complete v2 export](#jg-002)
 - [ ] [JG-003 — Implement preflight and transactional full restore](#jg-003)
 - [ ] [JG-004 — Build restore preview and prove recoverability in the UI](#jg-004)
@@ -271,7 +271,7 @@ In a disposable account upload two jobs, visit one, mark the other applied, add 
 <a id="jg-001"></a>
 ### JG-001 — Freeze and validate the complete backup v2 record schema
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** P1  
 **Type:** verification/operations  
 **Execution position:** 1/64; group step 1/4
@@ -449,13 +449,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-001 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: assert_complete_model_field_inventory: each persisted field is accounted for
-- [ ] Required regression passes: test_null_empty_false_zero_round_trip: distinct values remain distinct
-- [ ] Required regression passes: test_unknown_section_or_ownership_field: rejected before write
-- [ ] Required regression passes: test_duplicate_refs_and_bad_checksum: 400/409 with safe error codes
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-001 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: assert_complete_model_field_inventory: each persisted field is accounted for
+- [x] Required regression passes: test_null_empty_false_zero_round_trip: distinct values remain distinct
+- [x] Required regression passes: test_unknown_section_or_ownership_field: rejected before write
+- [x] Required regression passes: test_duplicate_refs_and_bad_checksum: 400/409 with safe error codes
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -473,12 +473,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -487,11 +487,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: initial source verification and isolated test setup.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: [#26](https://github.com/anmolsansi/CSV_Website/issues/26), closed as completed.
 
 #### Ticket intake result
 
-**READY FOR SOURCE INTAKE; implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** JG-001 was implemented in PR #27 and merged to `main`. Strict v2 backup schema models, complete ORM field inventory, canonical checksum/reference validation, the loss-aware v1 compatibility adapter, regression coverage, and build-guide documentation are in place. GitHub Actions passed. This completion does not claim JG-002/JG-003 export/import behavior, staging acceptance, or release.
 
 ---
 
