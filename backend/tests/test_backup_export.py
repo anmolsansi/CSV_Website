@@ -22,7 +22,13 @@ from app.models import (
 )
 
 
-def _seed_complete_fixture(db, email="test@jobgrid.dev"):
+def _login_and_seed(client, db, email):
+    response = client.post("/auth/dev-login", json={"email": email})
+    assert response.status_code == 200
+    return _seed_complete_fixture(db, email=email)
+
+
+def _seed_complete_fixture(db, email):
     user = db.query(User).filter_by(email=email).first()
     if user is None:
         user = User(email=email)
@@ -36,7 +42,7 @@ def _seed_complete_fixture(db, email="test@jobgrid.dev"):
     row1 = CsvRow(
         user_id=user.id,
         upload_batch_id="batch-1",
-        url="https://example.com/jobs/1",
+        url=f"https://example.com/{user.id}/jobs/1",
         title="Engineer",
         clicked=True,
         clicked_at=datetime(2026, 9, 16, 9, 0, 0),
@@ -44,7 +50,7 @@ def _seed_complete_fixture(db, email="test@jobgrid.dev"):
     row2 = CsvRow(
         user_id=user.id,
         upload_batch_id="batch-1",
-        url="https://example.com/jobs/2",
+        url=f"https://example.com/{user.id}/jobs/2",
         title="Engineer II",
         is_duplicate=True,
     )
@@ -68,7 +74,7 @@ def _seed_complete_fixture(db, email="test@jobgrid.dev"):
         filters={"atsGroup": "greenhouse"},
         is_pinned=True,
     )
-    history = UrlHistory(user_id=user.id, url="https://example.com/jobs/history")
+    history = UrlHistory(user_id=user.id, url=f"https://example.com/{user.id}/jobs/history")
     preference = ColumnPreference(user_id=user.id, hidden_columns=["error"], column_order=["title"])
     goal = UserGoal(user_id=user.id, open_per_day=10, apply_per_day=4, followup_per_day=2, applypilot_per_day=1)
     batch = ApplyPilotBatch(
@@ -96,7 +102,7 @@ def _seed_complete_fixture(db, email="test@jobgrid.dev"):
 
 
 def test_export_every_section(auth_client, db_session):
-    user = _seed_complete_fixture(db_session)
+    user = _login_and_seed(auth_client, db_session, "backup-all@jobgrid.dev")
 
     response = auth_client.get("/crm/backup/export?version=2")
     assert response.status_code == 200
@@ -121,8 +127,8 @@ def test_export_every_section(auth_client, db_session):
 
 
 def test_foreign_user_absent(auth_client, db_session):
-    _seed_complete_fixture(db_session)
-    foreign = User(email="foreign@jobgrid.dev")
+    _login_and_seed(auth_client, db_session, "backup-isolation@jobgrid.dev")
+    foreign = User(email="backup-foreign@jobgrid.dev")
     db_session.add(foreign)
     db_session.flush()
     db_session.add(CsvRow(
@@ -140,7 +146,7 @@ def test_foreign_user_absent(auth_client, db_session):
 
 
 def test_export_reference_graph(auth_client, db_session):
-    _seed_complete_fixture(db_session)
+    _login_and_seed(auth_client, db_session, "backup-refs@jobgrid.dev")
     payload = auth_client.get("/crm/backup/export?version=2").json()
     document = validate_backup_v2(payload)
 
@@ -157,7 +163,7 @@ def test_export_reference_graph(auth_client, db_session):
 
 
 def test_v1_export_remains_default(auth_client, db_session):
-    _seed_complete_fixture(db_session)
+    _login_and_seed(auth_client, db_session, "backup-v1@jobgrid.dev")
     default_payload = auth_client.get("/crm/backup/export").json()
     explicit_payload = auth_client.get("/crm/backup/export?version=1.0").json()
 
