@@ -59,15 +59,19 @@ app.add_middleware(MetricsMiddleware)
 if settings.SENTRY_DSN:
     init_sentry(settings.SENTRY_DSN, settings.ENVIRONMENT)
 
-# JG-002 extracts the live backup export transport into routers.backup while the
-# legacy import handler remains in crm until JG-003. Remove only the superseded
-# GET route before including crm so there is one authoritative route per method.
+# The dedicated backup router is authoritative for both portable export and
+# restore. Keep the legacy implementations in crm.py out of the live route table
+# so there is exactly one handler per method/path while compatibility remains in
+# routers.backup.
 crm.router.routes[:] = [
     route
     for route in crm.router.routes
     if not (
-        getattr(route, "path", None) == "/crm/backup/export"
-        and "GET" in (getattr(route, "methods", set()) or set())
+        getattr(route, "path", None) in {"/crm/backup/export", "/crm/backup/import"}
+        and (
+            "GET" in (getattr(route, "methods", set()) or set())
+            or "POST" in (getattr(route, "methods", set()) or set())
+        )
     )
 ]
 
