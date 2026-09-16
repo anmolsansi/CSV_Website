@@ -9,6 +9,7 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
 from ..schemas import ColumnPrefIn, RowDeleteIn
+from ..services.row_queries import RowQuery, build_row_query, order_row_query
 from .crm import emit_event, calculate_priority_score, calculate_triage
 
 router = APIRouter(tags=["rows"])
@@ -155,60 +156,32 @@ def list_rows(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    sort_column = _safe_sort_column(sort_by)
-    order_func = asc if sort_dir == "asc" else desc
-
-    query = db.query(CsvRow).filter(CsvRow.user_id == user.id, CsvRow.archived.is_(False))
-
-    if ats_group:
-        query = query.filter(func.lower(CsvRow.ats_group) == ats_group.lower())
-    if location_group:
-        query = query.filter(func.lower(CsvRow.location_group) == location_group.lower())
-    if search_bucket:
-        query = query.filter(func.lower(CsvRow.search_bucket) == search_bucket.lower())
-    if decision:
-        query = query.filter(func.lower(CsvRow.decision) == decision.lower())
-    if sponsorship_status:
-        query = query.filter(func.lower(CsvRow.sponsorship_status) == sponsorship_status.lower())
-    if fit_category:
-        query = query.filter(func.lower(CsvRow.fit_category) == fit_category.lower())
-    if seniority_level:
-        query = query.filter(func.lower(CsvRow.seniority_level) == seniority_level.lower())
-    if work_model:
-        query = query.filter(func.lower(CsvRow.work_model_extracted) == work_model.lower())
-    if role_family:
-        query = query.filter(func.lower(CsvRow.role_family) == role_family.lower())
-    if salary_min is not None:
-        query = query.filter(CsvRow.salary_min_extracted.isnot(None))
-        query = query.filter(func.cast(CsvRow.salary_min_extracted, Float) >= salary_min)
-    if salary_max is not None:
-        query = query.filter(CsvRow.salary_max_extracted.isnot(None))
-        query = query.filter(func.cast(CsvRow.salary_max_extracted, Float) <= salary_max)
-    if has_error:
-        query = query.filter(CsvRow.error.isnot(None), CsvRow.error != "")
-    if jd_missing:
-        query = query.filter((CsvRow.jd_text_length.is_(None)) | (CsvRow.jd_text_length == "") | (CsvRow.jd_text_length == "0"))
-    if q:
-        needle = q.lower()
-        query = query.filter(
-            func.lower(CsvRow.url).contains(needle)
-            | func.lower(CsvRow.company_guess).contains(needle)
-            | func.lower(CsvRow.title).contains(needle)
-        )
-
-    if opened_only:
-        query = query.filter(CsvRow.clicked.is_(True))
-    if unopened_only:
-        query = query.filter(CsvRow.clicked.is_(False))
-    if openable_only:
-        url = func.lower(func.trim(CsvRow.url))
-        query = query.filter(url.like('https://%') | url.like('http://%'))
-
+    query_params = RowQuery(
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        ats_group=ats_group,
+        location_group=location_group,
+        search_bucket=search_bucket,
+        decision=decision,
+        sponsorship_status=sponsorship_status,
+        fit_category=fit_category,
+        seniority_level=seniority_level,
+        work_model=work_model,
+        role_family=role_family,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        q=q,
+        opened_only=opened_only,
+        unopened_only=unopened_only,
+        openable_only=openable_only,
+        has_error=has_error,
+        jd_missing=jd_missing,
+    )
+    query = build_row_query(db, user.id, query_params)
     total_count = query.count()
 
     rows = (
-        query
-        .order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
+        order_row_query(query, query_params, _safe_sort_column)
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
