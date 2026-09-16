@@ -20,7 +20,45 @@ JG-003 activates the backend restore contract:
 - `POST /crm/backup/import?mode=merge_missing` validates first, then restores in one destination transaction.
 - `backend/app/routers/backup.py` owns the live backup export and import transport.
 - The older backup handlers in `routers/crm.py` remain as compatibility source code but are removed from the live route table in `app/main.py`. There is one authoritative live handler for each backup method/path.
-- JG-004 still owns the dedicated restore preview/interface. JG-003 does not claim that UI as shipped.
+- JG-004 adds the dedicated restore preview/interface on the Dashboard, using this backend contract without changing restore semantics.
+
+## JG-004 restore interface
+
+`frontend/src/components/BackupRestore.jsx` owns the portable-backup UI and
+`frontend/src/api/client.js` owns its transport calls. The Dashboard keeps ordinary data
+export separate from backup actions.
+
+The UI flow is deliberate:
+
+1. **Export complete backup** requests `GET /crm/backup/export?version=2`.
+2. Choosing a JSON file immediately calls `POST /crm/backup/import?mode=verify_only`.
+3. Parse/schema/checksum errors are shown as failures and no Restore button is rendered.
+4. A verified preview shows section `created`/`skipped`/`conflicts` counts, merge policy,
+   and safe warning codes. Legacy warnings state that missing history cannot be recovered.
+5. The separate **Restore backup** action calls `mode=merge_missing`; duplicate clicks are
+   disabled while the request is active.
+6. A failed import keeps the selected file and verified preview so **Retry restore** is
+   possible. HTTP failure never renders a completed state.
+7. Successful restore refreshes Dashboard rows. If refresh fails, restore success remains
+   truthful and the UI asks the user to reload rather than implying the transaction failed.
+8. **Download restore summary** emits only `backup_id`, mode, verified flag, section counts,
+   timestamp, and warning codes/sections. It never embeds restored records or private text.
+
+The browser holds the selected `File` object only in component memory. Choosing a different
+file clears stale preview/result state. Reloading or clearing the file discards it.
+
+Focused interface verification:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/backup-restore.spec.ts --project=chromium
+```
+
+`backup-restore.spec.ts` covers invalid-file gating, explicit legacy limitations,
+retry-after-import-failure with selection preserved, and a real v2 applied-job round trip
+that verifies company/status/date after reload. The existing application-memory regression
+remains part of the affected browser suite.
 
 ## Why v2 exists
 
