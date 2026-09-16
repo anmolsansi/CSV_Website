@@ -352,3 +352,25 @@ class UserGoal(Base):
     apply_per_day = Column(Integer, default=10)
     followup_per_day = Column(Integer, default=5)
     applypilot_per_day = Column(Integer, default=5)
+
+
+class BackupImportMap(Base):
+    """Stable mapping from a portable backup reference to a destination row."""
+
+    __tablename__ = "backup_import_maps"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    backup_id = Column(String(36), nullable=False)
+    section = Column(String(50), nullable=False)
+    backup_ref = Column(String(255), nullable=False)
+    target_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "backup_id", "section", "backup_ref",
+            name="uq_backup_import_map_identity",
+        ),
+    )

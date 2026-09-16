@@ -3,7 +3,7 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from app.models import Base, CSV_COLUMNS, CsvRow
+from app.models import BackupImportMap, Base, CSV_COLUMNS, CsvRow
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +19,7 @@ def test_models_are_bound_to_metadata():
     assert "csv_rows" in Base.metadata.tables
     assert "job_tracks" in Base.metadata.tables
     assert "saved_views" in Base.metadata.tables
+    assert BackupImportMap.__tablename__ in Base.metadata.tables
 
 
 def test_csv_columns_are_covered_by_migrations():
@@ -35,7 +36,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["002"]
+    assert script.get_heads() == ["003"]
 
 
 def test_legacy_schema_patch_module_removed():

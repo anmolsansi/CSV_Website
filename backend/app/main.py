@@ -17,7 +17,7 @@ from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, crm, email, rows, upload
+from .routers import auth_router, backup, crm, email, rows, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -59,9 +59,22 @@ app.add_middleware(MetricsMiddleware)
 if settings.SENTRY_DSN:
     init_sentry(settings.SENTRY_DSN, settings.ENVIRONMENT)
 
+# JG-002 extracts the live backup export transport into routers.backup while the
+# legacy import handler remains in crm until JG-003. Remove only the superseded
+# GET route before including crm so there is one authoritative route per method.
+crm.router.routes[:] = [
+    route
+    for route in crm.router.routes
+    if not (
+        getattr(route, "path", None) == "/crm/backup/export"
+        and "GET" in (getattr(route, "methods", set()) or set())
+    )
+]
+
 app.include_router(auth_router.router)
 app.include_router(upload.router)
 app.include_router(rows.router)
+app.include_router(backup.router)
 app.include_router(crm.router)
 app.include_router(email.router)
 
