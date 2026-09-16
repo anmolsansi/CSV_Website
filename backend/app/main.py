@@ -7,11 +7,13 @@ from pathlib import Path
 from alembic.config import Config as AlembicConfig
 from alembic import command as alembic_command
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi import FastAPI, UploadFile, File, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
+from .backup_schemas import MAX_BACKUP_JSON_BYTES
 from .config import settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
@@ -46,6 +48,35 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CSV URL Tracker", lifespan=lifespan)
 
+# Multipart framing adds a small amount of transport overhead around the JSON
+# file. This request-level guard rejects obviously oversized restore requests
+# before Starlette parses the multipart body, while the route still enforces the
+# exact 20 MiB JSON-file limit by reading at most MAX_BACKUP_JSON_BYTES + 1.
+BACKUP_IMPORT_REQUEST_MAX_BYTES = MAX_BACKUP_JSON_BYTES + (1024 * 1024)
+
+
+@app.middleware("http")
+async def reject_oversized_backup_import_request(request: Request, call_next):
+    if request.url.path == "/crm/backup/import" and request.method.upper() == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                request_bytes = int(content_length)
+            except ValueError:
+                request_bytes = None
+            if request_bytes is not None and request_bytes > BACKUP_IMPORT_REQUEST_MAX_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": {
+                            "code": "backup_too_large",
+                            "message": "Backup request exceeds the application body limit.",
+                        }
+                    },
+                )
+    return await call_next(request)
+
+
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(
     CORSMiddleware,
@@ -59,15 +90,19 @@ app.add_middleware(MetricsMiddleware)
 if settings.SENTRY_DSN:
     init_sentry(settings.SENTRY_DSN, settings.ENVIRONMENT)
 
-# JG-002 extracts the live backup export transport into routers.backup while the
-# legacy import handler remains in crm until JG-003. Remove only the superseded
-# GET route before including crm so there is one authoritative route per method.
+# The dedicated backup router is authoritative for both portable export and
+# restore. Keep the legacy implementations in crm.py out of the live route table
+# so there is exactly one handler per method/path while compatibility remains in
+# routers.backup.
 crm.router.routes[:] = [
     route
     for route in crm.router.routes
     if not (
-        getattr(route, "path", None) == "/crm/backup/export"
-        and "GET" in (getattr(route, "methods", set()) or set())
+        getattr(route, "path", None) in {"/crm/backup/export", "/crm/backup/import"}
+        and (
+            "GET" in (getattr(route, "methods", set()) or set())
+            or "POST" in (getattr(route, "methods", set()) or set())
+        )
     )
 ]
 
@@ -86,7 +121,6 @@ def health():
 
 if settings.TEST_AUTH:
     import uuid
-    from fastapi.responses import JSONResponse
 
     @app.post("/test/seed")
     def test_seed(db: Session = Depends(get_db)):
