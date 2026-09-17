@@ -64,7 +64,7 @@ test.describe('JG-007 browser/export query parity', () => {
     expect(browse.get('sort_by')).toBe('company');
     expect(browse.get('sort_dir')).toBe('asc');
 
-    await expect(page.getByLabel('Search')).toHaveValue('ParityApp');
+    await expect(page.getByPlaceholder('Title, company, URL')).toHaveValue('ParityApp');
     await page.locator('.export-bar select').nth(1).selectOption('filtered');
 
     const exportRequest = page.waitForRequest((request) => request.url().includes('/crm/export/applications?'));
