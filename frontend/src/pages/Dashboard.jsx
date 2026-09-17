@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { api } from '../api/client'
+import { dashboardNavigationState, dashboardStateQuery, queryValidationMessage, serializeDashboardQuery } from '../api/queryParams'
 import { reserveTabs, openJobs } from '../api/openJobs'
 import { useToast } from '../App'
 import CsvUpload from '../components/CsvUpload'
@@ -156,18 +157,23 @@ function getDeleteModeFromUser() {
 }
 
 export default function Dashboard() {
+  const initialNavigation = useMemo(
+    () => dashboardNavigationState(window.location.search, { ...DEFAULT_SORT, ...DEFAULT_FILTERS, page: 1, pageSize: 50 }),
+    []
+  )
+  const initialFilters = { ...DEFAULT_FILTERS, ...initialNavigation.filters }
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
   const [stats, setStats] = useState(EMPTY_STATS)
   const [hidden, setHidden] = useState([])
   const [columnOrder, setColumnOrder] = useState([])
-  const [sort, setSort] = useState(DEFAULT_SORT)
-  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+  const [sort, setSort] = useState(initialNavigation.sort)
+  const [filters, setFilters] = useState(initialFilters)
   const [filterOptions, setFilterOptions] = useState(EMPTY_FILTER_OPTIONS)
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [columnsCollapsed, setColumnsCollapsed] = useState(true)
   const [loading, setLoading] = useState(true)
-  const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
+  const [pagination, setPagination] = useState({ ...DEFAULT_PAGINATION, page: initialNavigation.page, pageSize: initialNavigation.pageSize })
   const [drawerRow, setDrawerRow] = useState(null)
   const [density, setDensity] = useState(() => localStorage.getItem('density') || 'comfortable')
   const [pinnedColumns, setPinnedColumns] = useState(() => {
@@ -178,6 +184,9 @@ export default function Dashboard() {
   const toast = useToast()
   const batchLock = useRef(false)
   const [openingBatch, setOpeningBatch] = useState(false)
+  const settledQueryRef = useRef(null)
+  const requestSequenceRef = useRef(0)
+  const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
 
   const orderedColumns = useMemo(
     () => mergeColumnOrder(columnOrder, columns),
@@ -192,8 +201,11 @@ export default function Dashboard() {
   }
 
   const loadRows = (nextSort = sort, nextFilters = filters, nextPage = pagination.page, nextPageSize = pagination.pageSize) => {
+    const requestId = ++requestSequenceRef.current
+    const requestQuery = dashboardStateQuery(nextSort, nextFilters, nextPage, nextPageSize)
     setLoading(true)
-    return api.getRows({ ...nextSort, ...nextFilters, page: nextPage, pageSize: nextPageSize }).then((d) => {
+    return api.getRows(requestQuery).then((d) => {
+      if (requestId !== requestSequenceRef.current) return
       setColumns(d.columns)
       setRows(d.rows)
       setStats(normalizeStats(d.stats))
@@ -201,13 +213,18 @@ export default function Dashboard() {
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
       setSelectedRowIds(new Set())
       setPagination({ page: d.page || nextPage, pageSize: d.page_size || nextPageSize, totalCount: d.total_count || d.rows.length, hasNext: d.has_next || false })
-    }).finally(() => setLoading(false))
+      settledQueryRef.current = requestQuery
+    }).catch(() => {
+      if (requestId === requestSequenceRef.current) toast('Could not load jobs. Please retry.', 'error')
+    }).finally(() => {
+      if (requestId === requestSequenceRef.current) setLoading(false)
+    })
   }
 
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      api.getRows({ ...DEFAULT_SORT, ...DEFAULT_FILTERS, page: 1, pageSize: 50 }),
+      api.getRows(dashboardStateQuery(initialNavigation.sort, initialFilters, initialNavigation.page, initialNavigation.pageSize)),
       api.getPreferences(),
     ]).then(([rowData, preferences]) => {
       const savedHidden = preferences.hidden_columns || []
@@ -221,8 +238,9 @@ export default function Dashboard() {
       setHidden(savedHidden)
       setColumnOrder(nextOrder)
       setSelectedRowIds(new Set())
-      setPagination({ page: rowData.page || 1, pageSize: rowData.page_size || 50, totalCount: rowData.total_count || rowData.rows.length, hasNext: rowData.has_next || false })
-    }).finally(() => setLoading(false))
+      setPagination({ page: rowData.page || initialNavigation.page, pageSize: rowData.page_size || initialNavigation.pageSize, totalCount: rowData.total_count || rowData.rows.length, hasNext: rowData.has_next || false })
+      settledQueryRef.current = dashboardStateQuery(initialNavigation.sort, initialFilters, initialNavigation.page, initialNavigation.pageSize)
+    }).catch(() => toast('Could not load jobs. Please retry.', 'error')).finally(() => setLoading(false))
   }, [])
 
   const toggleColumn = async (col) => {
@@ -485,17 +503,24 @@ export default function Dashboard() {
   const [exportScope, setExportScope] = useState('all')
 
   const handleExport = async () => {
-    const params = { format: exportFormat }
+    if (loading || !settledQueryRef.current) {
+      toast('Wait for the current filters to finish loading before exporting.', 'warning')
+      return
+    }
+    const querySnapshot = dashboardStateQuery(sort, filters, pagination.page, pagination.pageSize)
+    const currentSignature = JSON.stringify(serializeDashboardQuery(querySnapshot, { includePagination: false, includeFalse: true }))
+    const settledSignature = JSON.stringify(serializeDashboardQuery(settledQueryRef.current, { includePagination: false, includeFalse: true }))
+    if (currentSignature !== settledSignature) {
+      toast('Filters changed before the matching results settled. Retry after loading finishes.', 'warning')
+      return
+    }
+    const params = { ...querySnapshot, format: exportFormat, scope: exportScope }
     if (exportScope === 'selected') {
       if (selectedRowIds.size === 0) { toast('No rows selected', 'warning'); return }
       params.rowIds = [...selectedRowIds]
-    } else if (exportScope === 'filtered') {
-      params.atsGroup = filters.atsGroup || undefined
     }
     const visibleCols = orderedColumns.filter((col) => !hidden.includes(col))
-    if (visibleCols.length > 0 && visibleCols.length < orderedColumns.length) {
-      params.columns = visibleCols.join(',')
-    }
+    if (visibleCols.length > 0 && visibleCols.length < orderedColumns.length) params.columns = visibleCols.join(',')
     try {
       const res = await api.exportDashboard(params)
       const ext = exportFormat === 'json' ? 'json' : 'csv'
@@ -507,8 +532,8 @@ export default function Dashboard() {
       a.click()
       URL.revokeObjectURL(url)
       toast('Export downloaded', 'success')
-    } catch (err) {
-      toast('Export failed', 'error')
+    } catch {
+      toast('Export failed. No file was downloaded. Please retry.', 'error')
     }
   }
 
@@ -557,8 +582,18 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
 
+  const clearNavigationError = () => {
+    window.history.replaceState({}, '', window.location.pathname)
+    setQueryError('')
+    setSort(DEFAULT_SORT)
+    setFilters(DEFAULT_FILTERS)
+    setPagination(DEFAULT_PAGINATION)
+    loadRows(DEFAULT_SORT, DEFAULT_FILTERS, 1, DEFAULT_PAGINATION.pageSize)
+  }
+
   return (
     <div className="container">
+        {queryError && <div className="error-msg" role="alert">{queryError} <button className="btn btn-grey btn-sm" onClick={clearNavigationError}>Clear saved-view filters</button></div>}
         <CsvUpload onUploaded={() => loadRows()} />
 
         <div className="stats-grid">
@@ -587,7 +622,7 @@ export default function Dashboard() {
             <option value="filtered">Filtered rows</option>
             <option value="selected">Selected rows</option>
           </select>
-          <button className="btn btn-grey" onClick={handleExport}>Download</button>
+          <button className="btn btn-grey" onClick={handleExport} disabled={loading}>Download</button>
           <span style={{ borderLeft: '1px solid #d1d5db', height: 20, margin: '0 4px' }} />
           <BackupRestore
   onRestored={() => Promise.all([

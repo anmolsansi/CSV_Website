@@ -141,6 +141,16 @@ function serializeQuery(input, fields, { includePagination = true, includeFalse 
   return params
 }
 
+function extractFilters(values, fields) {
+  const excluded = new Set(['sortBy', 'sortDir', 'page', 'pageSize'])
+  const filters = {}
+  for (const [canonical] of fields) {
+    if (excluded.has(canonical)) continue
+    if (Object.prototype.hasOwnProperty.call(values, canonical)) filters[canonical] = values[canonical]
+  }
+  return filters
+}
+
 function toSearchParams(serialized, viewId) {
   const params = new URLSearchParams()
   if (viewId !== undefined && viewId !== null && viewId !== '') params.set('view', String(viewId))
@@ -189,7 +199,7 @@ export function dashboardNavigationState(search, defaults = {}) {
       sortBy: values.sortBy ?? defaults.sortBy,
       sortDir: values.sortDir ?? defaults.sortDir,
     },
-    filters: values,
+    filters: extractFilters(values, DASHBOARD_FIELDS),
     page: values.page ?? defaults.page ?? 1,
     pageSize: values.pageSize ?? defaults.pageSize ?? 50,
     unsupportedKeys: result.unsupportedKeys,
@@ -205,7 +215,7 @@ export function applicationNavigationState(search, defaults = {}) {
       field: values.sortBy ?? defaults.sortBy ?? 'opened_at',
       direction: values.sortDir ?? defaults.sortDir ?? 'desc',
     },
-    filters: values,
+    filters: extractFilters(values, APPLICATION_FIELDS),
     page: values.page ?? defaults.page ?? 1,
     pageSize: values.pageSize ?? defaults.pageSize ?? 50,
     unsupportedKeys: result.unsupportedKeys,

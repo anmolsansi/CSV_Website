@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { savedViewSearch } from '../api/queryParams'
 
 export default function SavedViews() {
   const [views, setViews] = useState([])
@@ -45,13 +46,18 @@ export default function SavedViews() {
   }
 
   const applyView = (view) => {
-    const filterParams = encodeURIComponent(JSON.stringify(view.filters))
-    if (view.view_type === 'job_links') {
-      navigate(`/?view=${view.id}`)
-    } else if (view.view_type === 'applications') {
-      navigate(`/applications?view=${view.id}`)
-    } else if (view.view_type === 'pipeline') {
-      navigate(`/pipeline?view=${view.id}`)
+    setError('')
+    try {
+      const query = savedViewSearch(view.view_type, view.filters || {}, view.id).toString()
+      if (view.view_type === 'job_links') {
+        navigate(`/?${query}`)
+      } else if (view.view_type === 'applications') {
+        navigate(`/applications?${query}`)
+      } else if (view.view_type === 'pipeline') {
+        navigate(`/pipeline?view=${view.id}`)
+      }
+    } catch (err) {
+      setError(`Saved view cannot be applied: ${err.message}`)
     }
   }
 

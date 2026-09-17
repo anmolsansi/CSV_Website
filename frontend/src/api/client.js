@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { serializeApplicationQuery, serializeDashboardQuery } from './queryParams'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -46,26 +47,12 @@ export const api = {
     fd.append('file', file)
     return client.post('/upload', fd).then((r) => r.data)
   },
-  getRows: ({ sortBy = 'created_at', sortDir = 'desc', atsGroup = '', locationGroup = '', searchBucket = '', decision = '', sponsorshipStatus = '', q = '', openedOnly = false, unopenedOnly = false, openableOnly = false, hasError = false, jdMissing = false, page = 1, pageSize = 50 } = {}) =>
+  getRows: (params = {}) =>
     client
       .get('/rows', {
         params: {
-          sort_by: sortBy,
-          sort_dir: sortDir,
-          page,
-          page_size: pageSize,
+          ...serializeDashboardQuery(params, { includePagination: true, includeFalse: true }),
           ...todayWindowParams(),
-          ...(atsGroup ? { ats_group: atsGroup } : {}),
-          ...(locationGroup ? { location_group: locationGroup } : {}),
-          ...(searchBucket ? { search_bucket: searchBucket } : {}),
-          ...(decision ? { decision } : {}),
-          ...(sponsorshipStatus ? { sponsorship_status: sponsorshipStatus } : {}),
-          ...(q ? { q } : {}),
-          ...(openedOnly ? { opened_only: true } : {}),
-          ...(unopenedOnly ? { unopened_only: true } : {}),
-          ...(openableOnly ? { openable_only: true } : {}),
-          ...(hasError ? { has_error: true } : {}),
-          ...(jdMissing ? { jd_missing: true } : {}),
         },
       })
       .then((r) => r.data),
@@ -83,35 +70,12 @@ export const api = {
       .then((r) => r.data),
 
   // CRM - Applications
-  getApplications: (params = {}) => {
-    const qs = new URLSearchParams()
-    if (params.sort_by) qs.set('sort_by', params.sort_by)
-    if (params.sort_dir) qs.set('sort_dir', params.sort_dir)
-    if (params.page) qs.set('page', params.page)
-    if (params.page_size) qs.set('page_size', params.page_size)
-    if (params.status) qs.set('status', params.status)
-    if (params.company) qs.set('company', params.company)
-    if (params.ats_group) qs.set('ats_group', params.ats_group)
-    if (params.search_bucket) qs.set('search_bucket', params.search_bucket)
-    if (params.quick_range) qs.set('quick_range', params.quick_range)
-    if (params.date_from) qs.set('date_from', params.date_from)
-    if (params.date_to) qs.set('date_to', params.date_to)
-    if (params.min_score) qs.set('min_score', params.min_score)
-    if (params.max_score) qs.set('max_score', params.max_score)
-    if (params.follow_up_due) qs.set('follow_up_due', 'true')
-    if (params.follow_up_today) qs.set('follow_up_today', 'true')
-    if (params.follow_up_overdue) qs.set('follow_up_overdue', 'true')
-    if (params.follow_up_none) qs.set('follow_up_none', 'true')
-    if (params.opened_not_applied) qs.set('opened_not_applied', 'true')
-    if (params.has_error) qs.set('has_error', 'true')
-    if (params.jd_missing) qs.set('jd_missing', 'true')
-    if (params.location_group) qs.set('location_group', params.location_group)
-    if (params.decision) qs.set('decision', params.decision)
-    if (params.sponsorship_status) qs.set('sponsorship_status', params.sponsorship_status)
-    if (params.applied_only) qs.set('applied_only', 'true')
-    if (params.q) qs.set('q', params.q)
-    return client.get(`/crm/applications?${qs.toString()}`).then((r) => r.data)
-  },
+  getApplications: (params = {}) =>
+    client
+      .get('/crm/applications', {
+        params: serializeApplicationQuery(params, { includePagination: true, includeFalse: true }),
+      })
+      .then((r) => r.data),
   updateApplication: (itemId, payload) =>
     client.patch(`/crm/applications/${itemId}`, payload).then((r) => r.data),
   createApplicationFromRow: (rowId) =>
@@ -169,24 +133,24 @@ export const api = {
 
   // CRM - Export
   exportDashboard: (params = {}) => {
+    const { format = 'csv', scope = 'all', rowIds = [], columns, ...query } = params
     const qs = new URLSearchParams()
-    if (params.format) qs.set('format', params.format)
-    if (params.atsGroup) qs.set('ats_group', params.atsGroup)
-    if (params.rowIds && params.rowIds.length) qs.set('row_ids', params.rowIds.join(','))
-    if (params.columns) qs.set('columns', params.columns)
+    qs.set('format', format)
+    qs.set('scope', scope)
+    Object.entries(serializeDashboardQuery(query, { includePagination: false, includeFalse: true }))
+      .forEach(([key, value]) => qs.set(key, String(value)))
+    if (rowIds.length) qs.set('row_ids', rowIds.join(','))
+    if (columns) qs.set('columns', columns)
     return client.get(`/crm/export/dashboard?${qs.toString()}`, { responseType: 'blob' })
   },
   exportApplications: (params = {}) => {
+    const { format = 'csv', scope = 'all', rowIds = [], ...query } = params
     const qs = new URLSearchParams()
-    if (params.format) qs.set('format', params.format)
-    if (params.status) qs.set('status', params.status)
-    if (params.company) qs.set('company', params.company)
-    if (params.atsGroup) qs.set('ats_group', params.atsGroup)
-    if (params.searchBucket) qs.set('search_bucket', params.searchBucket)
-    if (params.followUpDue) qs.set('follow_up_due', 'true')
-    if (params.openedNotApplied) qs.set('opened_not_applied', 'true')
-    if (params.q) qs.set('q', params.q)
-    if (params.rowIds && params.rowIds.length) qs.set('row_ids', params.rowIds.join(','))
+    qs.set('format', format)
+    qs.set('scope', scope)
+    Object.entries(serializeApplicationQuery(query, { includePagination: false, includeFalse: true }))
+      .forEach(([key, value]) => qs.set(key, String(value)))
+    if (rowIds.length) qs.set('row_ids', rowIds.join(','))
     return client.get(`/crm/export/applications?${qs.toString()}`, { responseType: 'blob' })
   },
 
