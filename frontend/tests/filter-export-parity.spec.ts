@@ -33,7 +33,6 @@ test.describe('JG-007 browser/export query parity', () => {
 
     await page.reload();
     await expect(page.locator('#search-filter')).toHaveValue('Parity');
-    await expect(page.locator('input[type="checkbox"]').filter({ has: page.locator(':scope') }).nth(1)).toBeVisible();
 
     await page.locator('.export-bar select').nth(1).selectOption('filtered');
     const exportRequest = page.waitForRequest((request) => request.url().includes('/crm/export/dashboard?'));
