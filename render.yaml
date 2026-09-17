@@ -24,7 +24,3 @@ services:
         sync: false
       - key: OAUTH_REDIRECT_BASE
         sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
