@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.orm import sessionmaker
 
