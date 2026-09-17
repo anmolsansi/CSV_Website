@@ -140,7 +140,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 **R2 — Make filtered exports match browsing**
 
 - [x] [JG-005 — Extract one account-scoped query builder without changing list behavior](#jg-005)
-- [ ] [JG-006 — Route every export through the shared filter contract](#jg-006)
+- [x] [JG-006 — Route every export through the shared filter contract](#jg-006)
 - [ ] [JG-007 — Unify browser and saved-view query serialization](#jg-007)
 
 **R3 — Reconcile visits applications and progress metrics**
@@ -1446,7 +1446,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-006"></a>
 ### JG-006 — Route every export through the shared filter contract
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 6/64; group step 2/3
@@ -1623,13 +1623,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-006 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: test_filtered_export_equals_all_list_pages: 61 matches and multiple exclusions
-- [ ] Required regression passes: test_selected_empty_never_exports_all: returns 400/422
-- [ ] Required regression passes: test_selected_foreign_id: whole request rejected
-- [ ] Required regression passes: test_formula_cells_escaped_in_csv_only: stored text and JSON unchanged
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-006 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: test_filtered_export_equals_all_list_pages: 61 matches and multiple exclusions
+- [x] Required regression passes: test_selected_empty_never_exports_all: returns 400/422
+- [x] Required regression passes: test_selected_foreign_id: whole request rejected
+- [x] Required regression passes: test_formula_cells_escaped_in_csv_only: stored text and JSON unchanged
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -1647,12 +1647,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -1665,7 +1665,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-005 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** PR #39 merged to `main` after GitHub Actions CI run #53 (`35184644817`) passed the backend compile check, complete backend pytest suite, frontend build, and Playwright E2E suite. JG-006 now routes Dashboard and Applications exports through the shared account-scoped filter/order contracts with strict selected-scope ownership validation, bounded streaming, ordered dashboard column validation, CSV-only spreadsheet-safe escaping, and lossless JSON. Staging acceptance and production release are not claimed by this local completion.
 
 ---
 
