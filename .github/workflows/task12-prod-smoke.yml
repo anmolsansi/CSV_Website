@@ -1,0 +1,116 @@
+name: Task 12 Production Smoke
+
+on:
+  push:
+    branches:
+      - ops/task12-prod-smoke
+
+jobs:
+  smoke:
+    name: Verify production deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FRONTEND_URL: https://csv-website-steel.vercel.app
+      BACKEND_URL: https://jobgrid-api.onrender.com
+
+    steps:
+      - name: Verify Render health
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=""
+          for attempt in $(seq 1 12); do
+            if body=$(curl -fsS --max-time 120 "$BACKEND_URL/health"); then
+              break
+            fi
+            echo "Render not ready yet (attempt $attempt/12); retrying..."
+            sleep 10
+          done
+          BODY="$body" python - <<'PY'
+          import json, os
+          data = json.loads(os.environ['BODY'])
+          assert data == {'status': 'ok'}, data
+          print('Render /health OK')
+          PY
+
+      - name: Verify Vercel frontend and built asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 60 "$FRONTEND_URL/" -o /tmp/index.html
+          grep -q '<div id="root"></div>' /tmp/index.html
+          grep -q '<title>CSV URL Tracker</title>' /tmp/index.html
+          asset=$(grep -oE 'src="/assets/[^"]+\.js"' /tmp/index.html | head -1 | cut -d'"' -f2)
+          test -n "$asset"
+          curl -fsS --max-time 60 "$FRONTEND_URL$asset" -o /tmp/app.js
+          test -s /tmp/app.js
+          echo "Vercel frontend shell and JS asset OK"
+
+      - name: Verify Vercel to Render API proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS --max-time 120 "$FRONTEND_URL/api/health")
+          BODY="$body" python - <<'PY'
+          import json, os
+          data = json.loads(os.environ['BODY'])
+          assert data == {'status': 'ok'}, data
+          print('Vercel /api/health proxy OK')
+          PY
+
+      - name: Verify unauthenticated API is protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --max-time 60 -o /tmp/me.json -w '%{http_code}' "$FRONTEND_URL/api/auth/me")
+          case "$status" in
+            401|403) echo "Unauthenticated /auth/me correctly rejected with $status" ;;
+            *) echo "Unexpected /auth/me status: $status"; cat /tmp/me.json; exit 1 ;;
+          esac
+
+      - name: Verify Google OAuth redirect and callback URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --max-time 60 -o /dev/null -D /tmp/oauth.headers -w '%{http_code}' "$FRONTEND_URL/api/auth/login/google")
+          case "$status" in
+            302|303|307|308) ;;
+            *) echo "Unexpected OAuth login status: $status"; cat /tmp/oauth.headers; exit 1 ;;
+          esac
+          location=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {$1=""; sub(/^ /,""); sub(/\r$/,""); print; exit}' /tmp/oauth.headers)
+          test -n "$location"
+          LOCATION="$location" FRONTEND_URL="$FRONTEND_URL" python - <<'PY'
+          import os
+          from urllib.parse import urlparse, parse_qs
+          location = os.environ['LOCATION']
+          frontend = os.environ['FRONTEND_URL']
+          parsed = urlparse(location)
+          assert parsed.hostname in {'accounts.google.com', 'accounts.googleusercontent.com'}, parsed.hostname
+          qs = parse_qs(parsed.query)
+          redirect_uri = qs.get('redirect_uri', [''])[0]
+          expected = frontend + '/api/auth/callback/google'
+          assert redirect_uri == expected, (redirect_uri, expected)
+          print('Google OAuth redirect and callback URL OK')
+          PY
+
+      - name: Verify SPA deep links refresh correctly
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in applications analytics pipeline sessions saved-views applypilot duplicates companies import; do
+            curl -fsS --max-time 60 "$FRONTEND_URL/$path" -o "/tmp/$path.html"
+            grep -q '<div id="root"></div>' "/tmp/$path.html"
+            grep -q '<title>CSV URL Tracker</title>' "/tmp/$path.html"
+            echo "/$path OK"
+          done
+
+      - name: Production smoke summary
+        run: |
+          echo "Task 12 external smoke checks passed:"
+          echo "- Render health"
+          echo "- Vercel frontend and JS asset"
+          echo "- Vercel -> Render API proxy"
+          echo "- unauthenticated API protection"
+          echo "- Google OAuth redirect/callback configuration"
+          echo "- SPA deep-link refreshes"
