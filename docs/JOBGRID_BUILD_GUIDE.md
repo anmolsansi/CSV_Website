@@ -391,3 +391,24 @@ pytest tests/ -q
 The JG-006 regression fixture proves 61 filtered Dashboard matches have the exact same order as all paginated `GET /rows` pages, selected scope never falls back to all rows, foreign selected IDs reject the complete request, CSV formula protection does not mutate JSON/storage, requested column order is preserved, and application export consumes row-derived shared filters and stable ordering.
 
 Rollback is code-only: revert the JG-006 router/service changes together. There is no migration and no persisted export-format transformation to reverse. Local verification does not claim staging acceptance or production release.
+
+
+## JG-007 shared browser and saved-view query serialization
+
+`frontend/src/api/queryParams.js` is the frontend source of truth for Dashboard and Applications query serialization. It accepts the documented camelCase UI names and snake_case wire aliases, normalizes booleans and numbers explicitly, and emits the backend's snake_case query contract.
+
+The same serializer is used for list loads, Dashboard top-five retrieval, filtered exports, and Saved View navigation. Export requests always send an explicit `scope` and sort, never copy `page`/`page_size`, and selected scope sends only selected IDs for the backend ownership check.
+
+Saved Views serialize filter state into the destination URL. Dashboard and Applications hydrate their initial filter and sort state from that URL after reload. Unknown keys or invalid booleans/numbers render a recoverable error with a clear action instead of being ignored silently.
+
+Dashboard and Applications record the last settled browse query. Export is disabled while a browse request is loading, snapshots the current query at click time, and refuses to export if that snapshot does not match the settled result. HTTP export failures show an error and never report a successful download.
+
+Focused verification:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/filter-export-parity.spec.ts --project=chromium
+```
+
+JG-007 changes no database schema and does not change the JG-005/JG-006 backend filtering or ownership contracts.

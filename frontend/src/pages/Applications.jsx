@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { api } from '../api/client'
+import { applicationNavigationState, applicationStateQuery, queryValidationMessage, serializeApplicationQuery } from '../api/queryParams'
 import { useToast } from '../App'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
@@ -47,54 +48,40 @@ function inputToIso(value) {
   return value ? new Date(value).toISOString() : ''
 }
 
-function buildApiParams(filters, sort, pagination) {
-  return {
-    sort_by: sort.field === 'clickedAt' ? 'opened_at' : sort.field,
-    sort_dir: sort.direction,
-    page: pagination.page,
-    page_size: pagination.pageSize,
-    ...(filters.status ? { status: filters.status } : {}),
-    ...(filters.company ? { company: filters.company } : {}),
-    ...(filters.atsGroup ? { ats_group: filters.atsGroup } : {}),
-    ...(filters.searchBucket ? { search_bucket: filters.searchBucket } : {}),
-    ...(filters.quickRange ? { quick_range: filters.quickRange } : {}),
-    ...(filters.dateFrom ? { date_from: new Date(filters.dateFrom).toISOString() } : {}),
-    ...(filters.dateTo ? { date_to: new Date(filters.dateTo).toISOString() } : {}),
-    ...(filters.minScore ? { min_score: Number(filters.minScore) } : {}),
-    ...(filters.maxScore ? { max_score: Number(filters.maxScore) } : {}),
-    ...(filters.followUpDue ? { follow_up_due: true } : {}),
-    ...(filters.followUpToday ? { follow_up_today: true } : {}),
-    ...(filters.followUpOverdue ? { follow_up_overdue: true } : {}),
-    ...(filters.followUpNone ? { follow_up_none: true } : {}),
-    ...(filters.openedNotApplied ? { opened_not_applied: true } : {}),
-    ...(filters.hasError ? { has_error: true } : {}),
-    ...(filters.jdMissing ? { jd_missing: true } : {}),
-    ...(filters.locationGroup ? { location_group: filters.locationGroup } : {}),
-    ...(filters.decision ? { decision: filters.decision } : {}),
-    ...(filters.sponsorshipStatus ? { sponsorship_status: filters.sponsorshipStatus } : {}),
-    ...(filters.q ? { q: filters.q } : {}),
-  }
-}
-
 export default function Applications() {
+  const initialNavigation = useMemo(
+    () => applicationNavigationState(window.location.search, { ...DEFAULT_FILTERS, sortBy: 'opened_at', sortDir: 'desc', page: 1, pageSize: 50 }),
+    []
+  )
+  const initialFilters = { ...DEFAULT_FILTERS, ...initialNavigation.filters }
   const [applications, setApplications] = useState([])
   const [filterOptions, setFilterOptions] = useState({ ats_groups: [], location_groups: [], decisions: [], sponsorship_statuses: [] })
-  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+  const [filters, setFilters] = useState(initialFilters)
   const [hiddenColumns, setHiddenColumns] = useState(['searchBucket'])
-  const [sort, setSort] = useState({ field: 'opened_at', direction: 'desc' })
+  const [sort, setSort] = useState(initialNavigation.sort)
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
-  const [pagination, setPagination] = useState(DEFAULT_PAGINATION)
+  const [pagination, setPagination] = useState({ ...DEFAULT_PAGINATION, page: initialNavigation.page, pageSize: initialNavigation.pageSize })
+  const settledQueryRef = useRef(null)
+  const requestSequenceRef = useRef(0)
+  const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
   const toast = useToast()
 
   const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page) => {
+    const requestId = ++requestSequenceRef.current
+    const query = applicationStateQuery(nextSort, nextFilters, nextPage, pagination.pageSize)
     setLoading(true)
-    const params = buildApiParams(nextFilters, nextSort, { ...pagination, page: nextPage })
-    api.getApplications(params).then((data) => {
+    return api.getApplications(query).then((data) => {
+      if (requestId !== requestSequenceRef.current) return
       setApplications(data.rows || [])
       setFilterOptions(data.filter_options || { ats_groups: [] })
       setPagination({ page: data.page || nextPage, pageSize: data.page_size || 50, totalCount: data.total_count || (data.rows || []).length, hasNext: data.has_next || false })
-    }).finally(() => setLoading(false))
+      settledQueryRef.current = query
+    }).catch(() => {
+      if (requestId === requestSequenceRef.current) toast('Could not load applications. Please retry.', 'error')
+    }).finally(() => {
+      if (requestId === requestSequenceRef.current) setLoading(false)
+    })
   }
 
   useEffect(() => {
@@ -164,21 +151,27 @@ export default function Applications() {
   const [exportScope, setExportScope] = useState('all')
 
   const handleExport = async () => {
-    const params = { format: exportFormat }
+    if (loading || !settledQueryRef.current) {
+      toast('Wait for the current filters to finish loading before exporting.', 'warning')
+      return
+    }
+    const querySnapshot = applicationStateQuery(sort, filters, pagination.page, pagination.pageSize)
+    const currentSignature = JSON.stringify(serializeApplicationQuery(querySnapshot, { includePagination: false, includeFalse: true }))
+    const settledSignature = JSON.stringify(serializeApplicationQuery(settledQueryRef.current, { includePagination: false, includeFalse: true }))
+    if (currentSignature !== settledSignature) {
+      toast('Filters changed before the matching results settled. Retry after loading finishes.', 'warning')
+      return
+    }
+    const params = { ...querySnapshot, format: exportFormat, scope: exportScope }
     if (exportScope === 'selected') {
       if (selectedIds.size === 0) { toast('No rows selected', 'warning'); return }
       params.rowIds = [...selectedIds]
-    } else if (exportScope === 'filtered') {
-      params.status = filters.status || undefined
-      params.company = filters.company || undefined
-      params.atsGroup = filters.atsGroup || undefined
-      params.followUpDue = filters.followUpDue || undefined
-      params.openedNotApplied = filters.openedNotApplied || undefined
-      params.q = filters.q || undefined
     } else if (exportScope === 'applied') {
-      params.status = 'applied'
+      params.scope = 'filtered'
+      Object.assign(params, { ...DEFAULT_FILTERS, status: 'applied' })
     } else if (exportScope === 'followups') {
-      params.followUpDue = true
+      params.scope = 'filtered'
+      Object.assign(params, { ...DEFAULT_FILTERS, followUpDue: true })
     }
     try {
       const res = await api.exportApplications(params)
@@ -191,8 +184,8 @@ export default function Applications() {
       a.click()
       URL.revokeObjectURL(url)
       toast('Export downloaded', 'success')
-    } catch (err) {
-      toast('Export failed', 'error')
+    } catch {
+      toast('Export failed. No file was downloaded. Please retry.', 'error')
     }
   }
 
@@ -221,6 +214,15 @@ export default function Applications() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
 
+  const clearNavigationError = () => {
+    window.history.replaceState({}, '', window.location.pathname)
+    setQueryError('')
+    setSort({ field: 'opened_at', direction: 'desc' })
+    setFilters(DEFAULT_FILTERS)
+    setPagination(DEFAULT_PAGINATION)
+    refresh(DEFAULT_FILTERS, { field: 'opened_at', direction: 'desc' }, 1)
+  }
+
   const columns = [
     ['company', 'Company'],
     ['title', 'Title'],
@@ -237,6 +239,7 @@ export default function Applications() {
 
   return (
     <div className="container">
+      {queryError && <div className="error-msg" role="alert">{queryError} <button className="btn btn-grey btn-sm" onClick={clearNavigationError}>Clear saved-view filters</button></div>}
       <div className="page-header-row">
         <div>
           <h2>Applications</h2>
@@ -264,7 +267,7 @@ export default function Applications() {
           <option value="applied">Applied only</option>
           <option value="followups">Follow-ups due</option>
         </select>
-        <button className="btn btn-grey" onClick={handleExport}>Download</button>
+        <button className="btn btn-grey" onClick={handleExport} disabled={loading}>Download</button>
       </div>
 
       <div className="table-controls">
