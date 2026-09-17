@@ -1,0 +1,66 @@
+name: JG-006 Completion Marker
+
+on:
+  push:
+    branches:
+      - docs/jg-006-completed
+
+permissions:
+  contents: write
+
+jobs:
+  mark-complete:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/jg-006-completed
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Mark JG-006 completed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md')
+          text = path.read_text()
+
+          queue_old = '- [ ] [JG-006 — Route every export through the shared filter contract](#jg-006)'
+          queue_new = '- [x] [JG-006 — Route every export through the shared filter contract](#jg-006)'
+          if queue_old not in text:
+              raise SystemExit('JG-006 queue checkbox not found')
+          text = text.replace(queue_old, queue_new, 1)
+
+          start_marker = '<a id="jg-006"></a>'
+          end_marker = '<a id="jg-007"></a>'
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          block = text[start:end]
+
+          status_old = '**Status:** PROPOSED / unchecked'
+          status_new = '**Status:** COMPLETED / locally verified'
+          if status_old not in block:
+              raise SystemExit('JG-006 proposed status not found')
+          block = block.replace(status_old, status_new, 1)
+          block = block.replace('- [ ] ', '- [x] ')
+
+          intake_old = '**PLANNED; waits for JG-005 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.'
+          intake_new = '**COMPLETED / locally verified.** PR #39 merged to `main` after GitHub Actions CI run #53 (`35184644817`) passed the backend compile check, complete backend pytest suite, frontend build, and Playwright E2E suite. JG-006 now routes Dashboard and Applications exports through the shared account-scoped filter/order contracts with strict selected-scope ownership validation, bounded streaming, ordered dashboard column validation, CSV-only spreadsheet-safe escaping, and lossless JSON. Staging acceptance and production release are not claimed by this local completion.'
+          if intake_old not in block:
+              raise SystemExit('JG-006 intake result not found')
+          block = block.replace(intake_old, intake_new, 1)
+
+          text = text[:start] + block + text[end:]
+          path.write_text(text)
+          PY
+          git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md
+          git commit -m "docs(jg-006): mark locally verified completion (#38)"
+      - name: Remove temporary workflow
+        run: |
+          git rm .github/workflows/jg006-completion-marker.yml
+          git commit -m "chore(jg-006): remove completion marker runner (#38)"
+      - name: Push completion commits
+        run: git push origin HEAD:docs/jg-006-completed
