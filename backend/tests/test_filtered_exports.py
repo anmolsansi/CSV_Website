@@ -129,7 +129,7 @@ def test_filtered_export_equals_all_list_pages(client, engine):
     assert len(list_urls) == 61
     assert len(export_urls) == 61
     assert export_urls == list_urls
-    assert export_urls == sorted(expected_urls)
+    assert export_urls == expected_urls
     assert "https://jobs.example/control-onsite" not in export_urls
     assert "https://jobs.example/control-sponsorship" not in export_urls
 
