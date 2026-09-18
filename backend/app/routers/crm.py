@@ -1,7 +1,9 @@
 import csv
 import io
 import json
+import logging
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 from typing import Literal
 from uuid import UUID
 
@@ -33,6 +35,7 @@ from ..services.row_queries import (
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
+logger = logging.getLogger(__name__)
 SORT_FIELDS = {"company", "title", "ats_group", "search_bucket", "resume_match_score", "status", "opened_at", "applied_at", "follow_up_at", "created_at", "updated_at", "priority_score", "triage"}
 
 
@@ -52,7 +55,35 @@ def _request_operation_id(value: str | None) -> UUID:
         raise HTTPException(400, exc.message) from exc
 
 
-def _raise_lifecycle_http(db: Session, exc: LifecycleEventError):
+def _log_lifecycle_outcome(
+    *,
+    action: str,
+    operation_id: UUID,
+    outcome: str,
+    affected: int,
+    started: float,
+    warning: bool = False,
+):
+    log = logger.warning if warning else logger.info
+    log(
+        "lifecycle_mutation action=%s operation_id=%s outcome=%s affected=%s elapsed_ms=%s",
+        action,
+        operation_id,
+        outcome,
+        affected,
+        int((perf_counter() - started) * 1000),
+    )
+
+
+def _raise_lifecycle_http(
+    db: Session,
+    exc: LifecycleEventError,
+    *,
+    action: str,
+    operation_id: UUID,
+    affected: int,
+    started: float,
+):
     db.rollback()
     if exc.code == "event_key_conflict":
         status_code = 409
@@ -60,6 +91,14 @@ def _raise_lifecycle_http(db: Session, exc: LifecycleEventError):
         status_code = 404
     else:
         status_code = 400
+    _log_lifecycle_outcome(
+        action=action,
+        operation_id=operation_id,
+        outcome=exc.code,
+        affected=affected,
+        started=started,
+        warning=True,
+    )
     raise HTTPException(status_code, exc.message) from exc
 
 
@@ -330,6 +369,7 @@ def bulk_update_apps(
 
     data = _prepare_track_patch(payload.patch.model_dump(exclude_unset=True))
     operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
     now = datetime.utcnow()
     try:
         for item in items:
@@ -343,8 +383,22 @@ def bulk_update_apps(
                 now=now,
             )
         db.commit()
+        _log_lifecycle_outcome(
+            action="bulk_patch",
+            operation_id=operation_id,
+            outcome="success",
+            affected=len(items),
+            started=started,
+        )
     except LifecycleEventError as exc:
-        _raise_lifecycle_http(db, exc)
+        _raise_lifecycle_http(
+            db,
+            exc,
+            action="bulk_patch",
+            operation_id=operation_id,
+            affected=0,
+            started=started,
+        )
     return {"updated": len(items), "failed": []}
 
 
@@ -365,6 +419,7 @@ def bulk_create_from_rows(
         raise HTTPException(404, "One or more rows not found")
 
     operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
     now = datetime.utcnow()
     created = 0
     items = []
@@ -416,8 +471,22 @@ def bulk_create_from_rows(
         db.flush()
         application_ids = [item.id for item in items]
         db.commit()
+        _log_lifecycle_outcome(
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            outcome="success",
+            affected=len(items),
+            started=started,
+        )
     except LifecycleEventError as exc:
-        _raise_lifecycle_http(db, exc)
+        _raise_lifecycle_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            affected=0,
+            started=started,
+        )
     return {
         "created": created,
         "updated": len(items) - created,
@@ -440,6 +509,7 @@ def update_app(
 
     data = _prepare_track_patch(payload.model_dump(exclude_unset=True))
     operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
     try:
         _apply_track_patch(
             db,
@@ -452,8 +522,22 @@ def update_app(
         )
         db.commit()
         db.refresh(item)
+        _log_lifecycle_outcome(
+            action="application_patch",
+            operation_id=operation_id,
+            outcome="success",
+            affected=1,
+            started=started,
+        )
     except LifecycleEventError as exc:
-        _raise_lifecycle_http(db, exc)
+        _raise_lifecycle_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            affected=0,
+            started=started,
+        )
     return to_out(item)
 
 
@@ -940,6 +1024,7 @@ def import_applypilot_results(
         raise HTTPException(400, "Invalid submitted_at value") from exc
 
     operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
     updated = 0
     try:
         for result, submitted_at in prepared:
@@ -964,8 +1049,22 @@ def import_applypilot_results(
                 track.notes = f"ApplyPilot error: {result.error}"
             updated += 1
         db.commit()
+        _log_lifecycle_outcome(
+            action="applypilot_import",
+            operation_id=operation_id,
+            outcome="success",
+            affected=updated,
+            started=started,
+        )
     except LifecycleEventError as exc:
-        _raise_lifecycle_http(db, exc)
+        _raise_lifecycle_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
+            affected=0,
+            started=started,
+        )
     return {"updated": updated}
 
 
@@ -1059,6 +1158,7 @@ def set_follow_up_preset(
         )
 
     operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
     try:
         apply_job_track_changes(
             db,
@@ -1079,8 +1179,22 @@ def set_follow_up_preset(
         )
         db.commit()
         db.refresh(item)
+        _log_lifecycle_outcome(
+            action="followup_preset",
+            operation_id=operation_id,
+            outcome="success",
+            affected=1,
+            started=started,
+        )
     except LifecycleEventError as exc:
-        _raise_lifecycle_http(db, exc)
+        _raise_lifecycle_http(
+            db,
+            exc,
+            action="followup_preset",
+            operation_id=operation_id,
+            affected=0,
+            started=started,
+        )
     return to_out(item)
 
 
@@ -1276,6 +1390,7 @@ def import_external_applications(
         raise HTTPException(400, "Invalid import datetime value") from exc
 
     operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
     created = 0
     try:
         for item, url, applied_at, follow_up_at in prepared:
@@ -1319,8 +1434,22 @@ def import_external_applications(
             )
             created += 1
         db.commit()
+        _log_lifecycle_outcome(
+            action="external_import",
+            operation_id=operation_id,
+            outcome="success",
+            affected=created,
+            started=started,
+        )
     except LifecycleEventError as exc:
-        _raise_lifecycle_http(db, exc)
+        _raise_lifecycle_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
+            affected=0,
+            started=started,
+        )
     return {"created": created}
 
 
