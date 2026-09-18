@@ -1,8 +1,12 @@
+import importlib.util
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import Column, Integer, MetaData, Table, create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
@@ -209,3 +213,66 @@ def test_metric_definitions_keep_saved_visited_and_applied_distinct(db_session):
     assert count_saved(db_session, user_id=user.id, start=start, end=end) == 1
     assert count_visited(db_session, user_id=user.id, start=start, end=end) == 1
     assert count_applied(db_session, user_id=user.id, start=start, end=end) == 1
+
+def test_lifecycle_migration_up_down(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'lifecycle-migration.db'}")
+    metadata = MetaData()
+    Table("users", metadata, Column("id", Integer, primary_key=True))
+    Table("csv_rows", metadata, Column("id", Integer, primary_key=True))
+    Table("job_tracks", metadata, Column("id", Integer, primary_key=True))
+    metadata.create_all(engine)
+
+    migration_path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "004_job_lifecycle_events.py"
+    )
+    spec = importlib.util.spec_from_file_location("jg008_migration", migration_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        module.op = Operations(context)
+        module.upgrade()
+
+    inspector = inspect(engine)
+    assert "job_lifecycle_events" in inspector.get_table_names()
+    assert {
+        "id",
+        "user_id",
+        "event_key",
+        "job_url",
+        "csv_row_id",
+        "job_track_id",
+        "kind",
+        "occurred_at",
+        "recorded_at",
+        "source",
+        "payload",
+    } == {
+        column["name"]
+        for column in inspector.get_columns("job_lifecycle_events")
+    }
+    unique_names = {
+        item["name"] for item in inspector.get_unique_constraints("job_lifecycle_events")
+    }
+    assert "uq_user_lifecycle_event_key" in unique_names
+    indexes = {
+        item["name"]: item for item in inspector.get_indexes("job_lifecycle_events")
+    }
+    assert indexes["ix_job_lifecycle_events_user_time_kind"]["column_names"] == [
+        "user_id",
+        "occurred_at",
+        "kind",
+    ]
+
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        module.op = Operations(context)
+        module.downgrade()
+
+    assert "job_lifecycle_events" not in inspect(engine).get_table_names()
+
