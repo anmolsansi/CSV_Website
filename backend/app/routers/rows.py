@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Float, asc, case, cast, desc, func
@@ -9,10 +12,12 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
 from ..schemas import ColumnPrefIn, RowDeleteIn
+from ..services.lifecycle import LifecycleEventError, record_visit
 from ..services.row_queries import RowQuery, build_row_query, order_row_query
 from .crm import emit_event, calculate_priority_score, calculate_triage
 
 router = APIRouter(tags=["rows"])
+logger = logging.getLogger(__name__)
 
 NUMERIC_SORT_COLUMNS = {
     "page_number",
@@ -250,14 +255,47 @@ def record_click(
     row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
     if not row:
         raise HTTPException(404, "Row not found")
-    now = datetime.utcnow()
-
-    # Mark clicked
+    operation_id = uuid4()
+    started = perf_counter()
     if not row.clicked:
-        row.clicked = True
-        row.clicked_at = datetime.utcnow()
-        emit_event(db, user.id, "row_opened", "csv_row", entity_id=row.id, metadata={"url": row.url})
-        db.commit()
+        try:
+            record_visit(
+                db,
+                user_id=user.id,
+                row=row,
+                occurred_at=datetime.utcnow(),
+                source="row_click",
+            )
+            emit_event(
+                db,
+                user.id,
+                "row_opened",
+                "csv_row",
+                entity_id=row.id,
+                metadata={"url": row.url},
+            )
+            db.commit()
+            logger.info(
+                "lifecycle_mutation action=row_click operation_id=%s outcome=success affected=1 elapsed_ms=%s",
+                operation_id,
+                int((perf_counter() - started) * 1000),
+            )
+        except LifecycleEventError as exc:
+            db.rollback()
+            status_code = 409 if exc.code == "event_key_conflict" else 400
+            logger.warning(
+                "lifecycle_mutation action=row_click operation_id=%s outcome=%s affected=0 elapsed_ms=%s",
+                operation_id,
+                exc.code,
+                int((perf_counter() - started) * 1000),
+            )
+            raise HTTPException(status_code, exc.message) from exc
+    else:
+        logger.info(
+            "lifecycle_mutation action=row_click operation_id=%s outcome=no_change affected=0 elapsed_ms=%s",
+            operation_id,
+            int((perf_counter() - started) * 1000),
+        )
     return {"id": row.id, "clicked": row.clicked, "clicked_at": row.clicked_at}
 
 
