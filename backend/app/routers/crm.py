@@ -311,27 +311,41 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
 
 
 @router.patch("/applications/bulk")
-def bulk_update_apps(payload: BulkUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    items = db.query(JobTrack).filter(JobTrack.id.in_(payload.ids), JobTrack.user_id == user.id).all()
+def bulk_update_apps(
+    payload: BulkUpdateIn,
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    requested_ids = list(dict.fromkeys(payload.ids))
+    if not requested_ids:
+        raise HTTPException(400, "No applications selected")
+    items = (
+        db.query(JobTrack)
+        .filter(JobTrack.id.in_(requested_ids), JobTrack.user_id == user.id)
+        .all()
+    )
+    if len(items) != len(requested_ids):
+        raise HTTPException(404, "One or more applications not found")
+
+    data = _prepare_track_patch(payload.patch.model_dump(exclude_unset=True))
+    operation_id = _request_operation_id(x_operation_id)
     now = datetime.utcnow()
-    updated = 0
-    failed = []
-    for item in items:
-        data = payload.patch.model_dump(exclude_unset=True)
-        for key in ["company", "title", "status", "notes"]:
-            if key in data:
-                setattr(item, key, data[key])
-        if "applied_at" in data:
-            item.applied_at = parse_dt(data["applied_at"])
-        if "follow_up_at" in data:
-            item.follow_up_at = parse_dt(data["follow_up_at"])
-        if data.get("mark_applied") or data.get("status") == "applied":
-            item.status = "applied"
-            item.applied_at = item.applied_at or now
-        item.updated_at = now
-        updated += 1
-    db.commit()
-    return {"updated": updated, "failed": failed}
+    try:
+        for item in items:
+            _apply_track_patch(
+                db,
+                user_id=user.id,
+                item=item,
+                data=data,
+                source="bulk_patch",
+                operation_id=operation_id,
+                now=now,
+            )
+        db.commit()
+    except LifecycleEventError as exc:
+        _raise_lifecycle_http(db, exc)
+    return {"updated": len(items), "failed": []}
 
 
 @router.post("/from-rows/bulk")
@@ -370,24 +384,33 @@ def bulk_create_from_rows(payload: BulkFromRowsIn, db: Session = Depends(get_db)
 
 
 @router.patch("/applications/{item_id}")
-def update_app(item_id: int, payload: JobTrackUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def update_app(
+    item_id: int,
+    payload: JobTrackUpdateIn,
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
     if not item:
         raise HTTPException(404, "Application not found")
-    data = payload.model_dump(exclude_unset=True)
-    for key in ["company", "title", "status", "notes"]:
-        if key in data:
-            setattr(item, key, data[key])
-    if "applied_at" in data:
-        item.applied_at = parse_dt(data["applied_at"])
-    if "follow_up_at" in data:
-        item.follow_up_at = parse_dt(data["follow_up_at"])
-    if data.get("mark_applied") or data.get("status") == "applied":
-        item.status = "applied"
-        item.applied_at = item.applied_at or datetime.utcnow()
-    item.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(item)
+
+    data = _prepare_track_patch(payload.model_dump(exclude_unset=True))
+    operation_id = _request_operation_id(x_operation_id)
+    try:
+        _apply_track_patch(
+            db,
+            user_id=user.id,
+            item=item,
+            data=data,
+            source="application_patch",
+            operation_id=operation_id,
+            now=datetime.utcnow(),
+        )
+        db.commit()
+        db.refresh(item)
+    except LifecycleEventError as exc:
+        _raise_lifecycle_http(db, exc)
     return to_out(item)
 
 
