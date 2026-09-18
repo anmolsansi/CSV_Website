@@ -3,8 +3,9 @@ import io
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Float, asc, case, cast, desc, func, or_
 from sqlalchemy.orm import Session
@@ -16,6 +17,11 @@ from ..scoring import _parse_score, priority_score as scoring_priority_score, im
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
+from ..services.lifecycle import (
+    LifecycleEventError,
+    apply_job_track_changes,
+    coerce_operation_id,
+)
 from ..services.row_queries import (
     ApplicationQuery,
     RowQuery,
@@ -37,6 +43,66 @@ def parse_dt(value):
     if parsed.tzinfo:
         parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
     return parsed
+
+
+def _request_operation_id(value: str | None) -> UUID:
+    try:
+        return coerce_operation_id(value)
+    except LifecycleEventError as exc:
+        raise HTTPException(400, exc.message) from exc
+
+
+def _raise_lifecycle_http(db: Session, exc: LifecycleEventError):
+    db.rollback()
+    if exc.code == "event_key_conflict":
+        status_code = 409
+    elif exc.code in {"inaccessible_csv_row", "inaccessible_job_track"}:
+        status_code = 404
+    else:
+        status_code = 400
+    raise HTTPException(status_code, exc.message) from exc
+
+
+def _prepare_track_patch(data: dict) -> dict:
+    prepared = dict(data)
+    try:
+        if "applied_at" in prepared:
+            prepared["applied_at"] = parse_dt(prepared["applied_at"])
+        if "follow_up_at" in prepared:
+            prepared["follow_up_at"] = parse_dt(prepared["follow_up_at"])
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "Invalid datetime value") from exc
+    return prepared
+
+
+def _apply_track_patch(
+    db: Session,
+    *,
+    user_id: int,
+    item: JobTrack,
+    data: dict,
+    source: str,
+    operation_id: UUID,
+    now: datetime,
+):
+    for key in ["company", "title", "notes"]:
+        if key in data:
+            setattr(item, key, data[key])
+
+    lifecycle_kwargs = {}
+    for key in ["status", "applied_at", "follow_up_at", "mark_applied"]:
+        if key in data:
+            lifecycle_kwargs[key] = data[key]
+
+    apply_job_track_changes(
+        db,
+        user_id=user_id,
+        item=item,
+        source=source,
+        operation_id=operation_id,
+        now=now,
+        **lifecycle_kwargs,
+    )
 
 
 def num_expr(col):
