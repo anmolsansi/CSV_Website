@@ -504,6 +504,8 @@ Transition-capable routes accept an optional `X-Operation-ID` request header con
 
 The header is optional for existing clients. Clients that retry mutations after an uncertain network outcome should reuse the same UUID.
 
+Lifecycle mutation logs contain only the action name, operation/request UUID, safe outcome code, affected count, and elapsed milliseconds. They do not log job URLs, notes, imported row values, or tokens.
+
 Example:
 
 ```sh
