@@ -28,6 +28,7 @@ from ..models import (
     ColumnPreference,
     CsvRow,
     JobTrack,
+    JobLifecycleEvent,
     SavedView,
     SearchSession,
     UrlHistory,
@@ -77,6 +78,7 @@ def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
         "csv_rows": session.query(CsvRow).filter(CsvRow.user_id == user_id).order_by(CsvRow.id.asc()).all(),
         "url_history": session.query(UrlHistory).filter(UrlHistory.user_id == user_id).order_by(UrlHistory.id.asc()).all(),
         "job_tracks": session.query(JobTrack).filter(JobTrack.user_id == user_id).order_by(JobTrack.id.asc()).all(),
+        "lifecycle_events": session.query(JobLifecycleEvent).filter(JobLifecycleEvent.user_id == user_id).order_by(JobLifecycleEvent.id.asc()).all(),
         "saved_views": session.query(SavedView).filter(SavedView.user_id == user_id).order_by(SavedView.id.asc()).all(),
         "sessions": session.query(SearchSession).filter(SearchSession.user_id == user_id).order_by(SearchSession.id.asc()).all(),
         "audit_events": session.query(AuditEvent).filter(AuditEvent.user_id == user_id).order_by(AuditEvent.id.asc()).all(),
@@ -160,6 +162,27 @@ def _serialize_sections(
             "last_opened_at": _utc_iso(item.last_opened_at),
             "created_at": _utc_iso(item.created_at),
             "updated_at": _utc_iso(item.updated_at),
+        })
+
+    for item in snapshot["lifecycle_events"]:
+        backup_ref = refs["lifecycle_events"][item.id]
+        sections["lifecycle_events"].append({
+            "backup_ref": backup_ref,
+            "event_key": item.event_key,
+            "job_url": item.job_url,
+            "csv_row_ref": _required_ref(
+                refs["csv_rows"], item.csv_row_id,
+                section="lifecycle_events", backup_ref=backup_ref,
+            ),
+            "job_track_ref": _required_ref(
+                refs["job_tracks"], item.job_track_id,
+                section="lifecycle_events", backup_ref=backup_ref,
+            ),
+            "kind": item.kind,
+            "occurred_at": _utc_iso(item.occurred_at),
+            "recorded_at": _utc_iso(item.recorded_at),
+            "source": item.source,
+            "payload": item.payload,
         })
 
     for item in snapshot["saved_views"]:
@@ -492,6 +515,27 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             )
             counts["job_tracks"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
+    for record in document.sections.lifecycle_events:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "lifecycle_events", record.backup_ref
+        )
+        if mapping:
+            counts["lifecycle_events"]["skipped"] += 1
+            continue
+        existing = session.query(JobLifecycleEvent).filter_by(
+            user_id=user_id, event_key=record.event_key
+        ).first()
+        if existing is None:
+            counts["lifecycle_events"]["created"] += 1
+        else:
+            fields = (
+                "event_key", "job_url", "kind", "occurred_at",
+                "recorded_at", "source", "payload",
+            )
+            counts["lifecycle_events"][
+                _classify_existing(_record_equal(existing, record, fields))
+            ] += 1
+
     for section, records in (
         ("applypilot_batches", document.sections.applypilot_batches),
         ("audit_events", document.sections.audit_events),
@@ -744,6 +788,76 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         counts["job_tracks"]["created"] += 1
         if record.session_ref is not None:
             warnings.append(_restore_warning("job_track_session_ref_detached", section="job_tracks", backup_ref=record.backup_ref))
+
+    for record in document.sections.lifecycle_events:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "lifecycle_events", record.backup_ref, JobLifecycleEvent,
+        )
+        if mapped is not None:
+            refs["lifecycle_events"][record.backup_ref] = mapped.id
+            counts["lifecycle_events"]["skipped"] += 1
+            continue
+
+        csv_row_id = _target_id(
+            refs, "csv_rows", record.csv_row_ref,
+            "lifecycle_events", record.backup_ref,
+        )
+        job_track_id = _target_id(
+            refs, "job_tracks", record.job_track_ref,
+            "lifecycle_events", record.backup_ref,
+        )
+        existing = session.query(JobLifecycleEvent).filter_by(
+            user_id=user_id, event_key=record.event_key
+        ).first()
+        if existing is not None:
+            portable_fields = (
+                "event_key", "job_url", "kind", "occurred_at",
+                "recorded_at", "source", "payload",
+            )
+            equal = (
+                _record_equal(existing, record, portable_fields)
+                and existing.csv_row_id == csv_row_id
+                and existing.job_track_id == job_track_id
+            )
+            outcome = _classify_existing(equal)
+            refs["lifecycle_events"][record.backup_ref] = existing.id
+            _persist_import_map(
+                session, user_id, backup_id,
+                "lifecycle_events", record.backup_ref, existing.id,
+            )
+            counts["lifecycle_events"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="lifecycle_events",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+
+        item = JobLifecycleEvent(
+            user_id=user_id,
+            event_key=record.event_key,
+            job_url=record.job_url,
+            csv_row_id=csv_row_id,
+            job_track_id=job_track_id,
+            kind=record.kind,
+            occurred_at=_parse_backup_datetime(record.occurred_at),
+            recorded_at=_parse_backup_datetime(record.recorded_at),
+            source=record.source,
+            payload=record.payload,
+        )
+        # Restore inserts the historical ledger record directly. It must not call
+        # lifecycle.write_event(), because restoring rows/tracks is not a new visit
+        # or application action.
+        session.add(item)
+        session.flush()
+        refs["lifecycle_events"][record.backup_ref] = item.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "lifecycle_events", record.backup_ref, item.id,
+        )
+        counts["lifecycle_events"]["created"] += 1
 
     for record in document.sections.applypilot_batches:
         mapped = _mapped_target(session, user_id, backup_id, "applypilot_batches", record.backup_ref, ApplyPilotBatch)
