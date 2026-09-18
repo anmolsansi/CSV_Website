@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
 BACKUP_V2_VERSION = "2.0"
 BACKUP_SCHEMA_REVISION = "2.1.0"
@@ -148,15 +148,34 @@ class JobTrackBackupV2(BackupRecordBase):
 
 
 class JobLifecycleEventBackupV2(BackupRecordBase):
-    event_key: str
-    job_url: str
+    event_key: str = Field(min_length=1, max_length=160)
+    job_url: str = Field(min_length=1)
     csv_row_ref: str | None
     job_track_ref: str | None
-    kind: str
+    kind: Literal[
+        "first_visited",
+        "first_applied",
+        "status_changed",
+        "applied_date_corrected",
+        "followup_changed",
+    ]
     occurred_at: str
     recorded_at: str
-    source: str
+    source: str = Field(min_length=1, max_length=32)
     payload: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_payload_allowlist(self):
+        allowlists = {
+            "first_visited": frozenset(),
+            "first_applied": frozenset(),
+            "status_changed": frozenset({"from", "to"}),
+            "applied_date_corrected": frozenset({"from", "to"}),
+            "followup_changed": frozenset({"from", "to"}),
+        }
+        if set(self.payload) - allowlists[self.kind]:
+            raise ValueError("Lifecycle payload contains fields not allowed for its kind.")
+        return self
 
 
 class SavedViewBackupV2(BackupRecordBase):
