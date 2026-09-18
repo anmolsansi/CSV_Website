@@ -1925,7 +1925,7 @@ Set Asia/Kolkata, visit a job and save/apply a different job. Confirm visited=1,
 <a id="jg-008"></a>
 ### JG-008 — Define metric semantics and add durable lifecycle event storage
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified — merged in PR #47; CI run #74 passed  
 **Priority:** P1  
 **Type:** schema/contract  
 **Execution position:** 8/64; group step 1/4
@@ -2106,13 +2106,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-008 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: first_event_replay: 20 identical writes produce one fact
-- [ ] Required regression passes: event_owner: account A cannot link an account B row
-- [ ] Required regression passes: transaction_rollback: event and parent mutation both roll back
-- [ ] Required regression passes: backup_lifecycle_roundtrip: original occurrence dates are preserved
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-008 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: first_event_replay: 20 identical writes produce one fact
+- [x] Required regression passes: event_owner: account A cannot link an account B row
+- [x] Required regression passes: transaction_rollback: event and parent mutation both roll back
+- [x] Required regression passes: backup_lifecycle_roundtrip: original occurrence dates are preserved
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R3.
+- [x] The exact JG-008 service/storage scope works after replay/restore and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -2130,25 +2130,25 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; the initial CI migration-head guard failure was corrected before completion.
+- [x] Migration, backup, legacy-v2 checksum compatibility and lifecycle round-trip checks pass.
+- [x] Service fixtures provide expected-versus-observed evidence for replay, ownership, rollback and metric separation.
+- [x] Build guide describes implemented behavior, transaction/replay rules, backup compatibility, verification and rollback; JG-009–JG-011 are not presented as shipped.
+- [x] Final PR diff is scoped to lifecycle storage/service, persisted-data compatibility, tests and documentation.
+- [x] Local/CI completion is recorded here without claiming separate staging/production activation of the R3 group.
 
 #### Suggested Linear metadata
 
 - Document ID: `JG-008`; title: `Define metric semantics and add durable lifecycle event storage`.
 - Parent/group: `R3 — Reconcile visits applications and progress metrics`; priority/rank: `P1`.
-- Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
+- Current tracked state: Completed; GitHub issue #46 closed after PR #47 merged.
 - Dependency: `JG-007` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #46 (`JG-008: Define metric semantics and add durable lifecycle event storage`).
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-007 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / LOCALLY VERIFIED.** Implemented on `jg-008-lifecycle-ledger`, merged by PR #47 on 2026-09-18. Merge commit `7e4cf7b048a179a434b26482c99fa947d5b48b2c`. CI run #74 passed backend pytest (155 tests), backend compile, frontend production build and Playwright E2E; Vercel preview also reported Ready. The implementation adds Alembic head `004`, durable account-scoped lifecycle events, caller-owned transaction/replay behavior, named saved/visited/applied definitions, and backup v2 revision `2.1.0` with older-v2 compatibility and no restore-derived first events. JG-009 still owns writer wiring, JG-010 owns timezone/backfill, and JG-011 owns analytics/read-path cutover. This records implementation/CI completion only and does not claim separate R3 staging or production activation.
 
 ---
 
