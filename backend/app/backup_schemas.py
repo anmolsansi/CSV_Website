@@ -10,11 +10,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.0.0"
+BACKUP_SCHEMA_REVISION = "2.1.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
     "job_tracks",
+    "lifecycle_events",
     "saved_views",
     "sessions",
     "audit_events",
@@ -146,6 +147,18 @@ class JobTrackBackupV2(BackupRecordBase):
     updated_at: str
 
 
+class JobLifecycleEventBackupV2(BackupRecordBase):
+    event_key: str
+    job_url: str
+    csv_row_ref: str | None
+    job_track_ref: str | None
+    kind: str
+    occurred_at: str
+    recorded_at: str
+    source: str
+    payload: dict[str, Any]
+
+
 class SavedViewBackupV2(BackupRecordBase):
     name: str
     view_type: str
@@ -197,6 +210,7 @@ class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
     job_tracks: list[JobTrackBackupV2]
+    lifecycle_events: list[JobLifecycleEventBackupV2] = Field(default_factory=list)
     saved_views: list[SavedViewBackupV2]
     sessions: list[SearchSessionBackupV2]
     audit_events: list[AuditEventBackupV2]
@@ -209,6 +223,7 @@ class BackupCountsV2(StrictBackupModel):
     csv_rows: int = Field(ge=0)
     url_history: int = Field(ge=0)
     job_tracks: int = Field(ge=0)
+    lifecycle_events: int = Field(default=0, ge=0)
     saved_views: int = Field(ge=0)
     sessions: int = Field(ge=0)
     audit_events: int = Field(ge=0)
@@ -278,6 +293,16 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             ],
             "exported",
             "Persisted application-memory data required for a lossless v2 record; session_id remains a scalar Text value.",
+        ),
+    },
+    "JobLifecycleEvent": {
+        **_entries(["id", "user_id"], "reconstructed", "Destination identity/ownership is allocated from backup_ref and authenticated user."),
+        **_entries(["csv_row_id"], "reconstructed", "CSV-row identity is represented as csv_row_ref and remapped on restore."),
+        **_entries(["job_track_id"], "reconstructed", "Application identity is represented as job_track_ref and remapped on restore."),
+        **_entries(
+            ["event_key", "job_url", "kind", "occurred_at", "recorded_at", "source", "payload"],
+            "exported",
+            "Durable lifecycle facts are portable user data and preserve original occurrence time.",
         ),
     },
     "SavedView": {
@@ -468,6 +493,16 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
         _require_target(refs, "csv_rows", track.csv_row_ref, source_section="job_tracks", source_ref=track.backup_ref)
         _require_target(refs, "sessions", track.session_ref, source_section="job_tracks", source_ref=track.backup_ref)
 
+    for event in document.sections.lifecycle_events:
+        _require_target(
+            refs, "csv_rows", event.csv_row_ref,
+            source_section="lifecycle_events", source_ref=event.backup_ref,
+        )
+        _require_target(
+            refs, "job_tracks", event.job_track_ref,
+            source_section="lifecycle_events", source_ref=event.backup_ref,
+        )
+
     for event in document.sections.audit_events:
         _require_target(refs, "sessions", event.session_ref, source_section="audit_events", source_ref=event.backup_ref)
         if event.entity_ref is not None:
@@ -524,6 +559,10 @@ def _validate_counts_and_limits(document: BackupDocumentV2) -> None:
 def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2:
     """Parse and fully validate v2 before any ORM object is constructed."""
     payload = parse_backup_json(raw) if isinstance(raw, (bytes, str)) else dict(raw)
+    raw_sections = payload.get("sections")
+    has_lifecycle_section = (
+        isinstance(raw_sections, Mapping) and "lifecycle_events" in raw_sections
+    )
     try:
         document = BackupDocumentV2.model_validate(payload)
     except ValidationError as exc:
@@ -539,7 +578,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     refs = _validate_ref_uniqueness(document)
     _validate_reference_graph(document, refs)
 
-    expected_checksum = compute_sections_checksum(document.sections)
+    checksum_sections = document.sections.model_dump(mode="json", exclude_none=False)
+    if not has_lifecycle_section:
+        # Older v2 files predate the additive lifecycle section. Validate their
+        # original checksum exactly, then treat the absent section as empty.
+        checksum_sections.pop("lifecycle_events", None)
+    expected_checksum = compute_sections_checksum(checksum_sections)
     if document.checksum_sha256 != expected_checksum:
         raise BackupContractError("invalid_checksum", 400, "Backup checksum does not match canonical sections JSON.")
     return document
@@ -564,6 +608,7 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "csv_rows": CsvRowBackupV2,
     "url_history": UrlHistoryBackupV2,
     "job_tracks": JobTrackBackupV2,
+    "lifecycle_events": JobLifecycleEventBackupV2,
     "saved_views": SavedViewBackupV2,
     "sessions": SearchSessionBackupV2,
     "audit_events": AuditEventBackupV2,
