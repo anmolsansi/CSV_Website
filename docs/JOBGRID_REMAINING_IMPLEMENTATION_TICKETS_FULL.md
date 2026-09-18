@@ -25,7 +25,7 @@ The requested deliverable is this Markdown plan. It does not authorize deploymen
 |---|---:|---:|---|
 | Reliability repairs and release gates | 7 | 24 | JG-001–JG-024 |
 | Ranked product features | 10 | 40 | JG-025–JG-064 |
-| Total | 17 | 64 | JG-001–JG-002 completed; JG-003–JG-064 remain proposed |
+| Total | 17 | 64 | JG-001–JG-002 and JG-004–JG-007 completed; JG-003 and JG-008–JG-064 remain proposed |
 
 Each ticket contains smaller ordered implementation checkpoints. Ticket sizes vary with the risk and contract; 64 tickets are not 64 equal slices of effort. Do not use completion count alone as a delivery forecast. A ticket with several adapters is a review unit; execute and verify its numbered checkpoints one at a time, splitting further if they no longer fit one logical change.
 
@@ -141,7 +141,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [x] [JG-005 — Extract one account-scoped query builder without changing list behavior](#jg-005)
 - [x] [JG-006 — Route every export through the shared filter contract](#jg-006)
-- [ ] [JG-007 — Unify browser and saved-view query serialization](#jg-007)
+- [x] [JG-007 — Unify browser and saved-view query serialization](#jg-007)
 
 **R3 — Reconcile visits applications and progress metrics**
 
@@ -1672,7 +1672,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-007"></a>
 ### JG-007 — Unify browser and saved-view query serialization
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified — merged in PR #45; CI run #70 passed  
 **Priority:** P1  
 **Type:** interface integration  
 **Execution position:** 7/64; group step 3/3
@@ -1854,13 +1854,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-007 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: filter-export-parity.spec.ts: combinations survive saved-view reload and export
-- [ ] Required regression passes: test_selected_scope_exact_ids: selection count matches output
-- [ ] Required regression passes: test_sort_changes_export_order: title order and tie-breaker match
-- [ ] Required regression passes: test_error_response_not_downloaded_as_csv: visible error state
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-007 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: filter-export-parity.spec.ts: combinations survive saved-view reload and export
+- [x] Required regression passes: test_selected_scope_exact_ids: selection count matches output
+- [x] Required regression passes: test_sort_changes_export_order: title order and tie-breaker match
+- [x] Required regression passes: test_error_response_not_downloaded_as_csv: visible error state
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -1878,25 +1878,25 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; the initial Playwright selector failure was corrected before completion.
+- [x] Migration/backup/compatibility check is not applicable because JG-007 changes no database schema or persistent-data contract.
+- [x] Relevant browser journeys have expected-versus-observed regression evidence in `frontend/tests/filter-export-parity.spec.ts`.
+- [x] Build guide describes the implemented shared query behavior and verification commands.
+- [x] Final PR diff is scoped to the shared query integration, tests and build-guide documentation.
+- [x] Local/CI completion is recorded here without claiming a separate staging or production release.
 
 #### Suggested Linear metadata
 
 - Document ID: `JG-007`; title: `Unify browser and saved-view query serialization`.
 - Parent/group: `R2 — Make filtered exports match browsing`; priority/rank: `P1`.
-- Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
+- Current tracked state: Completed; GitHub issue #44 closed after PR #45 merged.
 - Dependency: `JG-006` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #44 (`JG-007: Unify browser and saved-view query serialization`).
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-006 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / LOCALLY VERIFIED.** Implemented on `jg-007-query-serialization`, merged by PR #45 on 2026-09-17. The merged head `5b7bd8a892ad3ae99cbc072b2669713335a51028` passed CI run #70: backend pytest, backend compile, frontend production build, and Playwright E2E all completed successfully. No database migration or persistent-data contract change was required. GitHub issue #44 is closed as completed. This records implementation/CI completion only and does not claim a separate staging or production release.
 
 ---
 
