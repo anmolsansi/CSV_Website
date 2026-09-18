@@ -146,7 +146,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 **R3 — Reconcile visits applications and progress metrics**
 
 - [ ] [JG-008 — Define metric semantics and add durable lifecycle event storage](#jg-008)
-- [ ] [JG-009 — Wire every mutation into the lifecycle ledger](#jg-009)
+- [x] [JG-009 — Wire every mutation into the lifecycle ledger](#jg-009)
 - [ ] [JG-010 — Add user timezone and safely backfill known historical facts](#jg-010)
 - [ ] [JG-011 — Switch analytics goals weekly reports and digest to shared definitions](#jg-011)
 
@@ -2155,7 +2155,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-009"></a>
 ### JG-009 — Wire every mutation into the lifecycle ledger
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified — merged in PR #49; CI run #80 passed  
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 9/64; group step 2/4
@@ -2333,13 +2333,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-009 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: all_writer_paths_emit_same_facts: parameterized endpoint table
-- [ ] Required regression passes: repeat_patch_same_status: no extra transition
-- [ ] Required regression passes: bulk_partial_failure: no partial ledger/state
-- [ ] Required regression passes: applypilot_replay: first application count stays one
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-009 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: all_writer_paths_emit_same_facts: parameterized endpoint table
+- [x] Required regression passes: repeat_patch_same_status: no extra transition
+- [x] Required regression passes: bulk_partial_failure: no partial ledger/state
+- [x] Required regression passes: applypilot_replay: first application count stays one
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R3.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -2357,25 +2357,25 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; CI run #80 passed all 169 PostgreSQL backend tests, backend compile, frontend production build and Playwright E2E.
+- [x] No JG-009 schema migration was required; JG-008 lifecycle persistence/backup compatibility remains the owning persisted-data contract and the full backend suite stayed green.
+- [x] Service regressions provide expected-versus-observed evidence for every active writer path, replay, ownership, rollback, declared dates and transition semantics.
+- [x] Build guide describes implemented behavior, optional operation IDs, safe observability, validation, retry/conflict behavior and rollback without presenting JG-010/JG-011 as shipped.
+- [x] Final implementation PR #49 is scoped to the lifecycle service, two mutation routers, focused tests and JobGrid build guide.
+- [x] Local/CI completion is recorded here without claiming separate R3 staging or production activation.
 
 #### Suggested Linear metadata
 
 - Document ID: `JG-009`; title: `Wire every mutation into the lifecycle ledger`.
 - Parent/group: `R3 — Reconcile visits applications and progress metrics`; priority/rank: `P1`.
-- Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
+- Current tracked state: Completed; GitHub issue #48 is closed after PR #49 merged and the completion marker landed.
 - Dependency: `JG-008` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #48 (`JG-009: Wire every mutation into the lifecycle ledger`).
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-008 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / LOCALLY VERIFIED.** Implemented on `jg-009-lifecycle-mutations` and merged by PR #49 on 2026-09-18. Implementation merge commit `64d04dc8b2da412318fef99c14dd28a4e788012e`. CI run #80 passed all 169 PostgreSQL backend tests, backend compile, frontend production build and Playwright E2E. The implementation wires row visits, single/bulk application mutations, follow-up presets, ApplyPilot result import and external application import into the durable lifecycle ledger; keeps saved/visited/applied semantics distinct; validates bulk ownership before mutation; preserves declared application dates; emits transition events only on real changes; supports optional stable `X-Operation-ID` replay identity with retryable 409 conflicts; and records bounded lifecycle-operation logs without job URLs, notes or tokens. JG-010 still owns timezone/backfill and JG-011 still owns analytics/goals/weekly/digest read-path cutover. This records implementation/CI completion only and does not claim separate R3 staging or production activation.
 
 ---
 
