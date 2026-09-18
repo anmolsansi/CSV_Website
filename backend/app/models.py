@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -103,6 +104,9 @@ class User(Base):
     )
     goal = relationship(
         "UserGoal", backref="user", uselist=False, cascade="all, delete-orphan"
+    )
+    lifecycle_events = relationship(
+        "JobLifecycleEvent", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -271,6 +275,39 @@ class JobTrack(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
+    )
+
+
+class JobLifecycleEvent(Base):
+    __tablename__ = "job_lifecycle_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    event_key = Column(String(160), nullable=False)
+    job_url = Column(Text, nullable=False)
+    csv_row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"), nullable=True
+    )
+    job_track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"), nullable=True
+    )
+    kind = Column(String(32), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    source = Column(String(32), nullable=False)
+    payload = Column(JSON, default=dict, nullable=False)
+
+    user = relationship("User", back_populates="lifecycle_events")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "event_key", name="uq_user_lifecycle_event_key"
+        ),
+        Index(
+            "ix_job_lifecycle_events_user_time_kind",
+            "user_id", "occurred_at", "kind",
+        ),
     )
 
 
