@@ -349,38 +349,81 @@ def bulk_update_apps(
 
 
 @router.post("/from-rows/bulk")
-def bulk_create_from_rows(payload: BulkFromRowsIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.query(CsvRow).filter(CsvRow.id.in_(payload.row_ids), CsvRow.user_id == user.id).all()
-    if not payload.row_ids or len(rows) != len(set(payload.row_ids)):
+def bulk_create_from_rows(
+    payload: BulkFromRowsIn,
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    requested_ids = list(dict.fromkeys(payload.row_ids))
+    rows = (
+        db.query(CsvRow)
+        .filter(CsvRow.id.in_(requested_ids), CsvRow.user_id == user.id)
+        .all()
+    )
+    if not requested_ids or len(rows) != len(requested_ids):
         raise HTTPException(404, "One or more rows not found")
+
+    operation_id = _request_operation_id(x_operation_id)
     now = datetime.utcnow()
     created = 0
     items = []
-    for row in rows:
-        item = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
-        if item is None:
-            item = JobTrack(user_id=user.id, url=row.url, status="opened",
-                            opened_at=row.clicked_at, last_opened_at=row.clicked_at,
-                            open_count=1 if row.clicked else 0)
-            db.add(item)
-            created += 1
-        item.csv_row_id = row.id
-        for field, source in [("company", "company_guess"), ("title", "title"),
-                              ("ats_group", "ats_group"), ("search_bucket", "search_bucket"),
-                              ("resume_match_score", "resume_match_score")]:
-            setattr(item, field, getattr(item, field) or getattr(row, source))
-        if payload.status:
-            item.status = payload.status
-            if payload.status == "applied":
-                item.applied_at = item.applied_at or now
-        item.updated_at = now
-        items.append(item)
-    emit_event(db, user.id, "row_sent_to_applications", "bulk", metadata={"count": len(items)})
-    db.flush()
-    application_ids = [item.id for item in items]
-    db.commit()
-    return {"created": created, "updated": len(items) - created, "skipped": 0,
-            "application_ids": application_ids}
+    try:
+        for row in rows:
+            item = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
+            if item is None:
+                item = JobTrack(
+                    user_id=user.id,
+                    url=row.url,
+                    status="opened",
+                    opened_at=row.clicked_at,
+                    last_opened_at=row.clicked_at,
+                    open_count=1 if row.clicked else 0,
+                )
+                db.add(item)
+                db.flush()
+                created += 1
+            item.csv_row_id = row.id
+            for field, source_field in [
+                ("company", "company_guess"),
+                ("title", "title"),
+                ("ats_group", "ats_group"),
+                ("search_bucket", "search_bucket"),
+                ("resume_match_score", "resume_match_score"),
+            ]:
+                setattr(item, field, getattr(item, field) or getattr(row, source_field))
+            if payload.status:
+                apply_job_track_changes(
+                    db,
+                    user_id=user.id,
+                    item=item,
+                    source="bulk_from_rows",
+                    operation_id=operation_id,
+                    now=now,
+                    status=payload.status,
+                )
+            else:
+                item.updated_at = now
+            items.append(item)
+
+        emit_event(
+            db,
+            user.id,
+            "row_sent_to_applications",
+            "bulk",
+            metadata={"count": len(items)},
+        )
+        db.flush()
+        application_ids = [item.id for item in items]
+        db.commit()
+    except LifecycleEventError as exc:
+        _raise_lifecycle_http(db, exc)
+    return {
+        "created": created,
+        "updated": len(items) - created,
+        "skipped": 0,
+        "application_ids": application_ids,
+    }
 
 
 @router.patch("/applications/{item_id}")
