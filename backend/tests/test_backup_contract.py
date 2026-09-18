@@ -1,5 +1,6 @@
 import copy
 import json
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from app.backup_schemas import (
     ColumnPreferenceBackupV2,
     CsvRowBackupV2,
     JobTrackBackupV2,
+    JobLifecycleEventBackupV2,
     MODEL_FIELD_INVENTORY,
     SavedViewBackupV2,
     SearchSessionBackupV2,
@@ -32,6 +34,7 @@ from app.models import (
     ColumnPreference,
     CsvRow,
     JobTrack,
+    JobLifecycleEvent,
     OAuthIdentity,
     SavedView,
     SearchSession,
@@ -39,6 +42,7 @@ from app.models import (
     User,
     UserGoal,
 )
+from app.services.backups import export_backup_v2, restore_backup_v2
 
 NOW = "2026-09-16T09:30:00Z"
 
@@ -110,6 +114,7 @@ def test_assert_complete_model_field_inventory():
         "UrlHistory": UrlHistory,
         "CsvRow": CsvRow,
         "JobTrack": JobTrack,
+        "JobLifecycleEvent": JobLifecycleEvent,
         "SavedView": SavedView,
         "SearchSession": SearchSession,
         "ColumnPreference": ColumnPreference,
@@ -137,6 +142,7 @@ def test_frozen_section_record_allowlists_are_strict():
         "csv_rows": CsvRowBackupV2,
         "url_history": UrlHistoryBackupV2,
         "job_tracks": JobTrackBackupV2,
+        "lifecycle_events": JobLifecycleEventBackupV2,
         "saved_views": SavedViewBackupV2,
         "sessions": SearchSessionBackupV2,
         "audit_events": AuditEventBackupV2,
@@ -167,6 +173,18 @@ def test_null_empty_false_zero_round_trip():
 
     reparsed = validate_backup_v2(json.dumps(dumped))
     assert reparsed.model_dump(mode="json") == dumped
+
+
+def test_older_v2_without_lifecycle_section_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["sections"].pop("lifecycle_events")
+    payload["counts"].pop("lifecycle_events")
+    payload["schema_revision"] = "2.0.0"
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    validated = validate_backup_v2(json.dumps(payload))
+    assert validated.sections.lifecycle_events == []
+    assert validated.counts.lifecycle_events == 0
 
 
 def test_unknown_section_or_ownership_field():
@@ -224,6 +242,27 @@ def test_reference_targets_and_field_limits_are_checked_before_restore():
     )
 
     payload = _valid_payload()
+    payload["sections"]["lifecycle_events"] = [{
+        "backup_ref": "event-1",
+        "event_key": "operation:00000000-0000-4000-8000-000000000001",
+        "job_url": "https://example.com/job/1",
+        "csv_row_ref": "missing-row",
+        "job_track_ref": "track-1",
+        "kind": "status_changed",
+        "occurred_at": NOW,
+        "recorded_at": NOW,
+        "source": "test",
+        "payload": {"from": "opened", "to": "applied"},
+    }]
+    _rechecksum(payload)
+    with pytest.raises(BackupContractError) as exc:
+        validate_backup_v2(payload)
+    assert (exc.value.status_code, exc.value.code) == (
+        409,
+        "conflicting_reference_graph",
+    )
+
+    payload = _valid_payload()
     payload["sections"]["job_tracks"][0]["notes"] = "x" * 20_001
     _rechecksum(payload)
     with pytest.raises(BackupContractError) as exc:
@@ -268,3 +307,86 @@ def test_v1_adapter_rejects_ownership_injection():
         400,
         "ownership_field_forbidden",
     )
+
+def test_backup_lifecycle_roundtrip_preserves_occurrence_without_derived_first_events(
+    db_session,
+):
+    source = User(email=f"jg008-backup-source-{uuid4()}@example.test")
+    db_session.add(source)
+    db_session.flush()
+    row = CsvRow(
+        user_id=source.id,
+        upload_batch_id="jg008-backup",
+        url="https://backup-lifecycle.example/job/1",
+        clicked=True,
+        clicked_at=datetime(2026, 9, 18, 8, 15, 0),
+    )
+    db_session.add(row)
+    db_session.flush()
+    track = JobTrack(
+        user_id=source.id,
+        csv_row_id=row.id,
+        url=row.url,
+        status="applied",
+        applied_at=datetime(2026, 9, 18, 8, 30, 0),
+    )
+    db_session.add(track)
+    db_session.flush()
+    occurred_at = datetime(2026, 9, 18, 8, 31, 45)
+    recorded_at = datetime(2026, 9, 18, 8, 32, 0)
+    source_event = JobLifecycleEvent(
+        user_id=source.id,
+        event_key=f"operation:{uuid4()}",
+        job_url=row.url,
+        csv_row_id=row.id,
+        job_track_id=track.id,
+        kind="status_changed",
+        occurred_at=occurred_at,
+        recorded_at=recorded_at,
+        source="backup_test",
+        payload={"from": "opened", "to": "applied"},
+    )
+    db_session.add(source_event)
+    db_session.commit()
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["counts"]["lifecycle_events"] == 1
+    assert payload["sections"]["lifecycle_events"][0]["occurred_at"].startswith(
+        "2026-09-18T08:31:45"
+    )
+
+    destination = User(email=f"jg008-backup-dest-{uuid4()}@example.test")
+    db_session.add(destination)
+    db_session.commit()
+    db_session.refresh(destination)
+
+    result = restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert result["counts"]["lifecycle_events"] == {
+        "created": 1,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+
+    db_session.expire_all()
+    events = db_session.query(JobLifecycleEvent).filter_by(
+        user_id=destination.id
+    ).all()
+    assert len(events) == 1
+    restored = events[0]
+    assert restored.event_key == source_event.event_key
+    assert restored.kind == "status_changed"
+    assert restored.occurred_at == occurred_at
+    assert restored.recorded_at == recorded_at
+    assert restored.payload == {"from": "opened", "to": "applied"}
+    assert restored.csv_row_id is not None
+    assert restored.job_track_id is not None
+    assert db_session.query(JobLifecycleEvent).filter(
+        JobLifecycleEvent.user_id == destination.id,
+        JobLifecycleEvent.kind.in_(["first_visited", "first_applied"]),
+    ).count() == 0
+

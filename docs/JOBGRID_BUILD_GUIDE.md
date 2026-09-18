@@ -73,22 +73,23 @@ A v2 document contains exactly:
 - `version`: `"2.0"`
 - `backup_id`: UUID string
 - `exported_at`: UTC ISO-8601 timestamp
-- `schema_revision`: currently `"2.0.0"`
-- `sections`: the nine exact v2 sections
+- `schema_revision`: currently `"2.1.0"`
+- `sections`: the ten current v2 sections
 - `counts`: exact record count for every section
 - `checksum_sha256`: lowercase SHA-256 digest of canonical `sections` JSON
 
-The nine sections are:
+The ten current sections are:
 
 1. `csv_rows`
 2. `url_history`
 3. `job_tracks`
-4. `saved_views`
-5. `sessions`
-6. `audit_events`
-7. `applypilot_batches`
-8. `column_preferences`
-9. `user_goal`
+4. `lifecycle_events`
+5. `saved_views`
+6. `sessions`
+7. `audit_events`
+8. `applypilot_batches`
+9. `column_preferences`
+10. `user_goal`
 
 Every record has a non-empty `backup_ref` unique within its section. Nullable fields remain present as keys, preserving the difference between null, empty text, `false`, and zero.
 
@@ -100,6 +101,8 @@ Relationships are translated as follows:
 
 - `CsvRow.duplicate_of_id` -> `duplicate_of_ref`
 - `JobTrack.csv_row_id` -> `csv_row_ref`
+- `JobLifecycleEvent.csv_row_id` -> `csv_row_ref`
+- `JobLifecycleEvent.job_track_id` -> `job_track_ref`
 - `AuditEvent.session_id` -> `session_ref`
 - known `AuditEvent.entity_id` targets -> typed `entity_ref`
 - `ApplyPilotBatch.session_id` -> `session_ref`
@@ -119,7 +122,7 @@ Isolation is:
 - PostgreSQL: `REPEATABLE READ`
 - SQLite/local tests: `SERIALIZABLE`
 
-All nine sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
+All ten current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
 
 ## Canonical checksum
 
@@ -152,6 +155,12 @@ The SHA-256 lowercase hexadecimal digest is stored in `checksum_sha256`. `counts
 ### Job tracks
 
 `JobTrackBackupV2` exports every non-identity persisted field, including application status/timestamps, notes, `session_id`, open counts, and created/updated timestamps. `csv_row_id` becomes `csv_row_ref`.
+
+### Lifecycle events
+
+`JobLifecycleEventBackupV2` exports the durable event key, exact job URL, kind, occurrence/recording timestamps, source, allowlisted payload, and portable CSV-row/application references when those relationships still exist. Restore inserts these historical records directly. It never calls the live lifecycle writer or infers fresh visit/application facts from restored rows.
+
+Older v2 documents created before JG-008 can omit `lifecycle_events` and its count. Validation treats that missing section as empty while checking the checksum against the original nine-section payload, so existing backups remain valid.
 
 ### Saved views and sessions
 
@@ -212,7 +221,7 @@ A successful response has this shape:
 }
 ```
 
-Every one of the nine sections is present in `counts` even when its values are all zero. Warnings contain safe codes plus optional `section` and `backup_ref`; they never contain notes, job descriptions, credentials, or another user's values.
+Every one of the ten current sections is present in new v2 exports and restore `counts`, even when its values are all zero. Older v2 files may omit `lifecycle_events`; it is treated as empty. Warnings contain safe codes plus optional `section` and `backup_ref`; they never contain notes, job descriptions, credentials, or another user's values.
 
 ## Preflight and validation order
 
@@ -240,8 +249,9 @@ A v2 merge happens in one destination transaction. Records are created or mapped
 6. column preferences
 7. user goal
 8. job tracks after CSV references are resolvable
-9. ApplyPilot batches after session references are resolvable
-10. audit events last, after every supported target section has a destination identity
+9. lifecycle events after CSV-row and job-track references are resolvable
+10. ApplyPilot batches after session references are resolvable
+11. audit events last, after every supported target section has a destination identity
 
 If any insert, mapping, or reference resolution fails, the dedicated restore session rolls back the entire operation, including `BackupImportMap` rows.
 
@@ -257,6 +267,7 @@ Natural-key merge rules are:
 - saved view: destination account + `view_type` + `name`
 - column preference: destination account singleton
 - user goal: destination account singleton
+- lifecycle event: destination account + `event_key`; equal replay is skipped and conflicting content preserves the destination record
 
 When a natural key already exists, destination data wins. Equivalent values are counted as `skipped`; differing values are counted as `conflicts` and return `destination_record_preserved`. Restore never overwrites a destination status, note, timestamps, filters, preferences, or goal simply because an older backup contains another value.
 
@@ -297,7 +308,7 @@ The route logs a generated operation ID, safe outcome code, mode, created count,
 | `GET /crm/backup/export?version=1` or `1.0` | Legacy v1 export |
 | `GET /crm/backup/export?version=2` or `2.0` | Complete validated v2 export |
 | `POST /crm/backup/import?mode=verify_only` with v2 | Full validation/preflight; no writes |
-| `POST /crm/backup/import?mode=merge_missing` with v2 | Transactional nine-section restore |
+| `POST /crm/backup/import?mode=merge_missing` with v2 | Transactional restore of all sections present in the validated v2 document |
 | v1 import | Compatibility restore with explicit incomplete-history warnings |
 
 Do not remove the v1 export default until all v2 consumers have passed their compatibility gates.
@@ -317,7 +328,7 @@ python -m pytest \
 The JG-003 restore suite proves:
 
 - an applied application restores with company, notes, status, applied/follow-up dates after a fresh request
-- all nine v2 sections restore and CSV duplicate references remap to destination IDs
+- all current v2 sections restore, including lifecycle records when present, and portable references remap to destination IDs
 - `verify_only` writes neither user data nor import mappings
 - the same backup retry is idempotent
 - concurrent same-account retries serialize on PostgreSQL and create one destination entity/mapping per backup record
@@ -412,3 +423,59 @@ npm run test:e2e -- tests/filter-export-parity.spec.ts --project=chromium
 ```
 
 JG-007 changes no database schema and does not change the JG-005/JG-006 backend filtering or ownership contracts.
+
+## JG-008 durable lifecycle ledger
+
+JG-008 adds durable lifecycle storage without activating the later R3 mutation or analytics cutovers.
+
+### Metric definitions
+
+- **Saved** means a `JobTrack` exists. `count_saved()` uses `JobTrack.created_at` for an optional time window.
+- **Visited** means one durable `first_visited` lifecycle fact. It is not inferred from a `JobTrack`.
+- **Applied** means one durable `first_applied` lifecycle fact. It is not inferred from the current status value.
+- Lifecycle time windows use `JobLifecycleEvent.occurred_at`, never the recording/update time.
+
+These functions live in `backend/app/services/lifecycle.py`. JG-009 owns wiring existing click/application writers to them. Until JG-009 lands, existing routes continue their pre-JG-008 write behavior.
+
+### Storage contract
+
+Alembic revision `004_job_lifecycle_events.py` adds `job_lifecycle_events` with:
+
+- account ownership through `user_id`
+- unique `(user_id, event_key)`
+- `job_url` retained as private durable domain data
+- nullable `csv_row_id` and `job_track_id` references with `ON DELETE SET NULL`
+- `kind`, `occurred_at`, `recorded_at`, `source`, and JSON `payload`
+- composite index `(user_id, occurred_at, kind)`
+
+Supported kinds are `first_visited`, `first_applied`, `status_changed`, `applied_date_corrected`, and `followup_changed`. First-event keys are deterministic SHA-256-derived keys from account, exact URL, and kind. Transition events require a caller-provided UUID operation ID. Payload fields are allowlisted per kind and do not accept notes or resume content.
+
+### Transaction and replay behavior
+
+`write_event()` validates ownership of any linked CSV row/application and never commits. The caller owns the transaction, so a parent mutation and its lifecycle fact roll back together.
+
+PostgreSQL and SQLite both use `ON CONFLICT DO NOTHING` against the owner/event-key identity. First-event replay returns the already-recorded fact and preserves its original occurrence. Reusing a transition operation UUID with different event input raises an `event_key_conflict` domain error.
+
+### Backup behavior
+
+Backup schema revision `2.1.0` adds `lifecycle_events`. Export translates row/application IDs to backup-local references. Restore resolves those references and inserts the historical event record directly, with a `BackupImportMap` entry for replay identity. Restore never calls `write_event()`, so a clicked row or applied JobTrack does not create a new first event during recovery.
+
+Older schema-revision `2.0.0` v2 files without a lifecycle section remain valid. Their checksum is verified over the original section set, then the missing lifecycle section is treated as empty.
+
+### Verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest tests/test_lifecycle_events.py tests/test_backup_contract.py -q
+python -m pytest tests/test_backup_export.py tests/test_backup_restore.py tests/test_application_memory.py -q
+python -m compileall app
+```
+
+The focused lifecycle suite covers deterministic replay, explicit SQLite conflict behavior, payload/kind validation, cross-account reference rejection, caller rollback, and distinct saved/visited/applied counts. Backup coverage verifies lifecycle occurrence/recording timestamps survive round trip and restore emits no derived `first_visited` or `first_applied` events.
+
+### Rollback
+
+Application code can be rolled back while leaving revision 004 and stored lifecycle history in place. Old readers ignore the additive table. Do not delete lifecycle history to make metrics match. A database downgrade that drops the table is destructive and is not the normal application rollback path.
+

@@ -2,18 +2,25 @@ import importlib.util
 import json
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Column, Integer, MetaData, Table, create_engine, inspect
 
-from app.backup_schemas import BACKUP_V2_SECTIONS, compute_sections_checksum, validate_backup_v2
+from app.backup_schemas import (
+    BACKUP_SCHEMA_REVISION,
+    BACKUP_V2_SECTIONS,
+    compute_sections_checksum,
+    validate_backup_v2,
+)
 from app.models import (
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
     CsvRow,
     JobTrack,
+    JobLifecycleEvent,
     SavedView,
     SearchSession,
     UrlHistory,
@@ -88,6 +95,20 @@ def _seed_complete_fixture(db, email):
     db.add_all([track, view, history, preference, goal, batch])
     db.flush()
 
+    lifecycle_event = JobLifecycleEvent(
+        user_id=user.id,
+        event_key=f"operation:{uuid4()}",
+        job_url=row1.url,
+        csv_row_id=row1.id,
+        job_track_id=track.id,
+        kind="status_changed",
+        occurred_at=datetime(2026, 9, 16, 10, 0, 0),
+        recorded_at=datetime(2026, 9, 16, 10, 1, 0),
+        source="export_test",
+        payload={"from": "opened", "to": "applied"},
+    )
+    db.add(lifecycle_event)
+
     event = AuditEvent(
         user_id=user.id,
         session_id=session.id,
@@ -116,7 +137,7 @@ def test_export_every_section(auth_client, db_session):
     }
     assert payload["checksum_sha256"] == compute_sections_checksum(payload["sections"])
     assert payload["version"] == "2.0"
-    assert document.schema_revision == "2.0.0"
+    assert document.schema_revision == BACKUP_SCHEMA_REVISION
     assert "user_id" not in json.dumps(payload)
 
     track = payload["sections"]["job_tracks"][0]
@@ -157,6 +178,8 @@ def test_export_reference_graph(auth_client, db_session):
     row_records = document.sections.csv_rows
     assert row_records[1].duplicate_of_ref in refs["csv_rows"]
     assert document.sections.job_tracks[0].csv_row_ref in refs["csv_rows"]
+    assert document.sections.lifecycle_events[0].csv_row_ref in refs["csv_rows"]
+    assert document.sections.lifecycle_events[0].job_track_ref in refs["job_tracks"]
     assert document.sections.audit_events[0].session_ref in refs["sessions"]
     assert document.sections.audit_events[0].entity_ref in refs["job_tracks"]
     assert document.sections.applypilot_batches[0].session_ref in refs["sessions"]
