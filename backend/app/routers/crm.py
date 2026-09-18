@@ -1255,31 +1255,72 @@ def import_backup(db: Session = Depends(get_db), user: User = Depends(get_curren
 # ─── Import External Applications ──────────────────────────────────────
 
 @router.post("/import/external")
-def import_external_applications(payload: list[dict], db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def import_external_applications(
+    payload: list[dict],
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    prepared = []
+    try:
+        for item in payload:
+            url = item.get("url", "")
+            if not url:
+                continue
+            applied_at = parse_dt(item["applied_at"]) if item.get("applied_at") else None
+            follow_up_at = (
+                parse_dt(item["follow_up_at"]) if item.get("follow_up_at") else None
+            )
+            prepared.append((item, url, applied_at, follow_up_at))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "Invalid import datetime value") from exc
+
+    operation_id = _request_operation_id(x_operation_id)
     created = 0
-    for item in payload:
-        url = item.get("url", "")
-        if not url:
-            continue
-        existing = db.query(JobTrack).filter_by(user_id=user.id, url=url).first()
-        if existing:
-            continue
-        track = JobTrack(
-            user_id=user.id, url=url,
-            company=item.get("company", ""),
-            title=item.get("title", ""),
-            status=item.get("status", "opened"),
-            notes=item.get("notes", ""),
-            opened_at=datetime.utcnow(),
-        )
-        if item.get("applied_at"):
-            track.applied_at = parse_dt(item["applied_at"])
-            track.status = "applied"
-        if item.get("follow_up_at"):
-            track.follow_up_at = parse_dt(item["follow_up_at"])
-        db.add(track)
-        created += 1
-    db.commit()
+    try:
+        for item, url, applied_at, follow_up_at in prepared:
+            existing = db.query(JobTrack).filter_by(user_id=user.id, url=url).first()
+            if existing:
+                continue
+
+            now = datetime.utcnow()
+            track = JobTrack(
+                user_id=user.id,
+                url=url,
+                company=item.get("company", ""),
+                title=item.get("title", ""),
+                status="opened",
+                notes=item.get("notes", ""),
+                opened_at=now,
+            )
+            db.add(track)
+            db.flush()
+
+            target_status = "applied" if applied_at is not None else item.get(
+                "status", "opened"
+            )
+            lifecycle_kwargs = {
+                "status": target_status,
+                "infer_applied_at_from_status": False,
+            }
+            if applied_at is not None:
+                lifecycle_kwargs["applied_at"] = applied_at
+            if follow_up_at is not None:
+                lifecycle_kwargs["follow_up_at"] = follow_up_at
+
+            apply_job_track_changes(
+                db,
+                user_id=user.id,
+                item=track,
+                source="external_import",
+                operation_id=operation_id,
+                now=now,
+                **lifecycle_kwargs,
+            )
+            created += 1
+        db.commit()
+    except LifecycleEventError as exc:
+        _raise_lifecycle_http(db, exc)
     return {"created": created}
 
 
