@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, Mapping
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
@@ -37,6 +37,34 @@ class LifecycleEventError(ValueError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+_UNSET = object()
+
+
+def coerce_operation_id(value: UUID | str | None = None) -> UUID:
+    """Return a validated request operation ID, generating one when omitted."""
+    if value is None:
+        return uuid4()
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise LifecycleEventError(
+            "invalid_operation_id", "Operation ID must be a valid UUID."
+        ) from exc
+
+
+def child_operation_id(operation_id: UUID | str, *parts: object) -> UUID:
+    """Derive a stable per-entity/per-transition ID from one request operation ID."""
+    root = coerce_operation_id(operation_id)
+    suffix = "|".join(str(part) for part in parts)
+    return uuid5(NAMESPACE_URL, f"jobgrid:{root}|{suffix}")
+
+
+def _payload_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _normalize_utc(value).isoformat()
 
 
 def _normalize_utc(value: datetime) -> datetime:
@@ -229,6 +257,188 @@ def write_event(
             "Operation ID was already used for a different lifecycle event.",
         )
     return existing
+
+
+def record_visit(
+    session: Session,
+    *,
+    user_id: int,
+    row: CsvRow,
+    occurred_at: datetime,
+    source: str = "row_click",
+) -> bool:
+    """Record the first real browser visit and mutate the row in one transaction."""
+    if row.user_id != user_id:
+        raise LifecycleEventError(
+            "inaccessible_csv_row", "CSV row is not available to this account."
+        )
+    if row.clicked:
+        return False
+
+    occurred_at_utc = _normalize_utc(occurred_at)
+    row.clicked = True
+    row.clicked_at = occurred_at_utc
+    write_event(
+        session,
+        user_id=user_id,
+        job_url=row.url,
+        kind="first_visited",
+        occurred_at=occurred_at_utc,
+        source=source,
+        csv_row_id=row.id,
+    )
+    return True
+
+
+def apply_job_track_changes(
+    session: Session,
+    *,
+    user_id: int,
+    item: JobTrack,
+    source: str,
+    operation_id: UUID | str,
+    now: datetime,
+    status: Any = _UNSET,
+    applied_at: Any = _UNSET,
+    follow_up_at: Any = _UNSET,
+    mark_applied: bool = False,
+    infer_applied_at_from_status: bool = True,
+) -> dict[str, bool]:
+    """Apply lifecycle state changes without committing the caller-owned transaction."""
+    if item.user_id != user_id:
+        raise LifecycleEventError(
+            "inaccessible_job_track", "Application is not available to this account."
+        )
+    if item.id is None:
+        session.flush()
+
+    now_utc = _normalize_utc(now)
+    root_operation_id = coerce_operation_id(operation_id)
+
+    previous_status = item.status
+    previous_applied_at = item.applied_at
+    previous_follow_up_at = item.follow_up_at
+
+    target_status = previous_status if status is _UNSET else status
+    explicit_applied_at = applied_at is not _UNSET
+    explicit_follow_up_at = follow_up_at is not _UNSET
+
+    if explicit_applied_at:
+        target_applied_at = (
+            None if applied_at is None else _normalize_utc(applied_at)
+        )
+    else:
+        target_applied_at = previous_applied_at
+
+    if explicit_follow_up_at:
+        target_follow_up_at = (
+            None if follow_up_at is None else _normalize_utc(follow_up_at)
+        )
+    else:
+        target_follow_up_at = previous_follow_up_at
+
+    if mark_applied:
+        target_status = "applied"
+
+    if (
+        infer_applied_at_from_status
+        and target_status == "applied"
+        and target_applied_at is None
+        and (mark_applied or status is not _UNSET)
+    ):
+        target_applied_at = now_utc
+
+    status_changed = target_status != previous_status
+    applied_changed = target_applied_at != previous_applied_at
+    follow_up_changed = target_follow_up_at != previous_follow_up_at
+
+    if status is not _UNSET or mark_applied:
+        item.status = target_status
+    if explicit_applied_at or (
+        infer_applied_at_from_status
+        and target_status == "applied"
+        and previous_applied_at is None
+        and target_applied_at is not None
+    ):
+        item.applied_at = target_applied_at
+    if explicit_follow_up_at:
+        item.follow_up_at = target_follow_up_at
+    item.updated_at = now_utc
+
+    if previous_applied_at is None and target_applied_at is not None:
+        write_event(
+            session,
+            user_id=user_id,
+            job_url=item.url,
+            kind="first_applied",
+            occurred_at=target_applied_at,
+            source=source,
+            csv_row_id=item.csv_row_id,
+            job_track_id=item.id,
+        )
+    elif (
+        explicit_applied_at
+        and previous_applied_at is not None
+        and applied_changed
+    ):
+        write_event(
+            session,
+            user_id=user_id,
+            job_url=item.url,
+            kind="applied_date_corrected",
+            occurred_at=now_utc,
+            source=source,
+            payload={
+                "from": _payload_datetime(previous_applied_at),
+                "to": _payload_datetime(target_applied_at),
+            },
+            csv_row_id=item.csv_row_id,
+            job_track_id=item.id,
+            operation_id=child_operation_id(
+                root_operation_id, item.id, "applied_date_corrected"
+            ),
+        )
+
+    if status_changed:
+        write_event(
+            session,
+            user_id=user_id,
+            job_url=item.url,
+            kind="status_changed",
+            occurred_at=now_utc,
+            source=source,
+            payload={"from": previous_status, "to": target_status},
+            csv_row_id=item.csv_row_id,
+            job_track_id=item.id,
+            operation_id=child_operation_id(
+                root_operation_id, item.id, "status_changed"
+            ),
+        )
+
+    if explicit_follow_up_at and follow_up_changed:
+        write_event(
+            session,
+            user_id=user_id,
+            job_url=item.url,
+            kind="followup_changed",
+            occurred_at=now_utc,
+            source=source,
+            payload={
+                "from": _payload_datetime(previous_follow_up_at),
+                "to": _payload_datetime(target_follow_up_at),
+            },
+            csv_row_id=item.csv_row_id,
+            job_track_id=item.id,
+            operation_id=child_operation_id(
+                root_operation_id, item.id, "followup_changed"
+            ),
+        )
+
+    return {
+        "status_changed": status_changed,
+        "applied_changed": applied_changed,
+        "follow_up_changed": follow_up_changed,
+    }
 
 
 def _apply_time_window(query, column, start: datetime | None, end: datetime | None):
