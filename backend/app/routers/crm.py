@@ -996,8 +996,8 @@ def batch_intelligence(row_ids: str = Query(...), db: Session = Depends(get_db),
 
 # ─── Follow-Up Presets ───────────────────────────────────────────────────
 
-def _next_weekday(target_weekday):
-    now = datetime.utcnow()
+def _next_weekday(target_weekday, now=None):
+    now = now or datetime.utcnow()
     days_ahead = target_weekday - now.weekday()
     if days_ahead <= 0:
         days_ahead += 7
@@ -1005,25 +1005,54 @@ def _next_weekday(target_weekday):
 
 
 @router.post("/applications/{item_id}/follow-up")
-def set_follow_up_preset(item_id: int, preset: str = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def set_follow_up_preset(
+    item_id: int,
+    preset: str = Query(...),
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
     if not item:
         raise HTTPException(404, "Application not found")
+
     now = datetime.utcnow()
     if preset == "3_days":
-        item.follow_up_at = now + timedelta(days=3)
+        follow_up_at = now + timedelta(days=3)
     elif preset == "7_days":
-        item.follow_up_at = now + timedelta(days=7)
+        follow_up_at = now + timedelta(days=7)
     elif preset == "next_monday":
-        item.follow_up_at = _next_weekday(0)
+        follow_up_at = _next_weekday(0, now)
     elif preset == "clear":
-        item.follow_up_at = None
+        follow_up_at = None
     else:
-        raise HTTPException(400, "Invalid preset. Use: 3_days, 7_days, next_monday, clear")
-    item.updated_at = now
-    emit_event(db, user.id, "followup_set", "job_track", entity_id=item.id, metadata={"preset": preset})
-    db.commit()
-    db.refresh(item)
+        raise HTTPException(
+            400, "Invalid preset. Use: 3_days, 7_days, next_monday, clear"
+        )
+
+    operation_id = _request_operation_id(x_operation_id)
+    try:
+        apply_job_track_changes(
+            db,
+            user_id=user.id,
+            item=item,
+            source="followup_preset",
+            operation_id=operation_id,
+            now=now,
+            follow_up_at=follow_up_at,
+        )
+        emit_event(
+            db,
+            user.id,
+            "followup_set",
+            "job_track",
+            entity_id=item.id,
+            metadata={"preset": preset},
+        )
+        db.commit()
+        db.refresh(item)
+    except LifecycleEventError as exc:
+        _raise_lifecycle_http(db, exc)
     return to_out(item)
 
 
