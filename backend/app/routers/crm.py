@@ -925,19 +925,47 @@ def download_applypilot_batch(batch_id: int, db: Session = Depends(get_db), user
 
 
 @router.post("/applypilot/import")
-def import_applypilot_results(results: list[ApplyPilotResultIn], db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def import_applypilot_results(
+    results: list[ApplyPilotResultIn],
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    prepared = []
+    try:
+        for result in results:
+            submitted_at = parse_dt(result.submitted_at) if result.submitted_at else None
+            prepared.append((result, submitted_at))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "Invalid submitted_at value") from exc
+
+    operation_id = _request_operation_id(x_operation_id)
     updated = 0
-    for result in results:
-        track = db.query(JobTrack).filter_by(user_id=user.id, url=result.url).first()
-        if track:
+    try:
+        for result, submitted_at in prepared:
+            track = db.query(JobTrack).filter_by(user_id=user.id, url=result.url).first()
+            if not track:
+                continue
+            now = datetime.utcnow()
             if result.submitted:
-                track.status = "applied"
-                track.applied_at = parse_dt(result.submitted_at) or datetime.utcnow()
+                apply_job_track_changes(
+                    db,
+                    user_id=user.id,
+                    item=track,
+                    source="applypilot_import",
+                    operation_id=operation_id,
+                    now=now,
+                    status="applied",
+                    applied_at=submitted_at or now,
+                )
+            else:
+                track.updated_at = now
             if result.error:
                 track.notes = f"ApplyPilot error: {result.error}"
-            track.updated_at = datetime.utcnow()
             updated += 1
-    db.commit()
+        db.commit()
+    except LifecycleEventError as exc:
+        _raise_lifecycle_http(db, exc)
     return {"updated": updated}
 
 
