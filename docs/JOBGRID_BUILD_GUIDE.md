@@ -426,7 +426,7 @@ JG-007 changes no database schema and does not change the JG-005/JG-006 backend 
 
 ## JG-008 durable lifecycle ledger
 
-JG-008 adds durable lifecycle storage without activating the later R3 mutation or analytics cutovers.
+JG-008 added durable lifecycle storage. JG-009 now wires the existing mutation paths into that storage without activating the JG-010 timezone/backfill or JG-011 analytics read-path cutovers.
 
 ### Metric definitions
 
@@ -435,7 +435,7 @@ JG-008 adds durable lifecycle storage without activating the later R3 mutation o
 - **Applied** means one durable `first_applied` lifecycle fact. It is not inferred from the current status value.
 - Lifecycle time windows use `JobLifecycleEvent.occurred_at`, never the recording/update time.
 
-These functions live in `backend/app/services/lifecycle.py`. JG-009 owns wiring existing click/application writers to them. Until JG-009 lands, existing routes continue their pre-JG-008 write behavior.
+These functions live in `backend/app/services/lifecycle.py`. Live visit/application writers now use the JG-009 transaction-owned mutation helpers described below.
 
 ### Storage contract
 
@@ -478,4 +478,57 @@ The focused lifecycle suite covers deterministic replay, explicit SQLite conflic
 ### Rollback
 
 Application code can be rolled back while leaving revision 004 and stored lifecycle history in place. Old readers ignore the additive table. Do not delete lifecycle history to make metrics match. A database downgrade that drops the table is destructive and is not the normal application rollback path.
+
+## JG-009 lifecycle mutation wiring
+
+JG-009 connects the existing mutation routes to the lifecycle ledger. It does not change the public analytics response definitions yet.
+
+### Writer behavior
+
+- `POST /rows/{row_id}/click` records `first_visited` only when the row changes from unvisited to visited. Repeating the click does not add another lifecycle fact.
+- `POST /crm/from-row/{row_id}` and `POST /crm/from-rows/bulk` still create or reuse `JobTrack` records. A saved application is represented by the `JobTrack` itself and never implies a visit.
+- Single and bulk application patches record `status_changed` only when status actually changes. Moving status backward does not erase the first known application date.
+- The first transition from no `applied_at` to a real date records `first_applied` at that application date. Explicit edits to an existing application date record `applied_date_corrected`.
+- Follow-up patches and presets record `followup_changed` only when the date actually changes.
+- ApplyPilot result import records a first application from the declared `submitted_at`. If ApplyPilot explicitly reports `submitted=true` without a timestamp, the existing recording-time fallback is retained.
+- External application import preserves declared `applied_at` and `follow_up_at` values. An imported status of `applied` without an application date does not invent one, so status and application evidence remain separate facts.
+- Backup restore remains a historical replay path and inserts exported lifecycle records directly. It does not invoke live mutation helpers or manufacture fresh facts.
+
+### Transactions, ownership, and replay
+
+Lifecycle state and event writes share one SQLAlchemy transaction. `backend/app/services/lifecycle.py` owns the mutation rules while `rows.py` and `crm.py` own authentication, request validation, and HTTP error mapping.
+
+Bulk application patch and row-to-application routes resolve the complete requested ID set for the authenticated account before changing any record. If any target is missing or belongs to another account, the request fails before mutation. A lifecycle failure rolls back both application state and lifecycle facts.
+
+Transition-capable routes accept an optional `X-Operation-ID` request header containing a UUID. When omitted, JobGrid creates a request UUID. A stable request UUID is expanded into deterministic per-application/per-event child IDs so one bulk request can write several independent transition facts. Reusing an operation ID for conflicting transition input returns HTTP `409` and the transaction is rolled back.
+
+The header is optional for existing clients. Clients that retry mutations after an uncertain network outcome should reuse the same UUID.
+
+Example:
+
+```sh
+curl -X PATCH http://localhost:8000/crm/applications/42 \
+  -H "Content-Type: application/json" \
+  -H "X-Operation-ID: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"status":"applied"}'
+```
+
+### Verification
+
+Focused checks:
+
+```sh
+cd backend
+python -m pytest tests/test_lifecycle_mutations.py -q
+python -m pytest tests/test_application_memory.py tests/test_rows.py -q
+python -m compileall app
+```
+
+`test_lifecycle_mutations.py` covers all active writer paths, repeat-same-status behavior, bulk all-or-nothing ownership validation, ApplyPilot replay, operation-ID conflict rollback, declared external application dates, explicit date correction, and backward status changes.
+
+Repository CI remains the integration gate for PostgreSQL backend tests, backend compilation, the frontend production build, and Playwright coverage.
+
+### Rollback
+
+JG-009 has no schema migration and adds no dependency. Application code can roll back independently while retaining revision 004 and all lifecycle history already recorded. Do not delete lifecycle events during rollback. JG-010 and JG-011 remain separate activation steps.
 
