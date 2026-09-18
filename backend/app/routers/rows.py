@@ -9,6 +9,7 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
 from ..schemas import ColumnPrefIn, RowDeleteIn
+from ..services.lifecycle import LifecycleEventError, record_visit
 from ..services.row_queries import RowQuery, build_row_query, order_row_query
 from .crm import emit_event, calculate_priority_score, calculate_triage
 
@@ -250,14 +251,28 @@ def record_click(
     row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
     if not row:
         raise HTTPException(404, "Row not found")
-    now = datetime.utcnow()
-
-    # Mark clicked
     if not row.clicked:
-        row.clicked = True
-        row.clicked_at = datetime.utcnow()
-        emit_event(db, user.id, "row_opened", "csv_row", entity_id=row.id, metadata={"url": row.url})
-        db.commit()
+        try:
+            record_visit(
+                db,
+                user_id=user.id,
+                row=row,
+                occurred_at=datetime.utcnow(),
+                source="row_click",
+            )
+            emit_event(
+                db,
+                user.id,
+                "row_opened",
+                "csv_row",
+                entity_id=row.id,
+                metadata={"url": row.url},
+            )
+            db.commit()
+        except LifecycleEventError as exc:
+            db.rollback()
+            status_code = 409 if exc.code == "event_key_conflict" else 400
+            raise HTTPException(status_code, exc.message) from exc
     return {"id": row.id, "clicked": row.clicked, "clicked_at": row.clicked_at}
 
 
