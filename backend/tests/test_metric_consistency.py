@@ -76,6 +76,8 @@ def test_shared_metrics_agree_across_analytics_goals_and_weekly(db_session, monk
     analytics = crm_router.analytics(db=db_session, user=user)
     goals = crm_router.goal_progress(db=db_session, user=user)
     weekly = crm_router.weekly_report(db=db_session, user=user)
+    stats = crm_router.stats(db=db_session, user=user)
+    funnel = crm_router.funnel_analytics(db=db_session, user=user)
 
     assert analytics["total_opened"] == 1
     assert analytics["total_saved"] == 1
@@ -90,6 +92,14 @@ def test_shared_metrics_agree_across_analytics_goals_and_weekly(db_session, monk
     assert weekly["opened"] == 1
     assert weekly["saved"] == 1
     assert weekly["applied"] == 1
+
+    assert stats["total_opened"] == 1
+    assert stats["total_saved"] == 1
+    assert stats["total_applied"] == 1
+    stages = {stage["name"]: stage["count"] for stage in funnel["stages"]}
+    assert stages["Opened"] == 1
+    assert stages["Sent to Applications"] == 1
+    assert stages["Applied"] == 1
 
 
 def test_daily_boundary_api_uses_same_account_local_interval(db_session, monkeypatch):
@@ -118,10 +128,17 @@ def test_daily_boundary_api_uses_same_account_local_interval(db_session, monkeyp
 
     analytics = crm_router.analytics(db=db_session, user=user)
     goals = crm_router.goal_progress(db=db_session, user=user)
+    stats = crm_router.stats(
+        today_start="2026-09-19T18:30:00",
+        today_end="2026-09-20T18:30:00",
+        db=db_session,
+        user=user,
+    )
 
     assert analytics["total_applied"] == 2
     assert analytics["applied_today"] == 1
     assert goals["today"]["applied"] == 1
+    assert stats["applied_today"] == 1
 
 
 def test_historical_visit_survives_source_row_delete(db_session, monkeypatch):
