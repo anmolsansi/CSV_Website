@@ -153,7 +153,8 @@ if settings.TEST_AUTH:
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
         if not user:
             return {"deleted": 0}
-        from .models import JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory
+        from .models import JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory
+        db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()
