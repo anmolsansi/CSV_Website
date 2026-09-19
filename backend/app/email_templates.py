@@ -5,6 +5,7 @@ def weekly_digest(subject: str, data: dict) -> str:
     """Return a full HTML email string for the weekly digest."""
     uploaded = data.get("uploaded", 0)
     opened = data.get("opened", 0)
+    saved = data.get("saved", 0)
     applied = data.get("applied", 0)
     interviews = data.get("interviews", 0)
     followups_completed = data.get("followups_completed", 0)
@@ -64,7 +65,7 @@ def weekly_digest(subject: str, data: dict) -> str:
 
     goals_html = ""
     if goals:
-        goals_html = _goal_row("Jobs Opened", today.get("opened", 0), goals.get("open_per_day", 30))
+        goals_html = _goal_row("Visited Jobs", today.get("opened", 0), goals.get("open_per_day", 30))
         goals_html += _goal_row("Applications", today.get("applied", 0), goals.get("apply_per_day", 10))
         goals_html += _goal_row("Follow-ups", today.get("followups", 0), goals.get("followup_per_day", 5))
 
@@ -98,22 +99,27 @@ def weekly_digest(subject: str, data: dict) -> str:
             <td style="padding:24px 40px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td width="25%" style="text-align:center;padding:16px 8px;background:#f8fafc;border-radius:8px;">
+                  <td width="18%" style="text-align:center;padding:16px 6px;background:#f8fafc;border-radius:8px;">
                     <div style="font-size:28px;font-weight:700;color:#6366f1;">{uploaded}</div>
                     <div style="font-size:12px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">Uploaded</div>
                   </td>
-                  <td width="4%"></td>
-                  <td width="25%" style="text-align:center;padding:16px 8px;background:#f8fafc;border-radius:8px;">
+                  <td width="2%"></td>
+                  <td width="18%" style="text-align:center;padding:16px 6px;background:#f8fafc;border-radius:8px;">
                     <div style="font-size:28px;font-weight:700;color:#6366f1;">{opened}</div>
-                    <div style="font-size:12px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">Opened</div>
+                    <div style="font-size:12px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">Visited</div>
                   </td>
-                  <td width="4%"></td>
-                  <td width="25%" style="text-align:center;padding:16px 8px;background:#f8fafc;border-radius:8px;">
+                  <td width="2%"></td>
+                  <td width="18%" style="text-align:center;padding:16px 6px;background:#f8fafc;border-radius:8px;">
+                    <div style="font-size:28px;font-weight:700;color:#6366f1;">{saved}</div>
+                    <div style="font-size:12px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">Saved</div>
+                  </td>
+                  <td width="2%"></td>
+                  <td width="18%" style="text-align:center;padding:16px 6px;background:#f8fafc;border-radius:8px;">
                     <div style="font-size:28px;font-weight:700;color:#6366f1;">{applied}</div>
                     <div style="font-size:12px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">Applied</div>
                   </td>
-                  <td width="4%"></td>
-                  <td width="25%" style="text-align:center;padding:16px 8px;background:#f8fafc;border-radius:8px;">
+                  <td width="2%"></td>
+                  <td width="18%" style="text-align:center;padding:16px 6px;background:#f8fafc;border-radius:8px;">
                     <div style="font-size:28px;font-weight:700;color:#6366f1;">{interviews}</div>
                     <div style="font-size:12px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px;">Interviews</div>
                   </td>

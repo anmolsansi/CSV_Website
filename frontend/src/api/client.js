@@ -94,6 +94,9 @@ export const api = {
   getBucketPerformance: () => client.get('/crm/analytics/buckets').then((r) => r.data),
   getGoalProgress: () => client.get('/crm/analytics/goals').then((r) => r.data),
   getWeeklyReport: () => client.get('/crm/analytics/weekly').then((r) => r.data),
+  getProfileTimezone: () => client.get('/crm/profile/timezone').then((r) => r.data),
+  updateProfileTimezone: (timezone) =>
+    client.patch('/crm/profile/timezone', { timezone }).then((r) => r.data),
   getGoals: () => client.get('/crm/goals').then((r) => r.data),
   updateGoals: (goals) => client.put(`/crm/goals?open_per_day=${goals.open_per_day}&apply_per_day=${goals.apply_per_day}&followup_per_day=${goals.followup_per_day}&applypilot_per_day=${goals.applypilot_per_day}`).then((r) => r.data),
 

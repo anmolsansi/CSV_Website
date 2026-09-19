@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, ApplyPilotBatch, AuditEvent, CsvRow, JobTrack, SavedView, SearchSession, User, UserGoal
+from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, ApplyPilotBatch, AuditEvent, CsvRow, JobLifecycleEvent, JobTrack, SavedView, SearchSession, User, UserGoal
 from ..scoring import _parse_score, priority_score as scoring_priority_score, improved_triage as scoring_triage, skills_extraction
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -23,6 +23,10 @@ from ..services.lifecycle import (
     LifecycleEventError,
     apply_job_track_changes,
     coerce_operation_id,
+    count_visited_without_applied,
+    local_day_utc_bounds,
+    metric_counts,
+    rolling_week_utc_bounds,
     validate_timezone_name,
 )
 from ..services.row_queries import (
@@ -573,33 +577,58 @@ def update_profile_timezone(
 
 @router.get("/stats")
 def stats(today_start: str | None = Query(None), today_end: str | None = Query(None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    query = db.query(JobTrack).filter(JobTrack.user_id == user.id)
+    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id)
     start = parse_dt(today_start)
     end = parse_dt(today_end)
-    opened_today = query.filter(JobTrack.opened_at.isnot(None))
-    applied_today = query.filter(JobTrack.applied_at.isnot(None))
-    if start and end:
-        opened_today = opened_today.filter(JobTrack.opened_at >= start, JobTrack.opened_at < end)
-        applied_today = applied_today.filter(JobTrack.applied_at >= start, JobTrack.applied_at < end)
+    lifetime_metrics = metric_counts(db, user_id=user.id)
+    today_metrics = (
+        metric_counts(db, user_id=user.id, start=start, end=end)
+        if start and end
+        else {"visited": 0, "applied": 0}
+    )
     now = datetime.utcnow()
-    return {"total_opened": query.count(), "total_applied": query.filter(JobTrack.applied_at.isnot(None)).count(), "opened_today": opened_today.count() if start and end else 0, "applied_today": applied_today.count() if start and end else 0, "last_24_hours": query.filter(JobTrack.opened_at >= now - timedelta(hours=24)).count(), "follow_ups_due": query.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now).count(), "interviews": query.filter(JobTrack.status == "interview").count(), "rejected": query.filter(JobTrack.status == "rejected").count()}
-
+    last_24_hours = metric_counts(
+        db,
+        user_id=user.id,
+        start=now - timedelta(hours=24),
+        end=now,
+    )["visited"]
+    return {
+        "total_opened": lifetime_metrics["visited"],
+        "total_saved": lifetime_metrics["saved"],
+        "total_applied": lifetime_metrics["applied"],
+        "opened_today": today_metrics["visited"],
+        "applied_today": today_metrics["applied"],
+        "last_24_hours": last_24_hours,
+        "follow_ups_due": tracks.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now).count(),
+        "interviews": tracks.filter(JobTrack.status == "interview").count(),
+        "rejected": tracks.filter(JobTrack.status == "rejected").count(),
+    }
+# ─── Analytics
 
 # ─── Analytics ─────────────────────────────────────────────────────────────────
 
 @router.get("/analytics")
 def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start = today_start - timedelta(days=7)
+    today_start, today_end = local_day_utc_bounds(user.timezone, reference=now)
+    week_start, week_end = rolling_week_utc_bounds(user.timezone, reference=now)
 
     total_urls = db.query(CsvRow).filter(CsvRow.user_id == user.id).count()
     tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id)
-    total_opened = tracks.count()
-    total_applied = tracks.filter(JobTrack.applied_at.isnot(None)).count()
-    applied_today = tracks.filter(JobTrack.applied_at >= today_start).count()
-    applied_7d = tracks.filter(JobTrack.applied_at >= week_start).count()
-    opened_not_applied = tracks.filter(JobTrack.applied_at.is_(None), JobTrack.status == "opened").count()
+    lifetime_metrics = metric_counts(db, user_id=user.id)
+    today_metrics = metric_counts(
+        db, user_id=user.id, start=today_start, end=today_end
+    )
+    week_metrics = metric_counts(
+        db, user_id=user.id, start=week_start, end=week_end
+    )
+    total_opened = lifetime_metrics["visited"]
+    total_saved = lifetime_metrics["saved"]
+    total_applied = lifetime_metrics["applied"]
+    applied_today = today_metrics["applied"]
+    applied_7d = week_metrics["applied"]
+    opened_not_applied = count_visited_without_applied(db, user_id=user.id)
     follow_ups_due = tracks.filter(JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= now).count()
     interviews = tracks.filter(JobTrack.status == "interview").count()
     rejected = tracks.filter(JobTrack.status == "rejected").count()
@@ -609,7 +638,18 @@ def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_us
     by_bucket = db.query(JobTrack.search_bucket, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.search_bucket.isnot(None), JobTrack.search_bucket != "").group_by(JobTrack.search_bucket).order_by(desc(func.count(JobTrack.id))).limit(10).all()
     by_status = db.query(JobTrack.status, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id).group_by(JobTrack.status).all()
 
-    applied_scores = tracks.filter(JobTrack.applied_at.isnot(None), JobTrack.resume_match_score.isnot(None), JobTrack.resume_match_score != "").all()
+    applied_scores = (
+        db.query(JobTrack)
+        .join(JobLifecycleEvent, JobLifecycleEvent.job_track_id == JobTrack.id)
+        .filter(
+            JobTrack.user_id == user.id,
+            JobLifecycleEvent.user_id == user.id,
+            JobLifecycleEvent.kind == "first_applied",
+            JobTrack.resume_match_score.isnot(None),
+            JobTrack.resume_match_score != "",
+        )
+        .all()
+    )
     scores = []
     for t in applied_scores:
         try:
@@ -619,10 +659,48 @@ def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_us
             pass
     avg_score = round(sum(scores) / len(scores), 1) if scores else 0
 
-    daily = db.query(func.date(JobTrack.applied_at), func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.applied_at.isnot(None), JobTrack.applied_at >= now - timedelta(days=30)).group_by(func.date(JobTrack.applied_at)).order_by(func.date(JobTrack.applied_at)).all()
+    daily = (
+        db.query(func.date(JobLifecycleEvent.occurred_at), func.count(JobLifecycleEvent.id))
+        .filter(
+            JobLifecycleEvent.user_id == user.id,
+            JobLifecycleEvent.kind == "first_applied",
+            JobLifecycleEvent.occurred_at >= now - timedelta(days=30),
+        )
+        .group_by(func.date(JobLifecycleEvent.occurred_at))
+        .order_by(func.date(JobLifecycleEvent.occurred_at))
+        .all()
+    )
 
-    top_opened = db.query(JobTrack.company, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "").group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(10).all()
-    top_applied = db.query(JobTrack.company, func.count(JobTrack.id)).filter(JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "", JobTrack.applied_at.isnot(None)).group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(10).all()
+    top_opened = (
+        db.query(CsvRow.company_guess, func.count(JobLifecycleEvent.id))
+        .join(JobLifecycleEvent, JobLifecycleEvent.csv_row_id == CsvRow.id)
+        .filter(
+            JobLifecycleEvent.user_id == user.id,
+            JobLifecycleEvent.kind == "first_visited",
+            CsvRow.user_id == user.id,
+            CsvRow.company_guess.isnot(None),
+            CsvRow.company_guess != "",
+        )
+        .group_by(CsvRow.company_guess)
+        .order_by(desc(func.count(JobLifecycleEvent.id)))
+        .limit(10)
+        .all()
+    )
+    top_applied = (
+        db.query(JobTrack.company, func.count(JobLifecycleEvent.id))
+        .join(JobLifecycleEvent, JobLifecycleEvent.job_track_id == JobTrack.id)
+        .filter(
+            JobLifecycleEvent.user_id == user.id,
+            JobLifecycleEvent.kind == "first_applied",
+            JobTrack.user_id == user.id,
+            JobTrack.company.isnot(None),
+            JobTrack.company != "",
+        )
+        .group_by(JobTrack.company)
+        .order_by(desc(func.count(JobLifecycleEvent.id)))
+        .limit(10)
+        .all()
+    )
 
     by_fit = db.query(CsvRow.fit_category, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.fit_category.isnot(None), CsvRow.fit_category != "").group_by(CsvRow.fit_category).order_by(desc(func.count(CsvRow.id))).all()
     by_seniority = db.query(CsvRow.seniority_level, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.seniority_level.isnot(None), CsvRow.seniority_level != "").group_by(CsvRow.seniority_level).order_by(desc(func.count(CsvRow.id))).all()
@@ -630,7 +708,7 @@ def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_us
     by_role_family = db.query(CsvRow.role_family, func.count(CsvRow.id)).filter(CsvRow.user_id == user.id, CsvRow.role_family.isnot(None), CsvRow.role_family != "").group_by(CsvRow.role_family).order_by(desc(func.count(CsvRow.id))).all()
 
     return {
-        "total_urls": total_urls, "total_opened": total_opened, "total_applied": total_applied,
+        "total_urls": total_urls, "total_opened": total_opened, "total_saved": total_saved, "total_applied": total_applied,
         "applied_today": applied_today, "applied_7d": applied_7d,
         "opened_not_applied": opened_not_applied, "follow_ups_due": follow_ups_due,
         "interviews": interviews, "rejected": rejected, "offers": offers,
@@ -652,9 +730,10 @@ def analytics(db: Session = Depends(get_db), user: User = Depends(get_current_us
 def funnel_analytics(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     uploaded = db.query(CsvRow).filter(CsvRow.user_id == user.id).count()
     tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id)
-    opened = tracks.count()
-    sent_to_apps = tracks.filter(JobTrack.csv_row_id.isnot(None)).count()
-    applied = tracks.filter(JobTrack.applied_at.isnot(None)).count()
+    metrics = metric_counts(db, user_id=user.id)
+    opened = metrics["visited"]
+    sent_to_apps = metrics["saved"]
+    applied = metrics["applied"]
     interview = tracks.filter(JobTrack.status == "interview").count()
     offer = tracks.filter(JobTrack.status == "offer").count()
     rejected = tracks.filter(JobTrack.status == "rejected").count()
@@ -761,42 +840,73 @@ def goal_progress(db: Session = Depends(get_db), user: User = Depends(get_curren
         db.add(goal)
         db.commit()
     now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    opened_today = db.query(AuditEvent).filter(AuditEvent.user_id == user.id, AuditEvent.event_type == "row_opened", AuditEvent.created_at >= today_start).count()
-    applied_today = db.query(AuditEvent).filter(AuditEvent.user_id == user.id, AuditEvent.event_type == "application_marked_applied", AuditEvent.created_at >= today_start).count()
-    followups_today = db.query(AuditEvent).filter(AuditEvent.user_id == user.id, AuditEvent.event_type == "followup_set", AuditEvent.created_at >= today_start).count()
-    exports_today = db.query(AuditEvent).filter(AuditEvent.user_id == user.id, AuditEvent.event_type == "applypilot_batch_exported", AuditEvent.created_at >= today_start).count()
+    today_start, today_end = local_day_utc_bounds(user.timezone, reference=now)
+    today_metrics = metric_counts(
+        db, user_id=user.id, start=today_start, end=today_end
+    )
+    followups_today = db.query(AuditEvent).filter(
+        AuditEvent.user_id == user.id,
+        AuditEvent.event_type == "followup_set",
+        AuditEvent.created_at >= today_start,
+        AuditEvent.created_at < today_end,
+    ).count()
+    exports_today = db.query(AuditEvent).filter(
+        AuditEvent.user_id == user.id,
+        AuditEvent.event_type == "applypilot_batch_exported",
+        AuditEvent.created_at >= today_start,
+        AuditEvent.created_at < today_end,
+    ).count()
     return {
         "goals": {"open_per_day": goal.open_per_day, "apply_per_day": goal.apply_per_day, "followup_per_day": goal.followup_per_day, "applypilot_per_day": goal.applypilot_per_day},
-        "today": {"opened": opened_today, "applied": applied_today, "followups": followups_today, "exports": exports_today},
+        "today": {"opened": today_metrics["visited"], "applied": today_metrics["applied"], "followups": followups_today, "exports": exports_today},
     }
 
 
 @router.get("/analytics/weekly")
 def weekly_report(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = datetime.utcnow()
-    week_start = now - timedelta(days=7)
-    uploaded = db.query(CsvRow).filter(CsvRow.user_id == user.id, CsvRow.created_at >= week_start).count()
+    week_start, week_end = rolling_week_utc_bounds(user.timezone, reference=now)
+    weekly_metrics = metric_counts(
+        db, user_id=user.id, start=week_start, end=week_end
+    )
+    uploaded = db.query(CsvRow).filter(
+        CsvRow.user_id == user.id,
+        CsvRow.created_at >= week_start,
+        CsvRow.created_at < week_end,
+    ).count()
     tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id)
-    opened = tracks.filter(JobTrack.opened_at >= week_start).count()
-    applied = tracks.filter(JobTrack.applied_at >= week_start).count()
-    interviews = tracks.filter(JobTrack.status == "interview", JobTrack.updated_at >= week_start).count()
-    followups = db.query(AuditEvent).filter(AuditEvent.user_id == user.id, AuditEvent.event_type == "followup_set", AuditEvent.created_at >= week_start).count()
+    interviews = tracks.filter(
+        JobTrack.status == "interview",
+        JobTrack.updated_at >= week_start,
+        JobTrack.updated_at < week_end,
+    ).count()
+    followups = db.query(AuditEvent).filter(
+        AuditEvent.user_id == user.id,
+        AuditEvent.event_type == "followup_set",
+        AuditEvent.created_at >= week_start,
+        AuditEvent.created_at < week_end,
+    ).count()
     top_companies = db.query(JobTrack.company, func.count(JobTrack.id)).filter(
         JobTrack.user_id == user.id, JobTrack.company.isnot(None), JobTrack.company != "",
-        JobTrack.created_at >= week_start
+        JobTrack.created_at >= week_start, JobTrack.created_at < week_end,
     ).group_by(JobTrack.company).order_by(desc(func.count(JobTrack.id))).limit(5).all()
     next_followups = tracks.filter(
         JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at >= now,
         JobTrack.follow_up_at <= now + timedelta(days=7)
     ).order_by(JobTrack.follow_up_at.asc()).limit(10).all()
     return {
-        "uploaded": uploaded, "opened": opened, "applied": applied,
-        "interviews": interviews, "followups_completed": followups,
+        "uploaded": uploaded,
+        "opened": weekly_metrics["visited"],
+        "saved": weekly_metrics["saved"],
+        "applied": weekly_metrics["applied"],
+        "interviews": interviews,
+        "followups_completed": followups,
         "top_companies": [{"name": n, "count": c} for n, c in top_companies],
         "upcoming_followups": [{"id": t.id, "company": t.company, "title": t.title, "follow_up_at": str(t.follow_up_at)} for t in next_followups],
     }
 
+
+# ─── Saved Views
 
 # ─── Saved Views ───────────────────────────────────────────────────────────────
 
