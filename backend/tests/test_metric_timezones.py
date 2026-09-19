@@ -3,12 +3,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, create_engine, inspect
 
 from app.models import CsvRow, JobLifecycleEvent, JobTrack, User
 from app.services.lifecycle import (
+    LifecycleEventError,
     backfill_legacy_applications,
     backfill_legacy_visits,
     legacy_backfill_warning_counts,
@@ -85,6 +88,21 @@ def test_profile_timezone_defaults_updates_and_rejects_invalid_input(client):
         assert response.status_code == 422
 
     assert client.get("/crm/profile/timezone").json() == {"timezone": "Asia/Kolkata"}
+
+
+def test_backfill_rejects_batches_larger_than_500(db_session):
+    user = User(email=f"jg010-limit-{uuid4().hex}@jobgrid.dev")
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    with pytest.raises(LifecycleEventError) as exc:
+        backfill_legacy_visits(
+            db_session,
+            user_id=user.id,
+            limit=501,
+        )
+    assert exc.value.code == "invalid_backfill_limit"
 
 
 def test_backfill_twice_keeps_same_first_event_count(db_session):
