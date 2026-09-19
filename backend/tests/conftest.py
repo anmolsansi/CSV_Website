@@ -22,9 +22,16 @@ from app.main import app
 def engine():
     test_db_url = os.environ.get("DATABASE_URL", "sqlite:///./test.db")
     eng = create_engine(test_db_url, connect_args={"check_same_thread": False} if "sqlite" in test_db_url else {})
+    if eng.dialect.name == "postgresql":
+        # Start from a clean dedicated test schema while no test transaction
+        # can hold a relation lock. PostgreSQL CI databases are disposable,
+        # so final teardown only needs to close the pool.
+        Base.metadata.drop_all(bind=eng)
     Base.metadata.create_all(bind=eng)
     yield eng
-    Base.metadata.drop_all(bind=eng)
+    if eng.dialect.name != "postgresql":
+        Base.metadata.drop_all(bind=eng)
+    eng.dispose()
 
 
 @pytest.fixture()

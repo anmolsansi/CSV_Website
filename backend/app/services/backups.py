@@ -85,6 +85,7 @@ def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
         "applypilot_batches": session.query(ApplyPilotBatch).filter(ApplyPilotBatch.user_id == user_id).order_by(ApplyPilotBatch.id.asc()).all(),
         "column_preferences": session.query(ColumnPreference).filter(ColumnPreference.user_id == user_id).all(),
         "user_goal": session.query(UserGoal).filter(UserGoal.user_id == user_id).all(),
+        "user_profile": session.query(User).filter(User.id == user_id).all(),
     }
 
 
@@ -257,6 +258,12 @@ def _serialize_sections(
             "apply_per_day": item.apply_per_day,
             "followup_per_day": item.followup_per_day,
             "applypilot_per_day": item.applypilot_per_day,
+        })
+
+    for item in snapshot["user_profile"]:
+        sections["user_profile"].append({
+            "backup_ref": refs["user_profile"][item.id],
+            "timezone": item.timezone,
         })
 
     return sections
@@ -499,6 +506,18 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             fields = ("open_per_day", "apply_per_day", "followup_per_day", "applypilot_per_day")
             counts["user_goal"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
+    for record in document.sections.user_profile:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "user_profile", record.backup_ref
+        )
+        if mapping:
+            counts["user_profile"]["skipped"] += 1
+            continue
+        # A first restore creates the portable profile mapping even when the
+        # destination already has the same default timezone. Replays are skipped
+        # through BackupImportMap, matching every other portable section.
+        counts["user_profile"]["created"] += 1
+
     for record in document.sections.job_tracks:
         mapping = _lookup_import_map(session, user_id, backup_id, "job_tracks", record.backup_ref)
         if mapping:
@@ -740,6 +759,36 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         refs["user_goal"][record.backup_ref] = user_id
         _persist_import_map(session, user_id, backup_id, "user_goal", record.backup_ref, user_id)
         counts["user_goal"]["created"] += 1
+
+    for record in document.sections.user_profile:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "user_profile", record.backup_ref
+        )
+        if mapping is not None:
+            if mapping.target_id != user_id:
+                raise BackupContractError(
+                    "restore_mapping_conflict",
+                    409,
+                    "User-profile backup reference maps to a different account.",
+                    section="user_profile",
+                    backup_ref=record.backup_ref,
+                )
+            refs["user_profile"][record.backup_ref] = user_id
+            counts["user_profile"]["skipped"] += 1
+            continue
+
+        owner = session.query(User).filter(User.id == user_id).one()
+        owner.timezone = record.timezone
+        refs["user_profile"][record.backup_ref] = user_id
+        _persist_import_map(
+            session,
+            user_id,
+            backup_id,
+            "user_profile",
+            record.backup_ref,
+            user_id,
+        )
+        counts["user_profile"]["created"] += 1
 
     for record in document.sections.job_tracks:
         mapped = _mapped_target(session, user_id, backup_id, "job_tracks", record.backup_ref, JobTrack)

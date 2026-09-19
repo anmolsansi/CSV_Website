@@ -73,12 +73,12 @@ A v2 document contains exactly:
 - `version`: `"2.0"`
 - `backup_id`: UUID string
 - `exported_at`: UTC ISO-8601 timestamp
-- `schema_revision`: currently `"2.1.0"`
-- `sections`: the ten current v2 sections
+- `schema_revision`: currently `"2.2.0"`
+- `sections`: the eleven current v2 sections
 - `counts`: exact record count for every section
 - `checksum_sha256`: lowercase SHA-256 digest of canonical `sections` JSON
 
-The ten current sections are:
+The eleven current sections are:
 
 1. `csv_rows`
 2. `url_history`
@@ -90,6 +90,7 @@ The ten current sections are:
 8. `applypilot_batches`
 9. `column_preferences`
 10. `user_goal`
+11. `user_profile`
 
 Every record has a non-empty `backup_ref` unique within its section. Nullable fields remain present as keys, preserving the difference between null, empty text, `false`, and zero.
 
@@ -122,7 +123,7 @@ Isolation is:
 - PostgreSQL: `REPEATABLE READ`
 - SQLite/local tests: `SERIALIZABLE`
 
-All ten current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
+All eleven current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
 
 ## Canonical checksum
 
@@ -174,13 +175,15 @@ Audit events export event type, entity type, metadata, timestamp, session relati
 
 Batches export name, payload, status, job count, timestamps, and a validated session reference when present.
 
-### Column preferences and user goal
+### Column preferences, user goal, and user profile
 
-These user-owned singleton records export only portable preference/goal values. Ownership is reconstructed from the authenticated destination user during restore.
+Column preferences and goals export only portable preference/goal values. The `user_profile` section exports exactly one portable account preference, the validated IANA timezone. It does not export account ID, email, authentication identities, or provider data.
+
+On restore, profile timezone is applied to the authenticated destination account and the backup reference is persisted in `BackupImportMap`. Replaying the same backup is skipped, so a later manual timezone change is not overwritten by a retry.
 
 ## Excluded data
 
-Portable backups exclude `User` and `OAuthIdentity` records, account IDs/emails as authority, provider identities, JWTs, signing material, credentials, and server filesystem paths.
+Portable backups exclude account IDs/emails as authority, all other `User` identity fields, `OAuthIdentity` records, provider identities, JWTs, signing material, credentials, and server filesystem paths.
 
 `BackupImportMap` is operational restore metadata and is not exported. It maps a destination user's `(backup_id, section, backup_ref)` to a destination `target_id` and makes retries stable.
 
@@ -221,7 +224,7 @@ A successful response has this shape:
 }
 ```
 
-Every one of the ten current sections is present in new v2 exports and restore `counts`, even when its values are all zero. Older v2 files may omit `lifecycle_events`; it is treated as empty. Warnings contain safe codes plus optional `section` and `backup_ref`; they never contain notes, job descriptions, credentials, or another user's values.
+Every one of the eleven current sections is present in new v2 exports and restore `counts`, even when its values are all zero. Revision 2.1.0 files may omit `user_profile`; revision 2.0.0 files may omit both `lifecycle_events` and `user_profile`. Missing additive sections are treated as empty only after their original checksum shape is preserved for validation. Warnings contain safe codes plus optional `section` and `backup_ref`; they never contain notes, job descriptions, credentials, or another user's values.
 
 ## Preflight and validation order
 
@@ -248,10 +251,11 @@ A v2 merge happens in one destination transaction. Records are created or mapped
 5. saved views
 6. column preferences
 7. user goal
-8. job tracks after CSV references are resolvable
-9. lifecycle events after CSV-row and job-track references are resolvable
-10. ApplyPilot batches after session references are resolvable
-11. audit events last, after every supported target section has a destination identity
+8. user profile timezone
+9. job tracks after CSV references are resolvable
+10. lifecycle events after CSV-row and job-track references are resolvable
+11. ApplyPilot batches after session references are resolvable
+12. audit events last, after every supported target section has a destination identity
 
 If any insert, mapping, or reference resolution fails, the dedicated restore session rolls back the entire operation, including `BackupImportMap` rows.
 
@@ -426,7 +430,7 @@ JG-007 changes no database schema and does not change the JG-005/JG-006 backend 
 
 ## JG-008 durable lifecycle ledger
 
-JG-008 added durable lifecycle storage. JG-009 now wires the existing mutation paths into that storage without activating the JG-010 timezone/backfill or JG-011 analytics read-path cutovers.
+JG-008 added durable lifecycle storage. JG-009 wires the existing mutation paths into that storage. JG-010 adds account timezone and historical backfill primitives without activating the JG-011 analytics read-path cutover.
 
 ### Metric definitions
 
@@ -532,5 +536,91 @@ Repository CI remains the integration gate for PostgreSQL backend tests, backend
 
 ### Rollback
 
-JG-009 has no schema migration and adds no dependency. Application code can roll back independently while retaining revision 004 and all lifecycle history already recorded. Do not delete lifecycle events during rollback. JG-010 and JG-011 remain separate activation steps.
+JG-009 has no schema migration and adds no dependency. Application code can roll back independently while retaining lifecycle history already recorded. Do not delete lifecycle events during rollback. JG-010 is the additive timezone/backfill step described below; JG-011 remains the separate analytics read-path activation.
 
+
+
+## JG-010 account timezone and historical lifecycle backfill
+
+JG-010 adds the timezone and backfill foundation required before JG-011 switches analytics, goals, weekly reports, or digest reads. Those existing analytics endpoints are intentionally not changed by this ticket.
+
+### Account timezone
+
+Alembic revision `005_user_timezone.py` adds `users.timezone VARCHAR(64) NOT NULL`. Existing rows receive `UTC` during migration. The temporary database default is removed after the legacy copy, while the ORM keeps `default="UTC"` for newly created accounts.
+
+The authenticated profile API is:
+
+- `GET /crm/profile/timezone` -> `{"timezone":"Asia/Kolkata"}`
+- `PATCH /crm/profile/timezone` with exactly `{"timezone":"Asia/Kolkata"}`
+
+The PATCH route accepts only names that `zoneinfo.ZoneInfo` can load. Raw offsets such as `+05:30`, invented names, missing values, and ownership fields are rejected with HTTP 422. The route has no user-ID parameter, so it can update only the authenticated account.
+
+`backend/app/services/lifecycle.py` provides:
+
+- `local_day_utc_bounds()`, which converts local midnight to the next local midnight into stored UTC bounds.
+- `rolling_week_utc_bounds()`, which moves back seven local calendar days at the same local wall-clock time and returns UTC bounds.
+
+The local-day helper does not assume every day is 24 hours. For `America/New_York`, the 2026 spring-forward day maps to 23 hours and the 2026 fall-back day maps to 25 hours.
+
+### Historical lifecycle backfill
+
+The operational command is `scripts/backfill_lifecycle.py`. It requires an explicit mode:
+
+```sh
+# Inspect counts only. No lifecycle facts are written.
+python scripts/backfill_lifecycle.py --dry-run
+
+# Apply only source-backed historical facts.
+python scripts/backfill_lifecycle.py --apply
+
+# Resume after a fully completed account checkpoint.
+python scripts/backfill_lifecycle.py --apply --after-id 42
+
+# Smaller batches are allowed; 500 is the hard maximum.
+python scripts/backfill_lifecycle.py --dry-run --batch-size 100
+```
+
+`--after-id` is a `User.id` checkpoint. Each account's CSV rows and applications use their own internal source cursor, and each transaction scans at most 500 source records. If execution stops inside one account, resume from the previous completed user checkpoint. Reprocessing that account is safe because first-event keys are deterministic.
+
+The backfill rules are deliberately conservative:
+
+- `first_visited` is created only when legacy `CsvRow.clicked_at` is non-null.
+- `first_applied` is created only when legacy `JobTrack.applied_at` is non-null.
+- Original occurrence timestamps are preserved exactly.
+- Historical facts use `source="legacy_backfill"`.
+- `clicked=true` without `clicked_at` is a warning, not a visit timestamp.
+- `status="applied"` without `applied_at` is a warning, not an application timestamp.
+- Duplicate legacy URLs are counted as conflicts and are not arbitrarily resolved.
+- Dry-run follows the same candidate rules but writes nothing.
+
+Command output contains aggregate counts and checkpoint IDs, not job URLs. It also prints private SQL review-query templates for operators who need to inspect missing-date or duplicate cases directly in the protected database.
+
+### Backup contract
+
+Backup schema revision `2.2.0` adds `user_profile` with one validated `timezone` field. Export uses the authenticated user only. Restore applies the timezone to that destination account and records a stable import mapping. A repeat restore is skipped, which prevents an old backup retry from overwriting a timezone the user changed after the first restore.
+
+Compatibility remains additive:
+
+- revision `2.1.0` without `user_profile` remains valid;
+- revision `2.0.0` without `lifecycle_events` or `user_profile` remains valid;
+- checksum validation uses the section shape that actually existed in the older document.
+
+### Verification
+
+Focused backend verification:
+
+```sh
+cd backend
+python -m pytest tests/test_metric_timezones.py tests/test_backup_contract.py -q
+python -m pytest tests/test_lifecycle_events.py tests/test_lifecycle_mutations.py tests/test_application_memory.py -q
+python -m pytest tests/test_backup_export.py tests/test_backup_restore.py tests/test_schema_parity.py -q
+python -m compileall app
+```
+
+The timezone regression covers Kolkata midnight, New York 23/25-hour DST days, profile validation, idempotent double backfill, dry-run no-write behavior, missing application dates, migration up/down, and timezone backup round trip.
+
+### Rollback and activation
+
+Revision 005 is additive. Normal application rollback leaves the timezone column and lifecycle history in place so older application code can continue operating. Do not delete lifecycle facts or fabricate replacement dates during rollback.
+
+Run the backfill against a disposable database copy first. Compare dry-run counts with the apply result before any production execution. JG-010 implementation does not itself run a production backfill or activate JG-011 analytics reads.

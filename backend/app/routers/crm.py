@@ -7,7 +7,7 @@ from time import perf_counter
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Float, asc, case, cast, desc, func, or_
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from ..services.lifecycle import (
     LifecycleEventError,
     apply_job_track_changes,
     coerce_operation_id,
+    validate_timezone_name,
 )
 from ..services.row_queries import (
     ApplicationQuery,
@@ -539,6 +540,35 @@ def update_app(
             started=started,
         )
     return to_out(item)
+
+
+@router.get("/profile/timezone")
+def get_profile_timezone(
+    user: User = Depends(get_current_user),
+):
+    return {"timezone": validate_timezone_name(user.timezone)}
+
+
+@router.patch("/profile/timezone")
+def update_profile_timezone(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if set(payload) != {"timezone"}:
+        raise HTTPException(
+            422,
+            "Request body must contain exactly one field: timezone.",
+        )
+    try:
+        timezone_name = validate_timezone_name(payload.get("timezone"))
+    except LifecycleEventError as exc:
+        raise HTTPException(422, exc.message) from exc
+
+    user.timezone = timezone_name
+    db.commit()
+    db.refresh(user)
+    return {"timezone": user.timezone}
 
 
 @router.get("/stats")
