@@ -157,6 +157,32 @@ def test_backfill_twice_keeps_same_first_event_count(db_session):
     )
 
 
+def test_known_clicked_at_is_visit_evidence_even_if_legacy_flag_is_false(db_session):
+    suffix = uuid4().hex
+    user = User(email=f"jg010-known-click-{suffix}@jobgrid.dev")
+    db_session.add(user)
+    db_session.flush()
+    occurred_at = datetime(2026, 9, 4, 7, 30, 0)
+    db_session.add(CsvRow(
+        user_id=user.id,
+        upload_batch_id=f"batch-{suffix}",
+        url=f"https://example.com/{suffix}/known-click",
+        clicked=False,
+        clicked_at=occurred_at,
+    ))
+    db_session.commit()
+
+    result = backfill_legacy_visits(db_session, user_id=user.id)
+    db_session.commit()
+
+    assert result["created"] == 1
+    event = db_session.query(JobLifecycleEvent).filter_by(
+        user_id=user.id,
+        kind="first_visited",
+    ).one()
+    assert event.occurred_at == occurred_at
+
+
 def test_dry_run_counts_known_facts_without_writing(db_session):
     suffix = uuid4().hex
     user = User(email=f"jg010-dry-{suffix}@jobgrid.dev")
