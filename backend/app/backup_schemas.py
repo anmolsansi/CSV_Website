@@ -250,7 +250,7 @@ class BackupSectionsV2(StrictBackupModel):
     applypilot_batches: list[ApplyPilotBatchBackupV2]
     column_preferences: list[ColumnPreferenceBackupV2]
     user_goal: list[UserGoalBackupV2]
-    user_profile: list[UserProfileBackupV2] = Field(default_factory=list)
+    user_profile: list[UserProfileBackupV2] = Field(default_factory=list, max_length=1)
 
 
 class BackupCountsV2(StrictBackupModel):
