@@ -21,6 +21,7 @@ from app.backup_schemas import (
     SearchSessionBackupV2,
     UrlHistoryBackupV2,
     UserGoalBackupV2,
+    UserProfileBackupV2,
     adapt_v1_backup,
     compute_sections_checksum,
     inventory_gaps,
@@ -149,6 +150,7 @@ def test_frozen_section_record_allowlists_are_strict():
         "applypilot_batches": ApplyPilotBatchBackupV2,
         "column_preferences": ColumnPreferenceBackupV2,
         "user_goal": UserGoalBackupV2,
+        "user_profile": UserProfileBackupV2,
     }
     assert tuple(expected_models) == BACKUP_V2_SECTIONS
     for model in expected_models.values():
@@ -179,12 +181,28 @@ def test_older_v2_without_lifecycle_section_keeps_original_checksum_contract():
     payload = _valid_payload()
     payload["sections"].pop("lifecycle_events")
     payload["counts"].pop("lifecycle_events")
+    payload["sections"].pop("user_profile")
+    payload["counts"].pop("user_profile")
     payload["schema_revision"] = "2.0.0"
     payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
 
     validated = validate_backup_v2(json.dumps(payload))
     assert validated.sections.lifecycle_events == []
     assert validated.counts.lifecycle_events == 0
+    assert validated.sections.user_profile == []
+    assert validated.counts.user_profile == 0
+
+
+def test_v21_without_user_profile_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["sections"].pop("user_profile")
+    payload["counts"].pop("user_profile")
+    payload["schema_revision"] = "2.1.0"
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    validated = validate_backup_v2(json.dumps(payload))
+    assert validated.sections.user_profile == []
+    assert validated.counts.user_profile == 0
 
 
 def test_unknown_section_or_ownership_field():
@@ -390,3 +408,72 @@ def test_backup_lifecycle_roundtrip_preserves_occurrence_without_derived_first_e
         JobLifecycleEvent.kind.in_(["first_visited", "first_applied"]),
     ).count() == 0
 
+
+
+def test_timezone_profile_backup_roundtrip_and_replay(db_session):
+    source = User(
+        email=f"jg010-profile-source-{uuid4()}@example.test",
+        timezone="Asia/Kolkata",
+    )
+    db_session.add(source)
+    db_session.commit()
+    db_session.refresh(source)
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["schema_revision"] == BACKUP_SCHEMA_REVISION
+    assert payload["counts"]["user_profile"] == 1
+    assert payload["sections"]["user_profile"][0]["timezone"] == "Asia/Kolkata"
+
+    destination = User(
+        email=f"jg010-profile-dest-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(destination)
+    db_session.commit()
+    db_session.refresh(destination)
+
+    result = restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert result["counts"]["user_profile"] == {
+        "created": 1,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+
+    db_session.expire_all()
+    restored_user = db_session.get(User, destination.id)
+    assert restored_user.timezone == "Asia/Kolkata"
+
+    restored_user.timezone = "America/New_York"
+    db_session.commit()
+
+    replay = restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert replay["counts"]["user_profile"] == {
+        "created": 0,
+        "skipped": 1,
+        "conflicts": 0,
+    }
+    db_session.expire_all()
+    assert db_session.get(User, destination.id).timezone == "America/New_York"
+
+
+def test_invalid_backup_timezone_is_rejected():
+    payload = _valid_payload()
+    payload["sections"]["user_profile"] = [{
+        "backup_ref": "profile-1",
+        "timezone": "+05:30",
+    }]
+    _rechecksum(payload)
+
+    with pytest.raises(BackupContractError) as exc:
+        validate_backup_v2(payload)
+    assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
