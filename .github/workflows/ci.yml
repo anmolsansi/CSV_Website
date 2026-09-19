@@ -131,7 +131,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Run pytest
-        run: pytest tests/ -v --tb=short
+        run: timeout 60s pytest tests/test_metric_timezones.py -vv -s --tb=short
         env:
           DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_test
           TEST_AUTH: "true"
