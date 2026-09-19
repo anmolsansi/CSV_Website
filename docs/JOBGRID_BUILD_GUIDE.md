@@ -624,3 +624,76 @@ The timezone regression covers Kolkata midnight, New York 23/25-hour DST days, p
 Revision 005 is additive. Normal application rollback leaves the timezone column and lifecycle history in place so older application code can continue operating. Do not delete lifecycle facts or fabricate replacement dates during rollback.
 
 Run the backfill against a disposable database copy first. Compare dry-run counts with the apply result before any production execution. JG-010 implementation does not itself run a production backfill or activate JG-011 analytics reads.
+
+
+## JG-011 shared analytics metric reads
+
+JG-011 switches the user-facing progress read paths to the lifecycle definitions introduced by JG-008 and populated by JG-009/JG-010. It adds no database migration and does not execute the production historical backfill.
+
+### Shared definitions and compatibility
+
+`backend/app/services/lifecycle.py` owns the aggregate metric snapshot:
+
+- **Visited** counts durable `first_visited` facts by `occurred_at`.
+- **Saved** counts `JobTrack` records by `created_at`.
+- **Applied** counts durable `first_applied` facts by `occurred_at`.
+- `metric_counts()` groups the two lifecycle kinds in SQL and performs one saved-record count. It does not issue one count query per row.
+- `count_visited_without_applied()` uses an owner-scoped SQL anti-existence check on exact job URL. It does not infer application state from the current status.
+
+Existing response keys remain available where clients already depend on them:
+
+- `GET /crm/analytics`: `total_opened` now means lifetime **visited**, `total_applied` means lifetime first-applied, and additive `total_saved` exposes saved jobs explicitly. `applied_today` uses the account-local calendar day and `applied_7d` uses the shared rolling seven-local-day interval.
+- `GET /crm/stats`: `total_opened`, `opened_today`, and `last_24_hours` count visits; `total_applied` and `applied_today` count first applications. Additive `total_saved` exposes the saved definition.
+- `GET /crm/analytics/funnel`: the compatibility stage named `Opened` is backed by visited facts, `Sent to Applications` is backed by saved records, and `Applied` is backed by first-application facts.
+- `GET /crm/analytics/goals`: `today.opened` is retained as the wire key but now means visited jobs in the account's local day. `today.applied` uses the same local-day boundaries.
+- `GET /crm/analytics/weekly`: `opened` is retained as the wire key but means visited jobs, additive `saved` reports saved jobs, and `applied` reports first applications in the same rolling seven-local-day interval.
+- The weekly digest calls the same weekly and goal collectors, so it does not maintain a separate visit/application counting path.
+
+The Analytics UI renders the compatibility values with the corrected labels **Visited jobs**, **Saved jobs**, and **Applied jobs**. The funnel renders the legacy `Opened` stage as **Visited** and `Sent to Applications` as **Saved** without changing the backend stage keys/shape.
+
+### Timezone behavior
+
+Analytics loads the existing authenticated `GET /crm/profile/timezone` value and saves changes through `PATCH /crm/profile/timezone`. The browser-detected IANA zone is a suggestion only; the server remains authoritative and validates the submitted zone.
+
+Daily goals and `applied_today` use `local_day_utc_bounds()`. Weekly data and digest data use `rolling_week_utc_bounds()`. The same account timezone therefore controls every dated core metric read. Historical records whose occurrence timestamp is unknown are excluded from dated lifecycle totals instead of being assigned an invented time.
+
+Changing the timezone refreshes analytics, goals, and weekly data after the server confirms the update. Invalid timezone input remains editable and shows a recoverable error.
+
+### Lifecycle-backed analytics dimensions
+
+The 30-day application series groups `first_applied.occurred_at` facts rather than current `JobTrack.applied_at`. Top applied companies join first-application facts to their application record. Top visited companies join first-visit facts to the source row while that source row still exists.
+
+Deleting a source `CsvRow` does not delete the lifecycle fact, so lifetime visited totals remain durable. A deleted source row can no longer contribute its source-only company label to a dimensional company breakdown because that attribution was intentionally not duplicated into the lifecycle payload.
+
+Current-status dimensions such as interview, rejection, and offer remain `JobTrack.status` reads because they describe current state, not first-occurrence history.
+
+### Digest behavior
+
+`backend/app/routers/email.py` collects digest data by calling the same weekly and goal functions used by the API. The digest subject uses **visited** terminology, and the template shows Uploaded, Visited, Saved, Applied, and Interviews as separate values. Automated JG-011 coverage replaces the SMTP sender and captures the structured digest input, so no real email is sent during tests.
+
+### Verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest tests/test_metric_consistency.py tests/test_metric_timezones.py -q
+python -m pytest tests/test_lifecycle_events.py tests/test_lifecycle_mutations.py tests/test_crm.py tests/test_email.py -q
+python -m compileall app
+```
+
+Focused frontend checks:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/metric-consistency.spec.ts tests/analytics.spec.ts --project=chromium
+```
+
+`backend/tests/test_metric_consistency.py` covers cross-endpoint exact counts, account-local daily boundaries, retry idempotency, account scoping, durable visit history after source-row deletion, the existing stats/funnel readers, and digest parity with SMTP replaced. `frontend/tests/metric-consistency.spec.ts` creates one visit plus one saved/applied job through the public APIs, repeats the mutations, and verifies the same values and corrected labels on Analytics.
+
+The TEST_AUTH-only reset deletes lifecycle facts before deleting tracks and rows. This is test isolation only; production lifecycle history is never cleared by the reset route because that route is unavailable when TEST_AUTH is disabled.
+
+### Rollback
+
+JG-011 is a code-only read-path/UI cutover. Roll back the application and frontend changes together if required, but retain migration 005, account timezone values, and all lifecycle events. Never delete or rewrite lifecycle history to make an older reader match. No dependency or schema downgrade is required.
