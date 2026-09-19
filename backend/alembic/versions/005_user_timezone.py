@@ -26,6 +26,9 @@ def upgrade() -> None:
                 server_default="UTC",
             )
         )
+    # Keep this separate from the add-column batch. SQLite batch recreation
+    # needs the temporary default while copying pre-existing rows.
+    with op.batch_alter_table("users") as batch_op:
         batch_op.alter_column("timezone", server_default=None)
 
 
