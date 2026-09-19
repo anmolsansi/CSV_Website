@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
@@ -439,6 +440,329 @@ def apply_job_track_changes(
         "applied_changed": applied_changed,
         "follow_up_changed": follow_up_changed,
     }
+
+
+MAX_LEGACY_BACKFILL_BATCH_SIZE = 500
+
+LEGACY_BACKFILL_REVIEW_QUERIES = {
+    "clicked_without_date": (
+        "SELECT id, url FROM csv_rows "
+        "WHERE user_id = :user_id AND clicked = true AND clicked_at IS NULL "
+        "ORDER BY id"
+    ),
+    "applied_without_date": (
+        "SELECT id, url, status FROM job_tracks "
+        "WHERE user_id = :user_id AND status = 'applied' AND applied_at IS NULL "
+        "ORDER BY id"
+    ),
+    "duplicate_csv_urls": (
+        "SELECT url, COUNT(*) FROM csv_rows WHERE user_id = :user_id "
+        "GROUP BY url HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC"
+    ),
+    "duplicate_track_urls": (
+        "SELECT url, COUNT(*) FROM job_tracks WHERE user_id = :user_id "
+        "GROUP BY url HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC"
+    ),
+}
+
+
+def validate_timezone_name(value: str) -> str:
+    """Return one validated IANA timezone name without accepting raw offsets."""
+    if not isinstance(value, str) or not value or value != value.strip() or len(value) > 64:
+        raise LifecycleEventError(
+            "invalid_timezone",
+            "timezone must be a valid IANA timezone name of at most 64 characters.",
+        )
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise LifecycleEventError(
+            "invalid_timezone",
+            "timezone must be a valid IANA timezone name.",
+        ) from exc
+    return value
+
+
+def _aware_utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if not isinstance(value, datetime):
+        raise LifecycleEventError(
+            "invalid_reference_time", "reference time must be a datetime."
+        )
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def local_day_utc_bounds(
+    timezone_name: str,
+    *,
+    reference: datetime | None = None,
+) -> tuple[datetime, datetime]:
+    """Map the reference instant's local calendar day to stored naive UTC bounds."""
+    tz = ZoneInfo(validate_timezone_name(timezone_name))
+    local_reference = _aware_utc(reference).astimezone(tz)
+    start_local = datetime.combine(
+        local_reference.date(), datetime.min.time(), tzinfo=tz
+    )
+    end_local = datetime.combine(
+        local_reference.date() + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=tz,
+    )
+    return (
+        start_local.astimezone(timezone.utc).replace(tzinfo=None),
+        end_local.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
+def rolling_week_utc_bounds(
+    timezone_name: str,
+    *,
+    reference: datetime | None = None,
+) -> tuple[datetime, datetime]:
+    """Return the previous seven local-calendar days ending at the reference instant."""
+    tz = ZoneInfo(validate_timezone_name(timezone_name))
+    end_utc = _aware_utc(reference)
+    local_end = end_utc.astimezone(tz)
+    local_start = local_end - timedelta(days=7)
+    return (
+        local_start.astimezone(timezone.utc).replace(tzinfo=None),
+        end_utc.replace(tzinfo=None),
+    )
+
+
+def legacy_backfill_warning_counts(session: Session, *, user_id: int) -> dict[str, int]:
+    """Return aggregate reconciliation warnings without exposing private record values."""
+    duplicate_csv_urls = (
+        session.query(CsvRow.url)
+        .filter(CsvRow.user_id == user_id)
+        .group_by(CsvRow.url)
+        .having(func.count(CsvRow.id) > 1)
+        .count()
+    )
+    duplicate_track_urls = (
+        session.query(JobTrack.url)
+        .filter(JobTrack.user_id == user_id)
+        .group_by(JobTrack.url)
+        .having(func.count(JobTrack.id) > 1)
+        .count()
+    )
+    return {
+        "clicked_without_date": int(
+            session.query(func.count(CsvRow.id))
+            .filter(
+                CsvRow.user_id == user_id,
+                CsvRow.clicked.is_(True),
+                CsvRow.clicked_at.is_(None),
+            )
+            .scalar()
+            or 0
+        ),
+        "applied_without_date": int(
+            session.query(func.count(JobTrack.id))
+            .filter(
+                JobTrack.user_id == user_id,
+                JobTrack.status == "applied",
+                JobTrack.applied_at.is_(None),
+            )
+            .scalar()
+            or 0
+        ),
+        "duplicate_csv_urls": int(duplicate_csv_urls),
+        "duplicate_track_urls": int(duplicate_track_urls),
+    }
+
+
+def _duplicate_urls(session: Session, model: Any, *, user_id: int) -> set[str]:
+    id_column = model.id
+    return {
+        url
+        for (url,) in (
+            session.query(model.url)
+            .filter(model.user_id == user_id)
+            .group_by(model.url)
+            .having(func.count(id_column) > 1)
+            .all()
+        )
+    }
+
+
+def _first_event_exists(
+    session: Session,
+    *,
+    user_id: int,
+    job_url: str,
+    kind: str,
+) -> bool:
+    key = first_event_key(user_id, job_url, kind)
+    return (
+        session.query(JobLifecycleEvent.id)
+        .filter(
+            JobLifecycleEvent.user_id == user_id,
+            JobLifecycleEvent.event_key == key,
+        )
+        .first()
+        is not None
+    )
+
+
+def backfill_legacy_visits(
+    session: Session,
+    *,
+    user_id: int,
+    after_id: int = 0,
+    limit: int = MAX_LEGACY_BACKFILL_BATCH_SIZE,
+    dry_run: bool = False,
+) -> dict[str, int | bool]:
+    """Scan one bounded legacy visit batch. Caller owns commit/rollback."""
+    if limit < 1 or limit > MAX_LEGACY_BACKFILL_BATCH_SIZE:
+        raise LifecycleEventError(
+            "invalid_backfill_limit",
+            f"Backfill batch size must be between 1 and {MAX_LEGACY_BACKFILL_BATCH_SIZE}.",
+        )
+    rows = (
+        session.query(CsvRow)
+        .filter(
+            CsvRow.user_id == user_id,
+            CsvRow.clicked.is_(True),
+            CsvRow.id > max(0, int(after_id)),
+        )
+        .order_by(CsvRow.id.asc())
+        .limit(limit)
+        .all()
+    )
+    duplicates = _duplicate_urls(session, CsvRow, user_id=user_id)
+    result: dict[str, int | bool] = {
+        "scanned": len(rows),
+        "eligible": 0,
+        "created": 0,
+        "already_present": 0,
+        "missing_dates": 0,
+        "duplicate_conflicts": 0,
+        "last_id": rows[-1].id if rows else max(0, int(after_id)),
+        "has_more": False,
+    }
+    for row in rows:
+        if row.url in duplicates:
+            result["duplicate_conflicts"] = int(result["duplicate_conflicts"]) + 1
+            continue
+        if row.clicked_at is None:
+            result["missing_dates"] = int(result["missing_dates"]) + 1
+            continue
+        result["eligible"] = int(result["eligible"]) + 1
+        if _first_event_exists(
+            session,
+            user_id=user_id,
+            job_url=row.url,
+            kind="first_visited",
+        ):
+            result["already_present"] = int(result["already_present"]) + 1
+            continue
+        if not dry_run:
+            write_event(
+                session,
+                user_id=user_id,
+                job_url=row.url,
+                kind="first_visited",
+                occurred_at=row.clicked_at,
+                source="legacy_backfill",
+                csv_row_id=row.id,
+            )
+        result["created"] = int(result["created"]) + 1
+
+    last_id = int(result["last_id"])
+    result["has_more"] = (
+        session.query(CsvRow.id)
+        .filter(
+            CsvRow.user_id == user_id,
+            CsvRow.clicked.is_(True),
+            CsvRow.id > last_id,
+        )
+        .first()
+        is not None
+    )
+    return result
+
+
+def backfill_legacy_applications(
+    session: Session,
+    *,
+    user_id: int,
+    after_id: int = 0,
+    limit: int = MAX_LEGACY_BACKFILL_BATCH_SIZE,
+    dry_run: bool = False,
+) -> dict[str, int | bool]:
+    """Scan one bounded legacy application batch. Caller owns commit/rollback."""
+    if limit < 1 or limit > MAX_LEGACY_BACKFILL_BATCH_SIZE:
+        raise LifecycleEventError(
+            "invalid_backfill_limit",
+            f"Backfill batch size must be between 1 and {MAX_LEGACY_BACKFILL_BATCH_SIZE}.",
+        )
+    tracks = (
+        session.query(JobTrack)
+        .filter(
+            JobTrack.user_id == user_id,
+            JobTrack.id > max(0, int(after_id)),
+            ((JobTrack.applied_at.isnot(None)) | (JobTrack.status == "applied")),
+        )
+        .order_by(JobTrack.id.asc())
+        .limit(limit)
+        .all()
+    )
+    duplicates = _duplicate_urls(session, JobTrack, user_id=user_id)
+    result: dict[str, int | bool] = {
+        "scanned": len(tracks),
+        "eligible": 0,
+        "created": 0,
+        "already_present": 0,
+        "missing_dates": 0,
+        "duplicate_conflicts": 0,
+        "last_id": tracks[-1].id if tracks else max(0, int(after_id)),
+        "has_more": False,
+    }
+    for track in tracks:
+        if track.url in duplicates:
+            result["duplicate_conflicts"] = int(result["duplicate_conflicts"]) + 1
+            continue
+        if track.applied_at is None:
+            result["missing_dates"] = int(result["missing_dates"]) + 1
+            continue
+        result["eligible"] = int(result["eligible"]) + 1
+        if _first_event_exists(
+            session,
+            user_id=user_id,
+            job_url=track.url,
+            kind="first_applied",
+        ):
+            result["already_present"] = int(result["already_present"]) + 1
+            continue
+        if not dry_run:
+            write_event(
+                session,
+                user_id=user_id,
+                job_url=track.url,
+                kind="first_applied",
+                occurred_at=track.applied_at,
+                source="legacy_backfill",
+                csv_row_id=track.csv_row_id,
+                job_track_id=track.id,
+            )
+        result["created"] = int(result["created"]) + 1
+
+    last_id = int(result["last_id"])
+    result["has_more"] = (
+        session.query(JobTrack.id)
+        .filter(
+            JobTrack.user_id == user_id,
+            JobTrack.id > last_id,
+            ((JobTrack.applied_at.isnot(None)) | (JobTrack.status == "applied")),
+        )
+        .first()
+        is not None
+    )
+    return result
 
 
 def _apply_time_window(query, column, start: datetime | None, end: datetime | None):
