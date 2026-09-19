@@ -626,8 +626,8 @@ def backfill_legacy_visits(
         session.query(CsvRow)
         .filter(
             CsvRow.user_id == user_id,
-            CsvRow.clicked.is_(True),
             CsvRow.id > max(0, int(after_id)),
+            ((CsvRow.clicked_at.isnot(None)) | (CsvRow.clicked.is_(True))),
         )
         .order_by(CsvRow.id.asc())
         .limit(limit)
@@ -677,8 +677,8 @@ def backfill_legacy_visits(
         session.query(CsvRow.id)
         .filter(
             CsvRow.user_id == user_id,
-            CsvRow.clicked.is_(True),
             CsvRow.id > last_id,
+            ((CsvRow.clicked_at.isnot(None)) | (CsvRow.clicked.is_(True))),
         )
         .first()
         is not None
