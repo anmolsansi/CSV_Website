@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from ..models import CsvRow, JobLifecycleEvent, JobTrack
 
@@ -825,4 +825,66 @@ def count_applied(
     """Applied means one durable first_applied lifecycle fact."""
     return _count_first_events(
         session, user_id=user_id, kind="first_applied", start=start, end=end
+    )
+
+
+def metric_counts(
+    session: Session,
+    *,
+    user_id: int,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> dict[str, int]:
+    """Return the shared saved/visited/applied definitions for one account.
+
+    Saved records use JobTrack.created_at. Visited and applied use the durable
+    lifecycle occurrence timestamp so every read path shares the same semantics.
+    """
+    event_query = session.query(
+        JobLifecycleEvent.kind,
+        func.count(JobLifecycleEvent.id),
+    ).filter(
+        JobLifecycleEvent.user_id == user_id,
+        JobLifecycleEvent.kind.in_(FIRST_EVENT_KINDS),
+    )
+    event_query = _apply_time_window(
+        event_query, JobLifecycleEvent.occurred_at, start, end
+    )
+    by_kind = {
+        kind: int(count)
+        for kind, count in event_query.group_by(JobLifecycleEvent.kind).all()
+    }
+    return {
+        "saved": count_saved(session, user_id=user_id, start=start, end=end),
+        "visited": by_kind.get("first_visited", 0),
+        "applied": by_kind.get("first_applied", 0),
+    }
+
+
+def count_visited_without_applied(
+    session: Session,
+    *,
+    user_id: int,
+) -> int:
+    """Count durable first visits whose exact URL has no first-application fact."""
+    visited = aliased(JobLifecycleEvent)
+    applied = aliased(JobLifecycleEvent)
+    applied_exists = (
+        session.query(applied.id)
+        .filter(
+            applied.user_id == user_id,
+            applied.kind == "first_applied",
+            applied.job_url == visited.job_url,
+        )
+        .exists()
+    )
+    return int(
+        session.query(func.count(visited.id))
+        .filter(
+            visited.user_id == user_id,
+            visited.kind == "first_visited",
+            ~applied_exists,
+        )
+        .scalar()
+        or 0
     )
