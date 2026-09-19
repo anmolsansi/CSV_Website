@@ -513,10 +513,10 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
         if mapping:
             counts["user_profile"]["skipped"] += 1
             continue
-        owner = session.query(User).filter(User.id == user_id).one()
-        counts["user_profile"][
-            "skipped" if owner.timezone == record.timezone else "created"
-        ] += 1
+        # A first restore creates the portable profile mapping even when the
+        # destination already has the same default timezone. Replays are skipped
+        # through BackupImportMap, matching every other portable section.
+        counts["user_profile"]["created"] += 1
 
     for record in document.sections.job_tracks:
         mapping = _lookup_import_map(session, user_id, backup_id, "job_tracks", record.backup_ref)
@@ -778,9 +778,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             continue
 
         owner = session.query(User).filter(User.id == user_id).one()
-        changed = owner.timezone != record.timezone
-        if changed:
-            owner.timezone = record.timezone
+        owner.timezone = record.timezone
         refs["user_profile"][record.backup_ref] = user_id
         _persist_import_map(
             session,
@@ -790,7 +788,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             record.backup_ref,
             user_id,
         )
-        counts["user_profile"]["created" if changed else "skipped"] += 1
+        counts["user_profile"]["created"] += 1
 
     for record in document.sections.job_tracks:
         mapped = _mapped_target(session, user_id, backup_id, "job_tracks", record.backup_ref, JobTrack)
