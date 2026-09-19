@@ -81,6 +81,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String(320), unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    timezone = Column(String(64), nullable=False, default="UTC")
 
     identities = relationship(
         "OAuthIdentity", back_populates="user", cascade="all, delete-orphan"
