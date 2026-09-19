@@ -14,8 +14,7 @@ function BarChart({ data, labelKey, countKey, maxItems = 10 }) {
           </div>
           <span className="chart-bar-count">{d[countKey]}</span>
         </div>
-        )
-      })}
+      ))}
     </div>
   )
 }
