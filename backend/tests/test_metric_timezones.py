@@ -97,7 +97,7 @@ def test_backfill_twice_keeps_same_first_event_count(db_session):
     applied_at = datetime(2026, 9, 2, 13, 45, 0)
     row = CsvRow(
         user_id=user.id,
-        upload_batch_id=f"batch-{suffix}",
+        upload_batch_id=f"jg010-{suffix[:24]}",
         url=f"https://example.com/{suffix}/job",
         clicked=True,
         clicked_at=clicked_at,
@@ -165,7 +165,7 @@ def test_known_clicked_at_is_visit_evidence_even_if_legacy_flag_is_false(db_sess
     occurred_at = datetime(2026, 9, 4, 7, 30, 0)
     db_session.add(CsvRow(
         user_id=user.id,
-        upload_batch_id=f"batch-{suffix}",
+        upload_batch_id=f"jg010-{suffix[:24]}",
         url=f"https://example.com/{suffix}/known-click",
         clicked=False,
         clicked_at=occurred_at,
@@ -190,7 +190,7 @@ def test_dry_run_counts_known_facts_without_writing(db_session):
     db_session.flush()
     row = CsvRow(
         user_id=user.id,
-        upload_batch_id=f"batch-{suffix}",
+        upload_batch_id=f"jg010-{suffix[:24]}",
         url=f"https://example.com/{suffix}/visit",
         clicked=True,
         clicked_at=datetime(2026, 9, 3, 12, 0, 0),
