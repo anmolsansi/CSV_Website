@@ -477,3 +477,16 @@ def test_invalid_backup_timezone_is_rejected():
     with pytest.raises(BackupContractError) as exc:
         validate_backup_v2(payload)
     assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
+
+
+def test_multiple_user_profiles_are_rejected():
+    payload = _valid_payload()
+    payload["sections"]["user_profile"] = [
+        {"backup_ref": "profile-1", "timezone": "UTC"},
+        {"backup_ref": "profile-2", "timezone": "Asia/Kolkata"},
+    ]
+    _rechecksum(payload)
+
+    with pytest.raises(BackupContractError) as exc:
+        validate_backup_v2(payload)
+    assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
