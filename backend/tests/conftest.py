@@ -3,7 +3,7 @@ import sys
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -24,17 +24,6 @@ def engine():
     eng = create_engine(test_db_url, connect_args={"check_same_thread": False} if "sqlite" in test_db_url else {})
     Base.metadata.create_all(bind=eng)
     yield eng
-    if eng.dialect.name == "postgresql":
-        print("JG010_POOL_STATUS_BEFORE_DROP", eng.pool.status(), flush=True)
-        with eng.connect() as diagnostics:
-            rows = diagnostics.execute(text(
-                "SELECT pid, state, wait_event_type, wait_event, "
-                "left(query, 240) AS query "
-                "FROM pg_stat_activity "
-                "WHERE datname = current_database() AND pid <> pg_backend_pid() "
-                "ORDER BY pid"
-            )).mappings().all()
-            print("JG010_PG_ACTIVITY_BEFORE_DROP", [dict(row) for row in rows], flush=True)
     Base.metadata.drop_all(bind=eng)
 
 
