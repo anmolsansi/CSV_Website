@@ -14,7 +14,8 @@ function BarChart({ data, labelKey, countKey, maxItems = 10 }) {
           </div>
           <span className="chart-bar-count">{d[countKey]}</span>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -24,10 +25,12 @@ function FunnelChart({ stages }) {
   const max = stages[0].count || 1
   return (
     <div className="funnel-chart">
-      {stages.map((stage, i) => (
+      {stages.map((stage, i) => {
+        const label = stage.name === 'Opened' ? 'Visited' : stage.name === 'Sent to Applications' ? 'Saved' : stage.name
+        return (
         <div className="funnel-stage" key={i}>
           <div className="funnel-bar" style={{ width: `${(stage.count / max) * 100}%` }}>
-            <span className="funnel-label">{stage.name}</span>
+            <span className="funnel-label">{label}</span>
             <span className="funnel-count">{stage.count}</span>
           </div>
         </div>
@@ -391,11 +394,11 @@ export default function Analytics() {
 
         {!loadingData && data ? (
           <div className="chart-section">
-            <h3>Top Companies Saved</h3>
+            <h3>Top Companies Visited</h3>
             <BarChart data={data.top_companies_opened} labelKey="name" countKey="count" />
           </div>
         ) : loadingData ? (
-          <div className="chart-section"><h3>Top Companies Saved</h3><SectionSpinner /></div>
+          <div className="chart-section"><h3>Top Companies Visited</h3><SectionSpinner /></div>
         ) : null}
 
         {!loadingData && data ? (
