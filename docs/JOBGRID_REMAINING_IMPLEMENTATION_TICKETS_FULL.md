@@ -147,7 +147,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [ ] [JG-008 — Define metric semantics and add durable lifecycle event storage](#jg-008)
 - [x] [JG-009 — Wire every mutation into the lifecycle ledger](#jg-009)
-- [ ] [JG-010 — Add user timezone and safely backfill known historical facts](#jg-010)
+- [x] [JG-010 — Add user timezone and safely backfill known historical facts](#jg-010)
 - [ ] [JG-011 — Switch analytics goals weekly reports and digest to shared definitions](#jg-011)
 
 **R4 — Repair cleanup without enabling silent data loss**
@@ -2382,7 +2382,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-010"></a>
 ### JG-010 — Add user timezone and safely backfill known historical facts
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified — merged in PR #52; CI run #97 passed  
 **Priority:** P1  
 **Type:** schema/contract  
 **Execution position:** 10/64; group step 3/4
@@ -2565,13 +2565,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-010 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: kolkata_midnight: boundaries are shifted correctly
-- [ ] Required regression passes: dst_23_and_25_hour_days: no missed or duplicated events
-- [ ] Required regression passes: backfill_twice: same event count
-- [ ] Required regression passes: missing_applied_date: warning and zero fabricated dates
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-010 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: kolkata_midnight: boundaries are shifted correctly
+- [x] Required regression passes: dst_23_and_25_hour_days: no missed or duplicated events
+- [x] Required regression passes: backfill_twice: same event count
+- [x] Required regression passes: missing_applied_date: warning and zero fabricated dates
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R3.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -2589,25 +2589,25 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; CI run #97 passed all 183 PostgreSQL backend tests, backend compile, frontend production build and 123 Playwright E2E tests.
+- [x] Alembic revision 005, timezone migration coverage, backup schema 2.2.0 and older-v2 compatibility regressions are green.
+- [x] Timezone/profile, Kolkata/DST boundary, idempotent backfill, no-fabrication and backup round-trip fixtures provide expected-versus-observed evidence.
+- [x] Build guide documents the implemented timezone API, boundary helpers, bounded backfill CLI, backup behavior, limits and rollback while keeping JG-011 inactive.
+- [x] Implementation PR #52 is merged at `d8bb4437c712865058f7ff29341dfaaa4c502aab`; the final diff stays within JG-010 implementation/tests/docs plus the PostgreSQL test-fixture cleanup needed to make CI deterministic.
+- [x] Local/CI completion is recorded here without claiming production backfill execution, separate R3 staging acceptance or production activation.
 
 #### Suggested Linear metadata
 
 - Document ID: `JG-010`; title: `Add user timezone and safely backfill known historical facts`.
 - Parent/group: `R3 — Reconcile visits applications and progress metrics`; priority/rank: `P1`.
-- Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
+- Current tracked state: Completed; implementation merged in PR #52 and GitHub issue #51 records the execution checklist/evidence.
 - Dependency: `JG-009` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #51 (`JG-010: Add user timezone and safely backfill known historical facts`).
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-009 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / LOCALLY VERIFIED.** Implemented on `jg-010-timezone-backfill` and merged by PR #52 at merge commit `d8bb4437c712865058f7ff29341dfaaa4c502aab`. CI run #97 passed all 183 PostgreSQL backend tests, backend compile, frontend production build and 123 Playwright E2E tests. The implementation adds IANA account timezone storage/profile routes, DST-safe local-day and rolling-week UTC boundaries, additive Alembic revision 005, a bounded resumable idempotent lifecycle backfill that never fabricates missing historical timestamps, aggregate private-reconciliation warnings, and portable backup schema 2.2.0 with older-v2 compatibility. Production backfill execution is intentionally not part of this implementation ticket and was not run. JG-011 remains inactive and still owns analytics/goals/weekly/digest read-path cutover.
 
 ---
 
