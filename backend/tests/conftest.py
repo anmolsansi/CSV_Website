@@ -24,7 +24,12 @@ def engine():
     eng = create_engine(test_db_url, connect_args={"check_same_thread": False} if "sqlite" in test_db_url else {})
     Base.metadata.create_all(bind=eng)
     yield eng
+    # Close idle pooled connections before destructive session-level teardown.
+    # CI uses an ephemeral PostgreSQL database, and this keeps drop_all from
+    # reusing stale pooled connection state after threaded restore tests.
+    eng.dispose()
     Base.metadata.drop_all(bind=eng)
+    eng.dispose()
 
 
 @pytest.fixture()
