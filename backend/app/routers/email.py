@@ -60,7 +60,7 @@ class SMTPNotConfigured(Exception):
 @router.post("/weekly-digest")
 def send_weekly_digest(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     data = _collect_digest_data(db, user)
-    subject = f"JobGrid Weekly Digest — {data.get('applied', 0)} applied, {data.get('opened', 0)} opened"
+    subject = f"JobGrid Weekly Digest — {data.get('applied', 0)} applied, {data.get('opened', 0)} visited"
     html = weekly_digest(subject, data)
     msg = _render_email(user.email, subject, html)
 
