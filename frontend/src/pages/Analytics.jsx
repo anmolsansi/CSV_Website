@@ -39,8 +39,8 @@ function FunnelChart({ stages }) {
 function GoalProgress({ goals, today }) {
   if (!goals || !today) return null
   const items = [
-    { label: 'Open jobs', goal: goals.open_per_day, actual: today.opened },
-    { label: 'Apply', goal: goals.apply_per_day, actual: today.applied },
+    { label: 'Visited jobs', goal: goals.open_per_day, actual: today.opened },
+    { label: 'Applied jobs', goal: goals.apply_per_day, actual: today.applied },
     { label: 'Follow-ups', goal: goals.followup_per_day, actual: today.followups },
     { label: 'ApplyPilot', goal: goals.applypilot_per_day, actual: today.exports },
   ]
@@ -86,8 +86,15 @@ export default function Analytics() {
   const [loadingWeekly, setLoadingWeekly] = useState(true)
   const [showGoals, setShowGoals] = useState(false)
   const [goals, setGoals] = useState({ open_per_day: 30, apply_per_day: 10, followup_per_day: 5, applypilot_per_day: 5 })
+  const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const [timezone, setTimezone] = useState('UTC')
+  const [timezoneDraft, setTimezoneDraft] = useState('UTC')
+  const [loadingTimezone, setLoadingTimezone] = useState(true)
+  const [savingTimezone, setSavingTimezone] = useState(false)
+  const [timezoneError, setTimezoneError] = useState('')
+  const [timezoneMessage, setTimezoneMessage] = useState('')
 
-  const anyLoading = loadingData || loadingFunnel || loadingAts || loadingBucket || loadingGoals || loadingWeekly
+  const anyLoading = loadingData || loadingFunnel || loadingAts || loadingBucket || loadingGoals || loadingWeekly || loadingTimezone
 
   useEffect(() => {
     setLoadingData(true)
@@ -132,6 +139,17 @@ export default function Analytics() {
     }).catch(() => {}).finally(() => setLoadingWeekly(false))
   }, [])
 
+  useEffect(() => {
+    setLoadingTimezone(true)
+    api.getProfileTimezone().then((profile) => {
+      const value = profile?.timezone || 'UTC'
+      setTimezone(value)
+      setTimezoneDraft(value)
+    }).catch(() => {
+      setTimezoneError('Could not load your account timezone.')
+    }).finally(() => setLoadingTimezone(false))
+  }, [])
+
   const refresh = () => {
     setLoadingData(true)
     setLoadingFunnel(true)
@@ -165,6 +183,48 @@ export default function Analytics() {
     setLoadingGoals(false)
   }
 
+  const saveTimezone = async () => {
+    const nextTimezone = timezoneDraft.trim()
+    if (!nextTimezone) {
+      setTimezoneError('Enter an IANA timezone such as Asia/Kolkata.')
+      return
+    }
+    setSavingTimezone(true)
+    setTimezoneError('')
+    setTimezoneMessage('')
+    try {
+      const profile = await api.updateProfileTimezone(nextTimezone)
+      const savedTimezone = profile?.timezone || nextTimezone
+      setTimezone(savedTimezone)
+      setTimezoneDraft(savedTimezone)
+      setTimezoneMessage('Timezone updated. Dated metrics now use this timezone.')
+      setLoadingData(true)
+      setLoadingGoals(true)
+      setLoadingWeekly(true)
+      const [analyticsData, goalsData, weeklyData] = await Promise.all([
+        api.getAnalytics(),
+        api.getGoalProgress(),
+        api.getWeeklyReport(),
+      ])
+      setData(analyticsData)
+      setGoalData(goalsData)
+      if (goalsData?.goals) setGoals(goalsData.goals)
+      setWeekly(weeklyData)
+    } catch (error) {
+      const detail = error?.response?.data?.detail
+      setTimezoneError(
+        typeof detail === 'string'
+          ? detail
+          : 'Could not update timezone. Use a valid IANA name such as Asia/Kolkata.'
+      )
+    } finally {
+      setSavingTimezone(false)
+      setLoadingData(false)
+      setLoadingGoals(false)
+      setLoadingWeekly(false)
+    }
+  }
+
   return (
     <div className="container">
       <div className="page-header-row">
@@ -175,6 +235,51 @@ export default function Analytics() {
         <div>
           <button className="btn btn-grey" style={{ marginRight: 8 }} onClick={() => setShowGoals(!showGoals)}>Goals</button>
           <button className="btn btn-blue" onClick={refresh} disabled={anyLoading}>Refresh</button>
+        </div>
+      </div>
+
+      <div className="table-controls" style={{ marginBottom: 16, alignItems: 'end' }}>
+        <div style={{ minWidth: 260 }}>
+          <label htmlFor="analytics-timezone">Metrics timezone</label>
+          <input
+            id="analytics-timezone"
+            list="analytics-timezone-options"
+            value={timezoneDraft}
+            onChange={(e) => {
+              setTimezoneDraft(e.target.value)
+              setTimezoneError('')
+              setTimezoneMessage('')
+            }}
+            disabled={loadingTimezone || savingTimezone}
+            aria-describedby="analytics-timezone-help"
+          />
+          <datalist id="analytics-timezone-options">
+            <option value={detectedTimezone} />
+            <option value="UTC" />
+            <option value="Asia/Kolkata" />
+            <option value="America/New_York" />
+            <option value="America/Chicago" />
+            <option value="America/Los_Angeles" />
+          </datalist>
+        </div>
+        <button
+          className="btn btn-grey"
+          type="button"
+          onClick={() => setTimezoneDraft(detectedTimezone)}
+          disabled={loadingTimezone || savingTimezone || detectedTimezone === timezoneDraft}
+        >
+          Use detected
+        </button>
+        <button
+          className="btn btn-blue"
+          type="button"
+          onClick={saveTimezone}
+          disabled={loadingTimezone || savingTimezone || timezoneDraft.trim() === timezone}
+        >
+          {savingTimezone ? 'Saving...' : 'Save timezone'}
+        </button>
+        <div id="analytics-timezone-help" style={{ flex: '1 1 320px', fontSize: 12, color: timezoneError ? '#b91c1c' : '#64748b' }}>
+          {timezoneError || timezoneMessage || `Dated totals use ${timezone}. Historical records with unknown occurrence dates are excluded from dated totals.`}
         </div>
       </div>
 
@@ -191,8 +296,9 @@ export default function Analytics() {
       {!loadingData && data ? (
         <div className="stats-grid app-stats-grid">
           <div className="stat-card"><span>Total URLs uploaded</span><strong>{data.total_urls}</strong></div>
-          <div className="stat-card"><span>Total opened</span><strong>{data.total_opened}</strong></div>
-          <div className="stat-card"><span>Total applied</span><strong>{data.total_applied}</strong></div>
+          <div className="stat-card"><span>Visited jobs</span><strong>{data.total_opened}</strong></div>
+          <div className="stat-card"><span>Saved jobs</span><strong>{data.total_saved ?? 0}</strong></div>
+          <div className="stat-card"><span>Applied jobs</span><strong>{data.total_applied}</strong></div>
           <div className="stat-card"><span>Applied today</span><strong>{data.applied_today}</strong></div>
           <div className="stat-card"><span>Applied last 7 days</span><strong>{data.applied_7d}</strong></div>
           <div className="stat-card"><span>Opened not applied</span><strong>{data.opened_not_applied}</strong></div>
@@ -204,7 +310,7 @@ export default function Analytics() {
         </div>
       ) : loadingData ? (
         <div className="stats-grid app-stats-grid">
-          {Array.from({ length: 11 }).map((_, i) => (
+          {Array.from({ length: 12 }).map((_, i) => (
             <div className="stat-card" key={i}><SectionSpinner /></div>
           ))}
         </div>
@@ -285,11 +391,11 @@ export default function Analytics() {
 
         {!loadingData && data ? (
           <div className="chart-section">
-            <h3>Top Companies Opened</h3>
+            <h3>Top Companies Saved</h3>
             <BarChart data={data.top_companies_opened} labelKey="name" countKey="count" />
           </div>
         ) : loadingData ? (
-          <div className="chart-section"><h3>Top Companies Opened</h3><SectionSpinner /></div>
+          <div className="chart-section"><h3>Top Companies Saved</h3><SectionSpinner /></div>
         ) : null}
 
         {!loadingData && data ? (
@@ -335,7 +441,8 @@ export default function Analytics() {
               <h3>This Week's Summary</h3>
               <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 8 }}>
                 <div className="stat-card"><span>Uploaded</span><strong>{weekly.uploaded}</strong></div>
-                <div className="stat-card"><span>Opened</span><strong>{weekly.opened}</strong></div>
+                <div className="stat-card"><span>Visited</span><strong>{weekly.opened}</strong></div>
+                <div className="stat-card"><span>Saved</span><strong>{weekly.saved ?? 0}</strong></div>
                 <div className="stat-card"><span>Applied</span><strong>{weekly.applied}</strong></div>
                 <div className="stat-card"><span>Interviews</span><strong>{weekly.interviews}</strong></div>
                 <div className="stat-card"><span>Follow-ups done</span><strong>{weekly.followups_completed}</strong></div>
