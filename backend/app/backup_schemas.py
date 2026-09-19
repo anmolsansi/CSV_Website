@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.1.0"
+BACKUP_SCHEMA_REVISION = "2.2.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -22,6 +23,7 @@ BACKUP_V2_SECTIONS = (
     "applypilot_batches",
     "column_preferences",
     "user_goal",
+    "user_profile",
 )
 MAX_BACKUP_JSON_BYTES = 20 * 1024 * 1024
 MAX_TOTAL_RECORDS = 20_000
@@ -225,6 +227,18 @@ class UserGoalBackupV2(BackupRecordBase):
     applypilot_per_day: int | None
 
 
+class UserProfileBackupV2(BackupRecordBase):
+    timezone: str = Field(min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_timezone(self):
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("timezone must be a valid IANA timezone name.") from exc
+        return self
+
+
 class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
@@ -236,6 +250,7 @@ class BackupSectionsV2(StrictBackupModel):
     applypilot_batches: list[ApplyPilotBatchBackupV2]
     column_preferences: list[ColumnPreferenceBackupV2]
     user_goal: list[UserGoalBackupV2]
+    user_profile: list[UserProfileBackupV2] = Field(default_factory=list)
 
 
 class BackupCountsV2(StrictBackupModel):
@@ -249,6 +264,7 @@ class BackupCountsV2(StrictBackupModel):
     applypilot_batches: int = Field(ge=0)
     column_preferences: int = Field(ge=0)
     user_goal: int = Field(ge=0)
+    user_profile: int = Field(default=0, ge=0)
 
 
 class BackupDocumentV2(StrictBackupModel):
@@ -281,11 +297,18 @@ CSV_ROW_EXPORTED_COLUMNS = (
 )
 
 MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
-    "User": _entries(
-        ["id", "email", "created_at"],
-        "excluded",
-        "User/account identity is not portable backup data; restore is owned by the authenticated destination user.",
-    ),
+    "User": {
+        **_entries(
+            ["id", "email", "created_at"],
+            "excluded",
+            "User/account identity is not portable backup data; restore is owned by the authenticated destination user.",
+        ),
+        **_entries(
+            ["timezone"],
+            "exported",
+            "Account timezone is a portable user preference; authentication identity remains excluded.",
+        ),
+    },
     "OAuthIdentity": _entries(
         ["id", "user_id", "provider", "provider_id", "created_at"],
         "excluded",
@@ -582,6 +605,9 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_lifecycle_section = (
         isinstance(raw_sections, Mapping) and "lifecycle_events" in raw_sections
     )
+    has_user_profile_section = (
+        isinstance(raw_sections, Mapping) and "user_profile" in raw_sections
+    )
     try:
         document = BackupDocumentV2.model_validate(payload)
     except ValidationError as exc:
@@ -599,9 +625,11 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
 
     checksum_sections = document.sections.model_dump(mode="json", exclude_none=False)
     if not has_lifecycle_section:
-        # Older v2 files predate the additive lifecycle section. Validate their
-        # original checksum exactly, then treat the absent section as empty.
+        # Revision 2.0.0 predates the additive lifecycle section.
         checksum_sections.pop("lifecycle_events", None)
+    if not has_user_profile_section:
+        # Revisions 2.0.0 and 2.1.0 predate portable account timezone.
+        checksum_sections.pop("user_profile", None)
     expected_checksum = compute_sections_checksum(checksum_sections)
     if document.checksum_sha256 != expected_checksum:
         raise BackupContractError("invalid_checksum", 400, "Backup checksum does not match canonical sections JSON.")
@@ -634,6 +662,7 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "applypilot_batches": ApplyPilotBatchBackupV2,
     "column_preferences": ColumnPreferenceBackupV2,
     "user_goal": UserGoalBackupV2,
+    "user_profile": UserProfileBackupV2,
 }
 
 
