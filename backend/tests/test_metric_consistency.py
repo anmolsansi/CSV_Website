@@ -76,7 +76,7 @@ def test_shared_metrics_agree_across_analytics_goals_and_weekly(db_session, monk
     analytics = crm_router.analytics(db=db_session, user=user)
     goals = crm_router.goal_progress(db=db_session, user=user)
     weekly = crm_router.weekly_report(db=db_session, user=user)
-    stats = crm_router.stats(db=db_session, user=user)
+    stats = crm_router.stats(today_start=None, today_end=None, db=db_session, user=user)
     funnel = crm_router.funnel_analytics(db=db_session, user=user)
 
     assert analytics["total_opened"] == 1
