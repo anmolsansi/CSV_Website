@@ -34,7 +34,8 @@ function FunnelChart({ stages }) {
             <span className="funnel-count">{stage.count}</span>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
