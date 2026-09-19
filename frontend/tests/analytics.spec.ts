@@ -51,9 +51,10 @@ test.describe('Analytics', () => {
     expect(Number(value)).toBeGreaterThanOrEqual(0);
   });
 
-  test('shows total opened stat', async ({ page }) => {
-    const card = page.locator('.stat-card').filter({ hasText: 'Total opened' });
-    await expect(card).toBeVisible();
+  test('shows distinct visited saved and applied stats', async ({ page }) => {
+    await expect(page.locator('.stat-card').filter({ hasText: 'Visited jobs' })).toBeVisible();
+    await expect(page.locator('.stat-card').filter({ hasText: 'Saved jobs' })).toBeVisible();
+    await expect(page.locator('.stat-card').filter({ hasText: 'Applied jobs' })).toBeVisible();
   });
 
   test('application funnel section is visible', async ({ page }) => {
