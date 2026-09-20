@@ -45,6 +45,17 @@ from ..services.retention import (
     count_eligible_rows,
     maintenance_health,
 )
+from ..services.validation import (
+    ValidationContractError,
+    explicit_model_fields,
+    normalize_bulk_ids,
+    parse_timestamp,
+    prepare_job_track_patch,
+    require_owned_bulk_ids,
+    validate_job_url,
+    validate_status,
+    validate_text_limits,
+)
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 logger = logging.getLogger(__name__)
@@ -112,6 +123,109 @@ def _raise_lifecycle_http(
         warning=True,
     )
     raise HTTPException(status_code, exc.message) from exc
+
+
+def _raise_validation_http(
+    db: Session,
+    exc: ValidationContractError,
+    *,
+    action: str,
+    operation_id: UUID,
+    started: float,
+):
+    db.rollback()
+    _log_lifecycle_outcome(
+        action=action,
+        operation_id=operation_id,
+        outcome=exc.code,
+        affected=0,
+        started=started,
+        warning=True,
+    )
+    raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
+
+
+def _raise_integrity_http(
+    db: Session,
+    exc: IntegrityError,
+    *,
+    action: str,
+    operation_id: UUID,
+    started: float,
+):
+    db.rollback()
+    _log_lifecycle_outcome(
+        action=action,
+        operation_id=operation_id,
+        outcome="conflict",
+        affected=0,
+        started=started,
+        warning=True,
+    )
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "conflict",
+            "fields": [
+                {
+                    "field": "__root__",
+                    "message": "The application changed concurrently. Reload and retry.",
+                }
+            ],
+            "request_id": str(operation_id),
+        },
+    ) from exc
+
+
+def _raise_unexpected_http(
+    db: Session,
+    exc: Exception,
+    *,
+    action: str,
+    operation_id: UUID,
+    started: float,
+):
+    db.rollback()
+    logger.exception(
+        "application_mutation action=%s operation_id=%s outcome=internal_error affected=0 elapsed_ms=%s",
+        action,
+        operation_id,
+        int((perf_counter() - started) * 1000),
+    )
+    raise HTTPException(
+        status_code=500,
+        detail={
+            "code": "internal_error",
+            "fields": [
+                {"field": "__root__", "message": "The request could not be completed."}
+            ],
+            "request_id": str(operation_id),
+        },
+    ) from exc
+
+
+def _prepare_application_patch(
+    payload: JobTrackUpdateIn,
+    *,
+    user: User,
+    item: JobTrack,
+) -> dict:
+    return prepare_job_track_patch(
+        explicit_model_fields(payload),
+        timezone_name=user.timezone,
+        current_status=item.status,
+        current_applied_at=item.applied_at,
+    )
+
+
+def _validate_row_application_seed(row: CsvRow) -> None:
+    validate_job_url(row.url, field="url")
+    validate_text_limits(
+        {
+            "company": row.company_guess,
+            "title": row.title,
+        }
+    )
 
 
 def _prepare_track_patch(data: dict) -> dict:
