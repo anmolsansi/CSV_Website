@@ -97,6 +97,9 @@ export const api = {
   getProfileTimezone: () => client.get('/crm/profile/timezone').then((r) => r.data),
   updateProfileTimezone: (timezone) =>
     client.patch('/crm/profile/timezone', { timezone }).then((r) => r.data),
+  getProfileRetention: () => client.get('/crm/profile/retention').then((r) => r.data),
+  updateProfileRetention: (archiveAfterDays) =>
+    client.patch('/crm/profile/retention', { archive_after_days: archiveAfterDays }).then((r) => r.data),
   getGoals: () => client.get('/crm/goals').then((r) => r.data),
   updateGoals: (goals) => client.put(`/crm/goals?open_per_day=${goals.open_per_day}&apply_per_day=${goals.apply_per_day}&followup_per_day=${goals.followup_per_day}&applypilot_per_day=${goals.applypilot_per_day}`).then((r) => r.data),
 
