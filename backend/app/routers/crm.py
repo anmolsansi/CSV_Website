@@ -482,23 +482,25 @@ def bulk_update_apps(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    requested_ids = list(dict.fromkeys(payload.ids))
-    if not requested_ids:
-        raise HTTPException(400, "No applications selected")
-    items = (
-        db.query(JobTrack)
-        .filter(JobTrack.id.in_(requested_ids), JobTrack.user_id == user.id)
-        .all()
-    )
-    if len(items) != len(requested_ids):
-        raise HTTPException(404, "One or more applications not found")
-
-    data = _prepare_track_patch(payload.patch.model_dump(exclude_unset=True))
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    now = datetime.utcnow()
     try:
-        for item in items:
+        normalized = normalize_bulk_ids(payload.ids, field="ids")
+        items = (
+            db.query(JobTrack)
+            .filter(JobTrack.id.in_(normalized.ids), JobTrack.user_id == user.id)
+            .all()
+        )
+        by_id = {item.id: item for item in items}
+        require_owned_bulk_ids(normalized, by_id, field="ids")
+        ordered_items = [by_id[item_id] for item_id in normalized.ids]
+
+        prepared = [
+            (item, _prepare_application_patch(payload.patch, user=user, item=item))
+            for item in ordered_items
+        ]
+        now = datetime.utcnow()
+        for item, data in prepared:
             _apply_track_patch(
                 db,
                 user_id=user.id,
@@ -513,8 +515,13 @@ def bulk_update_apps(
             action="bulk_patch",
             operation_id=operation_id,
             outcome="success",
-            affected=len(items),
+            affected=len(ordered_items),
             started=started,
+        )
+        return {"updated": len(ordered_items), "failed": []}
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db, exc, action="bulk_patch", operation_id=operation_id, started=started
         )
     except LifecycleEventError as exc:
         _raise_lifecycle_http(
@@ -525,7 +532,17 @@ def bulk_update_apps(
             affected=0,
             started=started,
         )
-    return {"updated": len(items), "failed": []}
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db, exc, action="bulk_patch", operation_id=operation_id, started=started
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db, exc, action="bulk_patch", operation_id=operation_id, started=started
+        )
 
 
 @router.post("/from-rows/bulk")
@@ -629,14 +646,14 @@ def update_app(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
-    if not item:
-        raise HTTPException(404, "Application not found")
-
-    data = _prepare_track_patch(payload.model_dump(exclude_unset=True))
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
     try:
+        item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
+        if not item:
+            raise HTTPException(404, "Application not found")
+
+        data = _prepare_application_patch(payload, user=user, item=item)
         _apply_track_patch(
             db,
             user_id=user.id,
@@ -655,6 +672,15 @@ def update_app(
             affected=1,
             started=started,
         )
+        return to_out(item)
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            started=started,
+        )
     except LifecycleEventError as exc:
         _raise_lifecycle_http(
             db,
@@ -664,7 +690,25 @@ def update_app(
             affected=0,
             started=started,
         )
-    return to_out(item)
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 def _retention_profile_response(db: Session, user: User) -> dict:
