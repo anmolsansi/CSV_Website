@@ -99,7 +99,16 @@ def test_retired_legacy_cleanup_is_non_destructive(auth_client, db_session):
     assert before.archived is False
     assert before.archived_at is None
 
-    assert cleanup_clicked_rows() == 0
+    owner = db_session.query(User).filter_by(email="test@jobgrid.dev").one()
+    owner.retention_days = None
+    db_session.commit()
+
+    result = cleanup_clicked_rows()
+    assert result["scanned"] == 0
+    assert result["archived"] == 0
+    assert result["skipped"] == 0
+    assert result["failed"] == 0
+    assert result["duration_ms"] >= 0
 
     db_session.expire_all()
     after = db_session.get(CsvRow, row_id)
