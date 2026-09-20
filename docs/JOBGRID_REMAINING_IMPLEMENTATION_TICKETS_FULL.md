@@ -3800,7 +3800,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-016"></a>
 ### JG-016 — Apply validation atomically to every application writer
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** API/service  
 **Execution position:** 16/64; group step 2/3
@@ -3977,13 +3977,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-016 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: endpoint_matrix_invalid_status_never_200
-- [ ] Required regression passes: second_invalid_record_rolls_back_batch
-- [ ] Required regression passes: date_clear_with_applied_status_rejected
-- [ ] Required regression passes: concurrent_duplicate_returns_safe_conflict_or_existing_record
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-016 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: endpoint_matrix_invalid_status_never_200
+- [x] Required regression passes: second_invalid_record_rolls_back_batch
+- [x] Required regression passes: date_clear_with_applied_status_rejected
+- [x] Required regression passes: concurrent_duplicate_returns_safe_conflict_or_existing_record
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -4001,12 +4001,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -4015,11 +4015,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-015` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #69; implementation PR: #70.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-015 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** GitHub issue #69 tracked the work and implementation PR #70 merged to `main` at `4f441b219c6c3355a02afca92d9a45d6dcc99bf3`. CI run #140 passed 250 PostgreSQL backend tests, the backend compile check, the frontend production build, and 128 Playwright Chromium tests; Vercel also passed. The JG-015 validation contract is now enforced across single application patch, bulk patch, from-row, from-rows, external import, and ApplyPilot result writers with full-request prevalidation, owner preloading, bounded error mapping, transaction rollback, account-timezone timestamp parsing, strict bulk IDs, preserved first `applied_at` retry semantics, and deliberate correction events. The dead raw-`json.loads` CRM backup fallback was removed while the authoritative JG-001 strict backup parser remains active, and malformed backup JSON now has route-level regression coverage. An authenticated count-only legacy validation report was added without automatic data repair. No schema migration, persisted-data rewrite, or JG-017 frontend error-rendering work was introduced. JG-016 local/CI implementation is complete; R5 remains gated on JG-017 before full group activation.
 
 ---
 
