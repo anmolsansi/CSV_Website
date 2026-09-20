@@ -178,3 +178,7 @@ class Settings:
 
 
 settings = Settings()
+
+# Validate as soon as configuration is loaded so unsafe production settings fail
+# before database initialization, route registration, or background-job startup.
+validate_runtime_settings(settings)
