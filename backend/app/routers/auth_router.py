@@ -12,7 +12,7 @@ from ..auth import (
     get_or_create_user,
     oauth,
 )
-from ..config import settings
+from ..config import cookie_security_options, is_production_environment, settings
 from ..database import get_db
 from ..models import User
 
@@ -29,10 +29,8 @@ class DevLoginRequest(BaseModel):
     email: str = "test@jobgrid.dev"
 
 
-@router.post("/dev-login")
 def dev_login(payload: DevLoginRequest, db: Session = Depends(get_db)):
-    """Test-only endpoint: creates or retrieves a user and returns a session cookie.
-    Only available when TEST_AUTH=true."""
+    """Development/test endpoint for creating a local authenticated session."""
     if not settings.TEST_AUTH:
         raise HTTPException(404, "Not found")
     user = db.query(User).filter_by(email=payload.email).first()
@@ -48,19 +46,19 @@ def dev_login(payload: DevLoginRequest, db: Session = Depends(get_db)):
         "session_token",
         jwt_token,
         max_age=60 * 60 * 24 * 7,
-        httponly=True,
-        secure=False,
-        samesite="lax",
+        **_cookie_options(),
     )
     return resp
 
 
+if not is_production_environment(settings.ENVIRONMENT):
+    router.add_api_route("/dev-login", dev_login, methods=["POST"])
+
+
 def _cookie_options() -> dict:
-    is_production = settings.ENVIRONMENT == "production"
     return {
         "httponly": True,
-        "secure": is_production,
-        "samesite": "none" if is_production else "lax",
+        **cookie_security_options(settings.ENVIRONMENT),
     }
 
 

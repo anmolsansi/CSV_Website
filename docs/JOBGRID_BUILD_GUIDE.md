@@ -1658,3 +1658,77 @@ Repository CI remains the integrated proof because it executes the actual Postgr
 JG-021 has no migration file and performs no persisted-data rewrite. If the release gate itself regresses, revert the JG-021 workflow/test/documentation commits. Do not downgrade or rewrite a user database to roll back this ticket.
 
 A locally passing JG-021 CI run is not the complete R7 production release. Later R7 tickets still own production configuration rejection, provider/staging acceptance, backup/restore release evidence, and the final production release gate.
+
+
+## JG-022 fail-fast production configuration
+
+JG-022 adds a production-only startup safety gate without changing database schema, stored user data, or application/visit semantics. Validation runs while `app.config` is imported, before `app.main` can initialize the database, run migrations, register routes, or start the maintenance scheduler.
+
+### Production startup requirements
+
+When `ENVIRONMENT=production`, startup rejects the configuration before the API serves traffic if any of these conditions are true:
+
+- `TEST_AUTH=true`.
+- `SECRET_KEY` is empty, shorter than 32 UTF-8 bytes, or matches a known development/test placeholder pattern.
+- `FRONTEND_URL` is not a public HTTPS URL.
+- `OAUTH_REDIRECT_BASE` is not a public HTTPS URL.
+- `CORS_ORIGINS` was not explicitly configured.
+- Any configured CORS origin is not a public HTTPS origin.
+
+Localhost, loopback addresses, embedded URL credentials, and plain HTTP public origins are rejected in production. Development and test retain the existing localhost defaults and may continue using local HTTP origins.
+
+Production configuration errors name the unsafe setting or rule but never include the configured signing-secret value.
+
+A minimal production inventory is:
+
+```text
+ENVIRONMENT=production
+TEST_AUTH=false
+SECRET_KEY=<deployment-managed random value of at least 32 bytes>
+FRONTEND_URL=https://app.example.com
+OAUTH_REDIRECT_BASE=https://api.example.com
+CORS_ORIGINS=https://app.example.com
+```
+
+Generate signing material outside the repository, for example:
+
+```sh
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+# or
+openssl rand -hex 32
+```
+
+Put the generated value in the deployment platform's secret manager or equivalent protected configuration. Do not paste the real value into `.env.example`, documentation, logs, CI artifacts, commits, or issue/PR text.
+
+### Development/test authentication boundary
+
+`POST /auth/dev-login` is registered only when the runtime environment is not production. In development/test, the existing `TEST_AUTH=true` gate still controls whether the handler succeeds. In production the route is absent, so every request payload receives route-level 404 behavior instead of reaching request-body or login logic.
+
+The separate `/test/seed` and `/test/reset` helpers remain controlled by the existing `TEST_AUTH` startup condition. Production cannot reach that state because the configuration validator rejects `TEST_AUTH=true` before the application is created.
+
+### Cookie policy
+
+Cookie security remains server-controlled.
+
+- Production OAuth/session cookies use `Secure` and `SameSite=None` so HTTPS cross-site OAuth callback behavior works without weakening transport protection.
+- Development/test cookies remain non-Secure with `SameSite=Lax` for localhost compatibility.
+- The Starlette `SessionMiddleware`, OAuth callback session token, logout deletion, and dev-login cookie use the same environment-derived policy.
+
+### Verification
+
+Focused JG-022 regression coverage lives in `backend/tests/test_production_config.py`:
+
+```sh
+cd backend
+python -m pytest tests/test_production_config.py -q
+```
+
+The suite proves unsafe production `TEST_AUTH` fails during import before serving, placeholder/short signing keys fail without leaking the key, HTTPS/CORS validation is enforced, development/test dev-login remains available, production dev-login is not registered, and production cookie attributes are Secure with `SameSite=None`.
+
+Repository CI remains the broader integration gate for PostgreSQL backend tests, backend compilation, the frontend production build, and Playwright Chromium coverage.
+
+### Rollback and release boundary
+
+JG-022 has no migration and does not rewrite persisted data. If the startup/configuration or cookie behavior regresses, revert the JG-022 application/configuration commits. Do not downgrade the database.
+
+A passing JG-022 local or CI result establishes this configuration gate only. Real provider OAuth, SMTP sandbox delivery, staging restore comparison, and production release evidence remain later R7 work and must not be inferred from this ticket.

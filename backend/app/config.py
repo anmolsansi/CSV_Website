@@ -1,4 +1,7 @@
+import ipaddress
 import os
+from urllib.parse import urlsplit
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,6 +11,116 @@ def _split_env_list(value: str | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def is_production_environment(value: str | None) -> bool:
+    return str(value or "").strip().lower() == "production"
+
+
+def cookie_security_options(environment: str | None) -> dict[str, object]:
+    """Return the server-controlled cookie policy for the current environment."""
+    is_production = is_production_environment(environment)
+    return {
+        "secure": is_production,
+        "samesite": "none" if is_production else "lax",
+    }
+
+
+class ProductionConfigurationError(RuntimeError):
+    """Raised when a production-only safety requirement is not satisfied."""
+
+
+_INSECURE_SECRET_VALUES = {
+    "dev-secret-change-me",
+    "change-me-to-a-long-random-string",
+    "changeme-generate-with-openssl-rand-hex-32",
+    "test-secret",
+}
+
+
+def _is_local_or_loopback_hostname(hostname: str | None) -> bool:
+    if not hostname:
+        return True
+
+    normalized = hostname.strip().lower()
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+
+    try:
+        address = ipaddress.ip_address(normalized)
+    except ValueError:
+        return False
+
+    return address.is_loopback or address.is_unspecified
+
+
+def _validate_public_https_url(field_name: str, value: str | None) -> None:
+    raw_value = str(value or "").strip()
+    parsed = urlsplit(raw_value)
+
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or _is_local_or_loopback_hostname(parsed.hostname)
+    ):
+        raise ProductionConfigurationError(
+            f"{field_name} must be a public HTTPS URL in production"
+        )
+
+
+def validate_runtime_settings(runtime_settings) -> None:
+    """Fail fast on unsafe production configuration without exposing secrets."""
+    if not is_production_environment(getattr(runtime_settings, "ENVIRONMENT", "")):
+        return
+
+    if bool(getattr(runtime_settings, "TEST_AUTH", False)):
+        raise ProductionConfigurationError(
+            "TEST_AUTH must be disabled when ENVIRONMENT=production"
+        )
+
+    secret_key = str(getattr(runtime_settings, "SECRET_KEY", "") or "")
+    normalized_secret = secret_key.strip().lower()
+    if (
+        len(secret_key.encode("utf-8")) < 32
+        or normalized_secret in _INSECURE_SECRET_VALUES
+        or normalized_secret.startswith(
+            ("changeme", "change-me", "dev-secret", "test-secret")
+        )
+    ):
+        raise ProductionConfigurationError(
+            "SECRET_KEY must contain at least 32 random bytes and must not use a default or placeholder value"
+        )
+
+    _validate_public_https_url(
+        "FRONTEND_URL",
+        getattr(runtime_settings, "FRONTEND_URL", ""),
+    )
+    _validate_public_https_url(
+        "OAUTH_REDIRECT_BASE",
+        getattr(runtime_settings, "OAUTH_REDIRECT_BASE", ""),
+    )
+
+    if not bool(getattr(runtime_settings, "CORS_ORIGINS_EXPLICIT", False)):
+        raise ProductionConfigurationError(
+            "CORS_ORIGINS must be explicitly configured in production"
+        )
+
+    cors_origins = list(getattr(runtime_settings, "CORS_ORIGINS", []) or [])
+    if not cors_origins:
+        raise ProductionConfigurationError(
+            "CORS_ORIGINS must contain at least one production origin"
+        )
+
+    for origin in cors_origins:
+        _validate_public_https_url("CORS_ORIGINS", origin)
+
+
+_EXPLICIT_CORS_ORIGINS = (
+    _split_env_list(os.getenv("CORS_ORIGINS"))
+    or _split_env_list(os.getenv("FRONTEND_URLS"))
+)
 
 
 class Settings:
@@ -34,11 +147,11 @@ class Settings:
 
     OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8000")
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    CORS_ORIGINS = (
-        _split_env_list(os.getenv("CORS_ORIGINS"))
-        or _split_env_list(os.getenv("FRONTEND_URLS"))
-        or [FRONTEND_URL, "http://127.0.0.1:5173"]
-    )
+    CORS_ORIGINS_EXPLICIT = bool(_EXPLICIT_CORS_ORIGINS)
+    CORS_ORIGINS = _EXPLICIT_CORS_ORIGINS or [
+        FRONTEND_URL,
+        "http://127.0.0.1:5173",
+    ]
     CLEANUP_INTERVAL_MINUTES = int(os.getenv("CLEANUP_INTERVAL_MINUTES", "60"))
 
     # JG-012 retention contract. These new controls are deliberately disabled
@@ -67,3 +180,7 @@ class Settings:
 
 
 settings = Settings()
+
+# Validate as soon as configuration is loaded so unsafe production settings fail
+# before database initialization, route registration, or background-job startup.
+validate_runtime_settings(settings)
