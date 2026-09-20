@@ -160,7 +160,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [x] [JG-015 — Create reusable status timestamp URL and bulk validators](#jg-015)
 - [ ] [JG-016 — Apply validation atomically to every application writer](#jg-016)
-- [ ] [JG-017 — Render field errors and fix asynchronous import feedback](#jg-017)
+- [x] [JG-017 — Render field errors and fix asynchronous import feedback](#jg-017)
 
 **R6 — Make local numeric sorting and schema validation honest**
 
@@ -4026,7 +4026,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-017"></a>
 ### JG-017 — Render field errors and fix asynchronous import feedback
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** interface integration  
 **Execution position:** 17/64; group step 3/3
@@ -4203,13 +4203,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-017 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: application-validation.spec.ts: invalid date has visible field message
-- [ ] Required regression passes: file_reader_and_network_failure: no unhandled rejection
-- [ ] Required regression passes: pending_request_button_disabled
-- [ ] Required regression passes: preview_10_of_25_and_invalid_replacement_file
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-017 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: application-validation.spec.ts: invalid date has visible field message
+- [x] Required regression passes: file_reader_and_network_failure: no unhandled rejection
+- [x] Required regression passes: pending_request_button_disabled
+- [x] Required regression passes: preview_10_of_25_and_invalid_replacement_file
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -4227,12 +4227,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -4241,11 +4241,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-016` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #72; implementation PR: #73.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-016 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** GitHub issue #72 tracked the work. Implementation PR #73 merged to `main` at `20d66733b36b56c97901aaac6158b252386279e2`, followed by focus-stability PR #75 at `684aca0bc001b7ffa47dc6b62097b75673374ab7`. Final implementation CI run #148 passed 250 PostgreSQL backend tests, the backend compile check, the frontend production build, and all 133 Playwright Chromium tests with no flaky retry; Vercel also passed. JG-017 now renders normalized JG-016 field errors with legacy-safe compatibility, preserves application drafts after rejected writes, prevents duplicate in-flight row/bulk submissions, returns focus to the first invalid field, supports keyboard submission, reconciles successful edits from the server, and leaves persisted dates untouched until the user edits them. External JSON import now uses awaited `file.text()` parsing plus one awaited API call, clears stale state on replacement/parse failure, separates the 10-row preview from the full file count, keeps valid input available after recoverable API/network failure, and holds the busy state through request completion. The required JG-017 browser regressions and reload/persistence checks pass. No database migration, backend contract change, or data rewrite was introduced. R5 is locally complete after JG-015–JG-017; JG-018 is the next ordered implementation ticket. External production release proof remains a separate release status.
 
 ---
 
