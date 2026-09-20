@@ -61,7 +61,7 @@ def _login(client, email: str) -> User:
 def _row(db, user: User, suffix: str, **values) -> CsvRow:
     row = CsvRow(
         user_id=user.id,
-        upload_batch_id=f"jg023-{suffix}",
+        upload_batch_id=f"jg023-{suffix}"[:36],
         url=values.pop("url", f"https://release.example.test/jobs/{suffix}"),
         title=values.pop("title", f"Release job {suffix}"),
         company_guess=values.pop("company_guess", "JG023 Release Co"),
