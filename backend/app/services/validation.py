@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
-from ..models import JOB_TRACK_STATUS_VALUES
+from ..models import JOB_TRACK_STATUS_VALUES, JobTrack
 
 STATUS_VALUES = tuple(JOB_TRACK_STATUS_VALUES)
 MAX_BULK_IDS = 500
@@ -311,6 +311,42 @@ def require_owned_bulk_ids(
             status_code=404,
         )
     return normalized.ids
+
+
+def legacy_invalid_application_counts(session: Any, *, user_id: int) -> dict[str, int]:
+    """Return account-scoped aggregate validation warnings without exposing row data."""
+    counts = {
+        "total": 0,
+        "invalid_status": 0,
+        "applied_without_date": 0,
+        "invalid_url": 0,
+        "company_too_long": 0,
+        "title_too_long": 0,
+        "notes_too_long": 0,
+    }
+    query = (
+        session.query(JobTrack)
+        .filter(JobTrack.user_id == user_id)
+        .order_by(JobTrack.id.asc())
+        .yield_per(500)
+    )
+    for item in query:
+        counts["total"] += 1
+        if item.status not in STATUS_VALUES:
+            counts["invalid_status"] += 1
+        if item.status == "applied" and item.applied_at is None:
+            counts["applied_without_date"] += 1
+        try:
+            validate_job_url(item.url)
+        except ValidationContractError:
+            counts["invalid_url"] += 1
+        if item.company is not None and len(item.company) > MAX_COMPANY_TITLE_CHARS:
+            counts["company_too_long"] += 1
+        if item.title is not None and len(item.title) > MAX_COMPANY_TITLE_CHARS:
+            counts["title_too_long"] += 1
+        if item.notes is not None and len(item.notes) > MAX_NOTES_CHARS:
+            counts["notes_too_long"] += 1
+    return counts
 
 
 def format_error_detail(
