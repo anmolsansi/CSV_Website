@@ -238,7 +238,27 @@ class _FakeSession:
         return None
 
 
+def test_worker_global_archive_kill_switch_blocks_execution(monkeypatch):
+    calls = []
+
+    def should_not_run(_db, **_kwargs):
+        calls.append("called")
+        return CleanupResult(scanned=1, archived=1)
+
+    monkeypatch.setattr(jobs_module.settings, "AUTO_ARCHIVE_AFTER_DAYS", 0)
+    monkeypatch.setattr(jobs_module, "archive_eligible_rows", should_not_run)
+
+    result = jobs_module.cleanup_clicked_rows(session_factory=_FakeSession)
+
+    assert result["scanned"] == 0
+    assert result["archived"] == 0
+    assert result["skipped"] == 0
+    assert result["failed"] == 0
+    assert calls == []
+
+
 def test_two_workers_do_not_double_count(monkeypatch):
+    monkeypatch.setattr(jobs_module.settings, "AUTO_ARCHIVE_AFTER_DAYS", 30)
     entered = Event()
     release = Event()
     calls = []
@@ -280,6 +300,8 @@ def test_two_workers_do_not_double_count(monkeypatch):
 
 
 def test_failed_worker_releases_process_lock(monkeypatch):
+    monkeypatch.setattr(jobs_module.settings, "AUTO_ARCHIVE_AFTER_DAYS", 30)
+
     def fail_archive(_db, **_kwargs):
         raise RetentionJobError(
             "synthetic worker failure",
@@ -307,6 +329,7 @@ def test_postgresql_advisory_lock_contention_is_skipped_and_recoverable(
     if engine.dialect.name != "postgresql":
         pytest.skip("PostgreSQL advisory lock coverage runs in PostgreSQL CI")
 
+    monkeypatch.setattr(jobs_module.settings, "AUTO_ARCHIVE_AFTER_DAYS", 30)
     monkeypatch.setattr(
         jobs_module,
         "archive_eligible_rows",
