@@ -593,3 +593,14 @@ def test_backup_rejects_invalid_retention_days(retention_days):
     with pytest.raises(BackupContractError) as exc:
         validate_backup_v2(payload)
     assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
+
+
+def test_backup_import_invalid_json_returns_parser_400(auth_client):
+    response = auth_client.post(
+        "/crm/backup/import?mode=verify_only",
+        files={"file": ("invalid.json", b'{"version":', "application/json")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_json"
+    assert "traceback" not in response.text.lower()

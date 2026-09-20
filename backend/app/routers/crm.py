@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Float, asc, case, cast, desc, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -44,6 +45,18 @@ from ..services.retention import (
     MIN_RETENTION_DAYS,
     count_eligible_rows,
     maintenance_health,
+)
+from ..services.validation import (
+    ValidationContractError,
+    explicit_model_fields,
+    legacy_invalid_application_counts,
+    normalize_bulk_ids,
+    parse_timestamp,
+    prepare_job_track_patch,
+    require_owned_bulk_ids,
+    validate_job_url,
+    validate_status,
+    validate_text_limits,
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -114,16 +127,107 @@ def _raise_lifecycle_http(
     raise HTTPException(status_code, exc.message) from exc
 
 
-def _prepare_track_patch(data: dict) -> dict:
-    prepared = dict(data)
-    try:
-        if "applied_at" in prepared:
-            prepared["applied_at"] = parse_dt(prepared["applied_at"])
-        if "follow_up_at" in prepared:
-            prepared["follow_up_at"] = parse_dt(prepared["follow_up_at"])
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "Invalid datetime value") from exc
-    return prepared
+def _raise_validation_http(
+    db: Session,
+    exc: ValidationContractError,
+    *,
+    action: str,
+    operation_id: UUID,
+    started: float,
+):
+    db.rollback()
+    _log_lifecycle_outcome(
+        action=action,
+        operation_id=operation_id,
+        outcome=exc.code,
+        affected=0,
+        started=started,
+        warning=True,
+    )
+    raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
+
+
+def _raise_integrity_http(
+    db: Session,
+    exc: IntegrityError,
+    *,
+    action: str,
+    operation_id: UUID,
+    started: float,
+):
+    db.rollback()
+    _log_lifecycle_outcome(
+        action=action,
+        operation_id=operation_id,
+        outcome="conflict",
+        affected=0,
+        started=started,
+        warning=True,
+    )
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "conflict",
+            "fields": [
+                {
+                    "field": "__root__",
+                    "message": "The application changed concurrently. Reload and retry.",
+                }
+            ],
+            "request_id": str(operation_id),
+        },
+    ) from exc
+
+
+def _raise_unexpected_http(
+    db: Session,
+    exc: Exception,
+    *,
+    action: str,
+    operation_id: UUID,
+    started: float,
+):
+    db.rollback()
+    logger.exception(
+        "application_mutation action=%s operation_id=%s outcome=internal_error affected=0 elapsed_ms=%s",
+        action,
+        operation_id,
+        int((perf_counter() - started) * 1000),
+    )
+    raise HTTPException(
+        status_code=500,
+        detail={
+            "code": "internal_error",
+            "fields": [
+                {"field": "__root__", "message": "The request could not be completed."}
+            ],
+            "request_id": str(operation_id),
+        },
+    ) from exc
+
+
+def _prepare_application_patch(
+    payload: JobTrackUpdateIn,
+    *,
+    user: User,
+    item: JobTrack,
+) -> dict:
+    return prepare_job_track_patch(
+        explicit_model_fields(payload),
+        timezone_name=user.timezone,
+        current_status=item.status,
+        current_applied_at=item.applied_at,
+    )
+
+
+def _validate_row_application_seed(row: CsvRow) -> None:
+    validate_job_url(row.url, field="url")
+    validate_text_limits(
+        {
+            "company": row.company_guess,
+            "title": row.title,
+        }
+    )
 
 
 def _apply_track_patch(
@@ -281,15 +385,45 @@ def filtered_query(db, user_id, status=None, company=None, ats_group=None, searc
     )
 
 @router.post("/from-row/{row_id}")
-def create_from_row(row_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
-    if not row:
-        raise HTTPException(404, "Row not found")
-    now = datetime.utcnow()
-    item = upsert_from_row(db, user.id, row, now)
-    db.commit()
-    db.refresh(item)
-    return to_out(item)
+def create_from_row(
+    row_id: int,
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
+    try:
+        row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
+        if not row:
+            raise HTTPException(404, "Row not found")
+        _validate_row_application_seed(row)
+        item = upsert_from_row(db, user.id, row, datetime.utcnow())
+        db.commit()
+        db.refresh(item)
+        _log_lifecycle_outcome(
+            action="from_row",
+            operation_id=operation_id,
+            outcome="success",
+            affected=1,
+            started=started,
+        )
+        return to_out(item)
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db, exc, action="from_row", operation_id=operation_id, started=started
+        )
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db, exc, action="from_row", operation_id=operation_id, started=started
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db, exc, action="from_row", operation_id=operation_id, started=started
+        )
 
 
 @router.get("/applications")
@@ -361,6 +495,17 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
     }
 
 
+@router.get("/applications/validation-report")
+def application_validation_report(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return {
+        "counts": legacy_invalid_application_counts(db, user_id=user.id),
+        "repair_mode": "manual_only",
+    }
+
+
 @router.patch("/applications/bulk")
 def bulk_update_apps(
     payload: BulkUpdateIn,
@@ -368,23 +513,25 @@ def bulk_update_apps(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    requested_ids = list(dict.fromkeys(payload.ids))
-    if not requested_ids:
-        raise HTTPException(400, "No applications selected")
-    items = (
-        db.query(JobTrack)
-        .filter(JobTrack.id.in_(requested_ids), JobTrack.user_id == user.id)
-        .all()
-    )
-    if len(items) != len(requested_ids):
-        raise HTTPException(404, "One or more applications not found")
-
-    data = _prepare_track_patch(payload.patch.model_dump(exclude_unset=True))
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    now = datetime.utcnow()
     try:
-        for item in items:
+        normalized = normalize_bulk_ids(payload.ids, field="ids")
+        items = (
+            db.query(JobTrack)
+            .filter(JobTrack.id.in_(normalized.ids), JobTrack.user_id == user.id)
+            .all()
+        )
+        by_id = {item.id: item for item in items}
+        require_owned_bulk_ids(normalized, by_id, field="ids")
+        ordered_items = [by_id[item_id] for item_id in normalized.ids]
+
+        prepared = [
+            (item, _prepare_application_patch(payload.patch, user=user, item=item))
+            for item in ordered_items
+        ]
+        now = datetime.utcnow()
+        for item, data in prepared:
             _apply_track_patch(
                 db,
                 user_id=user.id,
@@ -399,8 +546,13 @@ def bulk_update_apps(
             action="bulk_patch",
             operation_id=operation_id,
             outcome="success",
-            affected=len(items),
+            affected=len(ordered_items),
             started=started,
+        )
+        return {"updated": len(ordered_items), "failed": []}
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db, exc, action="bulk_patch", operation_id=operation_id, started=started
         )
     except LifecycleEventError as exc:
         _raise_lifecycle_http(
@@ -411,7 +563,17 @@ def bulk_update_apps(
             affected=0,
             started=started,
         )
-    return {"updated": len(items), "failed": []}
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db, exc, action="bulk_patch", operation_id=operation_id, started=started
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db, exc, action="bulk_patch", operation_id=operation_id, started=started
+        )
 
 
 @router.post("/from-rows/bulk")
@@ -421,23 +583,40 @@ def bulk_create_from_rows(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    requested_ids = list(dict.fromkeys(payload.row_ids))
-    rows = (
-        db.query(CsvRow)
-        .filter(CsvRow.id.in_(requested_ids), CsvRow.user_id == user.id)
-        .all()
-    )
-    if not requested_ids or len(rows) != len(requested_ids):
-        raise HTTPException(404, "One or more rows not found")
-
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    now = datetime.utcnow()
-    created = 0
-    items = []
     try:
-        for row in rows:
-            item = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
+        normalized = normalize_bulk_ids(payload.row_ids, field="row_ids")
+        rows = (
+            db.query(CsvRow)
+            .filter(CsvRow.id.in_(normalized.ids), CsvRow.user_id == user.id)
+            .all()
+        )
+        by_id = {row.id: row for row in rows}
+        require_owned_bulk_ids(normalized, by_id, field="row_ids")
+        ordered_rows = [by_id[row_id] for row_id in normalized.ids]
+
+        status_supplied = "status" in payload.model_fields_set
+        target_status = validate_status(payload.status) if status_supplied else None
+        for row in ordered_rows:
+            _validate_row_application_seed(row)
+
+        now = datetime.utcnow()
+        existing_tracks = {
+            item.url: item
+            for item in (
+                db.query(JobTrack)
+                .filter(
+                    JobTrack.user_id == user.id,
+                    JobTrack.url.in_([row.url for row in ordered_rows]),
+                )
+                .all()
+            )
+        }
+        created = 0
+        items = []
+        for row in ordered_rows:
+            item = existing_tracks.get(row.url)
             if item is None:
                 item = JobTrack(
                     user_id=user.id,
@@ -449,6 +628,7 @@ def bulk_create_from_rows(
                 )
                 db.add(item)
                 db.flush()
+                existing_tracks[row.url] = item
                 created += 1
             item.csv_row_id = row.id
             for field, source_field in [
@@ -459,7 +639,7 @@ def bulk_create_from_rows(
                 ("resume_match_score", "resume_match_score"),
             ]:
                 setattr(item, field, getattr(item, field) or getattr(row, source_field))
-            if payload.status:
+            if status_supplied:
                 apply_job_track_changes(
                     db,
                     user_id=user.id,
@@ -467,7 +647,7 @@ def bulk_create_from_rows(
                     source="bulk_from_rows",
                     operation_id=operation_id,
                     now=now,
-                    status=payload.status,
+                    status=target_status,
                 )
             else:
                 item.updated_at = now
@@ -490,6 +670,20 @@ def bulk_create_from_rows(
             affected=len(items),
             started=started,
         )
+        return {
+            "created": created,
+            "updated": len(items) - created,
+            "skipped": 0,
+            "application_ids": application_ids,
+        }
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            started=started,
+        )
     except LifecycleEventError as exc:
         _raise_lifecycle_http(
             db,
@@ -499,12 +693,25 @@ def bulk_create_from_rows(
             affected=0,
             started=started,
         )
-    return {
-        "created": created,
-        "updated": len(items) - created,
-        "skipped": 0,
-        "application_ids": application_ids,
-    }
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 @router.patch("/applications/{item_id}")
@@ -515,14 +722,14 @@ def update_app(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
-    if not item:
-        raise HTTPException(404, "Application not found")
-
-    data = _prepare_track_patch(payload.model_dump(exclude_unset=True))
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
     try:
+        item = db.query(JobTrack).filter_by(id=item_id, user_id=user.id).first()
+        if not item:
+            raise HTTPException(404, "Application not found")
+
+        data = _prepare_application_patch(payload, user=user, item=item)
         _apply_track_patch(
             db,
             user_id=user.id,
@@ -541,6 +748,15 @@ def update_app(
             affected=1,
             started=started,
         )
+        return to_out(item)
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            started=started,
+        )
     except LifecycleEventError as exc:
         _raise_lifecycle_http(
             db,
@@ -550,7 +766,25 @@ def update_app(
             affected=0,
             started=started,
         )
-    return to_out(item)
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="application_patch",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 def _retention_profile_response(db: Session, user: User) -> dict:
@@ -1223,24 +1457,48 @@ def import_applypilot_results(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    prepared = []
-    try:
-        for result in results:
-            submitted_at = parse_dt(result.submitted_at) if result.submitted_at else None
-            prepared.append((result, submitted_at))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "Invalid submitted_at value") from exc
-
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    updated = 0
     try:
-        for result, submitted_at in prepared:
-            track = db.query(JobTrack).filter_by(user_id=user.id, url=result.url).first()
-            if not track:
+        prepared = []
+        for index, result in enumerate(results):
+            url = validate_job_url(result.url, field=f"results[{index}].url")
+            submitted_at = (
+                parse_timestamp(
+                    result.submitted_at,
+                    timezone_name=user.timezone,
+                    field=f"results[{index}].submitted_at",
+                )
+                if result.submitted_at not in (None, "")
+                else None
+            )
+            note = f"ApplyPilot error: {result.error}" if result.error else None
+            if note is not None:
+                validate_text_limits({"notes": note})
+            prepared.append((result, url, submitted_at, note))
+
+        urls = list(dict.fromkeys(url for _, url, _, _ in prepared))
+        tracks_by_url = {
+            track.url: track
+            for track in (
+                db.query(JobTrack)
+                .filter(JobTrack.user_id == user.id, JobTrack.url.in_(urls))
+                .all()
+                if urls
+                else []
+            )
+        }
+
+        updated = 0
+        for result, url, submitted_at, note in prepared:
+            track = tracks_by_url.get(url)
+            if track is None:
                 continue
             now = datetime.utcnow()
             if result.submitted:
+                lifecycle_kwargs = {"status": "applied"}
+                if submitted_at is not None:
+                    lifecycle_kwargs["applied_at"] = submitted_at
                 apply_job_track_changes(
                     db,
                     user_id=user.id,
@@ -1248,20 +1506,29 @@ def import_applypilot_results(
                     source="applypilot_import",
                     operation_id=operation_id,
                     now=now,
-                    status="applied",
-                    applied_at=submitted_at or now,
+                    **lifecycle_kwargs,
                 )
             else:
                 track.updated_at = now
-            if result.error:
-                track.notes = f"ApplyPilot error: {result.error}"
+            if note is not None:
+                track.notes = note
             updated += 1
+
         db.commit()
         _log_lifecycle_outcome(
             action="applypilot_import",
             operation_id=operation_id,
             outcome="success",
             affected=updated,
+            started=started,
+        )
+        return {"updated": updated}
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
             started=started,
         )
     except LifecycleEventError as exc:
@@ -1273,7 +1540,25 @@ def import_applypilot_results(
             affected=0,
             started=started,
         )
-    return {"updated": updated}
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 @router.get("/applypilot/readiness/{row_id}")
@@ -1530,50 +1815,6 @@ def company_history(company: str, db: Session = Depends(get_db), user: User = De
 
 # ─── Backup / Restore ────────────────────────────────────────────────
 
-@router.get("/backup/export")
-def export_backup(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.query(CsvRow).filter(CsvRow.user_id == user.id).all()
-    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id).all()
-    views = db.query(SavedView).filter(SavedView.user_id == user.id).all()
-    sessions = db.query(SearchSession).filter(SearchSession.user_id == user.id).all()
-    events = db.query(AuditEvent).filter(AuditEvent.user_id == user.id).order_by(AuditEvent.created_at.desc()).limit(1000).all()
-    batches = db.query(ApplyPilotBatch).filter(ApplyPilotBatch.user_id == user.id).all()
-    backup = {
-        "version": "1.0",
-        "exported_at": datetime.utcnow().isoformat(),
-        "csv_rows": [{"url": r.url, "company_guess": r.company_guess, "title": r.title, "ats_group": r.ats_group, "search_bucket": r.search_bucket, "resume_match_score": r.resume_match_score, "jd_text": r.jd_text, "sponsorship_status": r.sponsorship_status, "location_group": r.location_group, "created_at": str(r.created_at) if r.created_at else None} for r in rows],
-        "job_tracks": [{"url": t.url, "company": t.company, "title": t.title, "status": t.status, "applied_at": str(t.applied_at) if t.applied_at else None, "follow_up_at": str(t.follow_up_at) if t.follow_up_at else None, "notes": t.notes, "created_at": str(t.created_at) if t.created_at else None} for t in tracks],
-        "saved_views": [{"name": v.name, "view_type": v.view_type, "filters": v.filters, "is_pinned": v.is_pinned} for v in views],
-        "sessions": [{"name": s.name, "started_at": str(s.started_at) if s.started_at else None, "ended_at": str(s.ended_at) if s.ended_at else None, "notes": s.notes} for s in sessions],
-        "audit_events": [{"event_type": e.event_type, "entity_type": e.entity_type, "entity_id": e.entity_id, "metadata_json": e.metadata_json, "created_at": str(e.created_at) if e.created_at else None} for e in events],
-        "applypilot_batches": [{"name": b.name, "payload_json": b.payload_json, "status": b.status, "job_count": b.job_count, "created_at": str(b.created_at) if b.created_at else None} for b in batches],
-    }
-    content = json.dumps(backup, indent=2, default=str).encode("utf-8")
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return StreamingResponse(io.BytesIO(content), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="jobgrid_backup_{ts}.json"'})
-
-
-@router.post("/backup/import")
-def import_backup(db: Session = Depends(get_db), user: User = Depends(get_current_user), file: UploadFile = File(...)):
-    content = file.file.read()
-    backup = json.loads(content)
-    imported = {"csv_rows": 0, "job_tracks": 0, "saved_views": 0, "sessions": 0}
-    for r in backup.get("csv_rows", []):
-        existing = db.query(CsvRow).filter_by(user_id=user.id, url=r.get("url")).first()
-        if not existing:
-            row = CsvRow(user_id=user.id, upload_batch_id="import", url=r.get("url", ""), company_guess=r.get("company_guess"), title=r.get("title"), ats_group=r.get("ats_group"), search_bucket=r.get("search_bucket"), resume_match_score=r.get("resume_match_score"), jd_text=r.get("jd_text"), sponsorship_status=r.get("sponsorship_status"), location_group=r.get("location_group"))
-            db.add(row)
-            imported["csv_rows"] += 1
-    for v in backup.get("saved_views", []):
-        existing = db.query(SavedView).filter_by(user_id=user.id, name=v.get("name"), view_type=v.get("view_type")).first()
-        if not existing:
-            view = SavedView(user_id=user.id, name=v.get("name"), view_type=v.get("view_type", "job_links"), filters=v.get("filters", {}), is_pinned=v.get("is_pinned", False))
-            db.add(view)
-            imported["saved_views"] += 1
-    db.commit()
-    return imported
-
-
 # ─── Import External Applications ──────────────────────────────────────
 
 @router.post("/import/external")
@@ -1583,53 +1824,101 @@ def import_external_applications(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    prepared = []
-    try:
-        for item in payload:
-            url = item.get("url", "")
-            if not url:
-                continue
-            applied_at = parse_dt(item["applied_at"]) if item.get("applied_at") else None
-            follow_up_at = (
-                parse_dt(item["follow_up_at"]) if item.get("follow_up_at") else None
-            )
-            prepared.append((item, url, applied_at, follow_up_at))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "Invalid import datetime value") from exc
-
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    created = 0
     try:
-        for item, url, applied_at, follow_up_at in prepared:
-            existing = db.query(JobTrack).filter_by(user_id=user.id, url=url).first()
-            if existing:
+        prepared = []
+        for index, raw in enumerate(payload):
+            url = validate_job_url(raw.get("url"), field=f"records[{index}].url")
+            text = validate_text_limits(
+                {
+                    "company": raw.get("company", ""),
+                    "title": raw.get("title", ""),
+                    "notes": raw.get("notes", ""),
+                }
+            )
+            status = validate_status(raw.get("status", "opened"), field=f"records[{index}].status")
+
+            applied_supplied = "applied_at" in raw
+            applied_at = (
+                parse_timestamp(
+                    raw.get("applied_at"),
+                    timezone_name=user.timezone,
+                    field=f"records[{index}].applied_at",
+                )
+                if applied_supplied
+                else None
+            )
+            follow_up_supplied = "follow_up_at" in raw
+            follow_up_at = (
+                parse_timestamp(
+                    raw.get("follow_up_at"),
+                    timezone_name=user.timezone,
+                    field=f"records[{index}].follow_up_at",
+                )
+                if follow_up_supplied
+                else None
+            )
+
+            target_status = "applied" if applied_at is not None else status
+            if applied_supplied and applied_at is None and target_status == "applied":
+                raise ValidationContractError(
+                    "Applied date cannot be cleared while status remains applied.",
+                    field=f"records[{index}].applied_at",
+                )
+            prepared.append(
+                {
+                    "url": url,
+                    "company": text["company"],
+                    "title": text["title"],
+                    "notes": text["notes"],
+                    "status": target_status,
+                    "applied_supplied": applied_supplied,
+                    "applied_at": applied_at,
+                    "follow_up_supplied": follow_up_supplied,
+                    "follow_up_at": follow_up_at,
+                }
+            )
+
+        urls = list(dict.fromkeys(record["url"] for record in prepared))
+        existing_by_url = {
+            item.url: item
+            for item in (
+                db.query(JobTrack)
+                .filter(JobTrack.user_id == user.id, JobTrack.url.in_(urls))
+                .all()
+                if urls
+                else []
+            )
+        }
+
+        created = 0
+        for record in prepared:
+            if record["url"] in existing_by_url:
                 continue
 
             now = datetime.utcnow()
             track = JobTrack(
                 user_id=user.id,
-                url=url,
-                company=item.get("company", ""),
-                title=item.get("title", ""),
+                url=record["url"],
+                company=record["company"],
+                title=record["title"],
                 status="opened",
-                notes=item.get("notes", ""),
+                notes=record["notes"],
                 opened_at=now,
             )
             db.add(track)
             db.flush()
+            existing_by_url[record["url"]] = track
 
-            target_status = "applied" if applied_at is not None else item.get(
-                "status", "opened"
-            )
             lifecycle_kwargs = {
-                "status": target_status,
+                "status": record["status"],
                 "infer_applied_at_from_status": False,
             }
-            if applied_at is not None:
-                lifecycle_kwargs["applied_at"] = applied_at
-            if follow_up_at is not None:
-                lifecycle_kwargs["follow_up_at"] = follow_up_at
+            if record["applied_supplied"]:
+                lifecycle_kwargs["applied_at"] = record["applied_at"]
+            if record["follow_up_supplied"]:
+                lifecycle_kwargs["follow_up_at"] = record["follow_up_at"]
 
             apply_job_track_changes(
                 db,
@@ -1641,12 +1930,22 @@ def import_external_applications(
                 **lifecycle_kwargs,
             )
             created += 1
+
         db.commit()
         _log_lifecycle_outcome(
             action="external_import",
             operation_id=operation_id,
             outcome="success",
             affected=created,
+            started=started,
+        )
+        return {"created": created}
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
             started=started,
         )
     except LifecycleEventError as exc:
@@ -1658,7 +1957,25 @@ def import_external_applications(
             affected=0,
             started=started,
         )
-    return {"created": created}
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 # ─── Export ───────────────────────────────────────────────────────────────

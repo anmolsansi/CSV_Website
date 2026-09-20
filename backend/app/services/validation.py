@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
-from ..models import JOB_TRACK_STATUS_VALUES
+from ..models import JOB_TRACK_STATUS_VALUES, JobTrack
 
 STATUS_VALUES = tuple(JOB_TRACK_STATUS_VALUES)
 MAX_BULK_IDS = 500
@@ -175,6 +175,45 @@ def validate_text_limits(values: Mapping[str, Any]) -> dict[str, Any]:
     return validated
 
 
+def prepare_job_track_patch(
+    values: Mapping[str, Any],
+    *,
+    timezone_name: str | None,
+    current_status: str,
+    current_applied_at: datetime | None,
+) -> dict[str, Any]:
+    """Validate one application patch before the caller mutates ORM state."""
+    prepared = validate_text_limits(values)
+
+    if "status" in prepared:
+        prepared["status"] = validate_status(prepared["status"])
+
+    for field in ("applied_at", "follow_up_at"):
+        if field in prepared:
+            prepared[field] = parse_timestamp(
+                prepared[field],
+                timezone_name=timezone_name,
+                field=field,
+            )
+
+    target_status = prepared.get("status", current_status)
+    if prepared.get("mark_applied"):
+        target_status = "applied"
+    target_applied_at = prepared.get("applied_at", current_applied_at)
+
+    if (
+        "applied_at" in prepared
+        and target_applied_at is None
+        and target_status == "applied"
+    ):
+        raise ValidationContractError(
+            "Applied date cannot be cleared while status remains applied.",
+            field="applied_at",
+        )
+
+    return prepared
+
+
 def validate_job_url(value: Any, *, field: str = "url") -> str:
     if not isinstance(value, str) or not value:
         raise ValidationContractError(
@@ -272,6 +311,42 @@ def require_owned_bulk_ids(
             status_code=404,
         )
     return normalized.ids
+
+
+def legacy_invalid_application_counts(session: Any, *, user_id: int) -> dict[str, int]:
+    """Return account-scoped aggregate validation warnings without exposing row data."""
+    counts = {
+        "total": 0,
+        "invalid_status": 0,
+        "applied_without_date": 0,
+        "invalid_url": 0,
+        "company_too_long": 0,
+        "title_too_long": 0,
+        "notes_too_long": 0,
+    }
+    query = (
+        session.query(JobTrack)
+        .filter(JobTrack.user_id == user_id)
+        .order_by(JobTrack.id.asc())
+        .yield_per(500)
+    )
+    for item in query:
+        counts["total"] += 1
+        if item.status not in STATUS_VALUES:
+            counts["invalid_status"] += 1
+        if item.status == "applied" and item.applied_at is None:
+            counts["applied_without_date"] += 1
+        try:
+            validate_job_url(item.url)
+        except ValidationContractError:
+            counts["invalid_url"] += 1
+        if item.company is not None and len(item.company) > MAX_COMPANY_TITLE_CHARS:
+            counts["company_too_long"] += 1
+        if item.title is not None and len(item.title) > MAX_COMPANY_TITLE_CHARS:
+            counts["title_too_long"] += 1
+        if item.notes is not None and len(item.notes) > MAX_NOTES_CHARS:
+            counts["notes_too_long"] += 1
+    return counts
 
 
 def format_error_detail(
