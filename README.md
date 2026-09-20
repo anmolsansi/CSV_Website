@@ -119,6 +119,70 @@ rows, records a click, sends rows to Applications, updates application status an
 follow-up data, and checks exports. For non-test environments, pass `--cookie`
 or `--no-dev-login`.
 
+## R6 Runtime Verification
+
+JobGrid supports two deliberately different database verification paths.
+
+**SQLite is the local functional path.** It verifies numeric parsing and sorting,
+per-connection `jobgrid_numeric(value)` registration, foreign-key enforcement,
+and fresh-process application startup without claiming migration portability.
+
+```bash
+cd backend
+DATABASE_URL=sqlite:////tmp/jobgrid-r6.sqlite3 \
+TEST_AUTH=true \
+SECRET_KEY=jg020-local-test-secret \
+FRONTEND_URL=http://localhost:5173 \
+python -m pytest tests/test_numeric_sort.py tests/test_database_dialects.py -q
+```
+
+A local run can skip PostgreSQL-only release checks. That skip is expected when no
+PostgreSQL runtime is configured, but it is **not release evidence**.
+
+**PostgreSQL 16 is the deployment and migration acceptance path.** Release
+verification requires an ordinary PostgreSQL test database plus a different,
+explicitly disposable `TEST_DATABASE_URL` for fresh Alembic/schema checks.
+
+```bash
+cd backend
+DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/jobgrid_test \
+TEST_DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/jobgrid_schema_test \
+TEST_AUTH=true \
+SECRET_KEY=jg020-postgres-test-secret \
+FRONTEND_URL=http://localhost:5173 \
+ENVIRONMENT=test \
+python -m pytest \
+  tests/test_numeric_sort.py \
+  tests/test_database_dialects.py \
+  tests/test_schema_parity.py -q
+```
+
+The PostgreSQL account used for schema acceptance must be allowed to create and
+drop only the named disposable test database. Never point `TEST_DATABASE_URL`
+at production, staging, or the regular test database.
+
+With the authenticated backend running against PostgreSQL 16, the focused
+browser acceptance is:
+
+```bash
+cd frontend
+npm run test:e2e -- tests/numeric-sort.spec.ts --project=chromium
+```
+
+The browser fixture uses `2`, `10`, `85%`, `1,000`, `$99.50`, `-3`,
+blank, and `invalid`. It asserts exact numeric order, nulls last, reload
+stability, and a successful rows API response after reversing Resume Score sort.
+
+Repository CI is the release integration gate because it runs the backend suite
+on PostgreSQL 16, provides the separate schema-test database, builds the
+frontend, and runs Playwright against a PostgreSQL-backed backend.
+
+There is no R6 data rewrite to roll back. SQLite remains a functional runtime,
+but historical Alembic revisions contain PostgreSQL-specific types such as
+JSONB and are not redefined as SQLite migrations. If R6 runtime code must be
+rolled back, roll back the application code while preserving stored data.
+Never downgrade a production database merely to run or satisfy this test gate.
+
 ## Database Migrations
 
 Alembic is the schema source of truth. The app runs `alembic upgrade head` on

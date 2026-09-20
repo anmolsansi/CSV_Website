@@ -1414,6 +1414,168 @@ migration to downgrade and no application data to restore.
 
 SQLite remains a supported functional local runtime, but historical
 PostgreSQL-specific Alembic migrations are not redefined as SQLite-portable.
-Fresh migration/schema acceptance is PostgreSQL-only. JG-020 still owns the
-integrated R6 acceptance boundary.
+Fresh migration/schema acceptance is PostgreSQL-only. JG-020 supplies the
+integrated runtime and browser acceptance described below.
+
+## JG-020 integrated SQLite and PostgreSQL runtime acceptance
+
+JG-020 closes the R6 verification boundary without adding a migration, changing
+stored numeric text, or introducing a third database abstraction. It verifies
+the JG-018 numeric contract and the JG-019 engine/schema contract through the
+same public rows API and through the Dashboard.
+
+### Runtime evidence matrix
+
+| Runtime | What it proves | What it does not prove |
+|---|---|---|
+| SQLite | Numeric API behavior, connection-level `jobgrid_numeric`, foreign-key enforcement, and fresh-process startup/restart behavior | Alembic portability or production migration readiness |
+| PostgreSQL 16 | Numeric API behavior on the deployment dialect plus the approved release database major version | Production data safety by itself |
+| Isolated PostgreSQL schema DB | Fresh `alembic upgrade head`, ORM/schema parity, and migration replay no-op | Authorization to touch staging or production |
+| Playwright + PostgreSQL backend | Exact Resume Score order in the real Dashboard, reload stability, and successful rows API response | External deployment or provider acceptance |
+
+PostgreSQL 16 is the approved deployment and migration acceptance runtime for
+R6. The repository does not claim that another PostgreSQL major version has
+passed this ticket unless an actual run records that result.
+
+### Frozen numeric fixture and exact order
+
+Both backend API acceptance and the browser fixture use these source values:
+
+```text
+2
+10
+85%
+1,000
+$99.50
+-3
+<blank>
+invalid
+```
+
+Ascending order is:
+
+```text
+-3, 2, 10, 85%, $99.50, 1,000, invalid, <blank>
+```
+
+Descending order is:
+
+```text
+1,000, $99.50, 85%, 10, 2, -3, invalid, <blank>
+```
+
+The last two values both parse to null. They remain last in either direction and
+use the existing descending-record-ID tie breaker, so the later-created
+`invalid` fixture precedes the blank fixture.
+
+### Backend acceptance
+
+`backend/tests/test_database_dialects.py` now includes three R6 integration
+regressions in addition to the JG-019 connection/foreign-key checks:
+
+- `test_both_dialect_api_responses_are_200` seeds the same eight rows in a
+  disposable SQLite database and in the ordinary PostgreSQL test runtime, calls
+  `GET /rows` through the FastAPI application, and requires HTTP 200 plus the
+  exact ascending and descending score sequences on both dialects. Response
+  bodies are included in assertion failures so server errors are visible.
+- `test_startup_and_new_connection_smoke` starts the application in two fresh
+  Python interpreters against the same disposable SQLite file. Each interpreter
+  opens a database connection, verifies `PRAGMA foreign_keys=ON`, calls
+  `jobgrid_numeric`, and confirms `GET /health` returns
+  `{"status":"ok"}`. This proves registration is not accidentally limited to
+  the first process or first pooled connection.
+- `test_release_requires_real_postgres_result` requires the ordinary backend
+  test engine to be PostgreSQL, requires the isolated schema URL to remain a
+  different PostgreSQL database, and reads `SHOW server_version_num` to prove
+  the release run actually used PostgreSQL 16.
+
+A developer running only SQLite can exercise the SQLite tests, but the
+dual-dialect/release assertions may skip because PostgreSQL is absent. That
+local skip is deliberately not counted as release evidence. In mandatory CI the
+ordinary backend database is PostgreSQL 16, so a non-PostgreSQL result is a
+failure rather than a silent substitute.
+
+Focused local SQLite verification:
+
+```sh
+cd backend
+DATABASE_URL=sqlite:////tmp/jobgrid-r6.sqlite3 \
+TEST_AUTH=true \
+SECRET_KEY=jg020-local-test-secret \
+FRONTEND_URL=http://localhost:5173 \
+python -m pytest tests/test_numeric_sort.py tests/test_database_dialects.py -q
+```
+
+Release-capable PostgreSQL verification:
+
+```sh
+cd backend
+DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/jobgrid_test \
+TEST_DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/jobgrid_schema_test \
+TEST_AUTH=true \
+SECRET_KEY=jg020-postgres-test-secret \
+FRONTEND_URL=http://localhost:5173 \
+ENVIRONMENT=test \
+python -m pytest \
+  tests/test_numeric_sort.py \
+  tests/test_database_dialects.py \
+  tests/test_schema_parity.py -q
+```
+
+The schema-test account must be allowed to create/drop only the explicitly named
+disposable test database. Never use production, staging, or the ordinary test
+database as `TEST_DATABASE_URL`.
+
+### Browser acceptance
+
+`frontend/tests/numeric-sort.spec.ts` uploads the same eight-value fixture
+through the authenticated API. It opens the Dashboard with a URL-backed
+`resume_match_score` ascending sort, asserts the exact rendered score order,
+reloads and asserts the same order again, then clicks the Resume Score table
+header and requires the resulting `GET /rows` response to be HTTP 200 before
+asserting the exact descending order. The test also fails on browser page
+errors.
+
+Run it with the authenticated backend already running against PostgreSQL 16:
+
+```sh
+cd frontend
+npm run test:e2e -- tests/numeric-sort.spec.ts --project=chromium
+```
+
+The full GitHub Actions Playwright job remains the integration source of truth
+because it starts the backend on PostgreSQL 16 before running the browser suite.
+
+### Release evidence and failure handling
+
+For R6, the following are separate facts and must stay separate in release
+notes:
+
+1. A SQLite focused run proves local functional compatibility.
+2. A PostgreSQL 16 backend run proves the deployment-dialect numeric path.
+3. The isolated schema test proves a fresh PostgreSQL migration reaches the
+   current Alembic head and matches ORM metadata.
+4. The Playwright run proves the Dashboard requests and renders the exact
+   numeric order through the PostgreSQL-backed API.
+5. Full repository CI proves the R6 changes did not regress the preserved
+   application-memory, filtering/export, and top-five tab-opening contracts.
+
+If either dialect API call fails, the backend regression reports the HTTP status
+and response body. If the fresh-process startup probe fails, its captured stdout
+and stderr are included. Do not convert either failure into a skip.
+
+### Rollback and migration limitations
+
+JG-020 itself changes tests and documentation only. It has no migration and
+performs no persisted-data rewrite.
+
+R6 functional sorting can be rolled back at the application-code layer while
+preserving stored source text and existing user data. Historical Alembic
+revisions contain PostgreSQL-specific types such as JSONB, so SQLite migration
+acceptance is intentionally unsupported. Do not rewrite historical migrations
+to make SQLite pass, and never downgrade a production database merely to satisfy
+this verification gate.
+
+An external production deployment remains separate evidence. A passing local or
+CI run does not claim that production was deployed or manually smoke-tested.
 
