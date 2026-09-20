@@ -1325,3 +1325,95 @@ Repository CI remains the integration gate for PostgreSQL backend tests, backend
 JG-018 is a code-only read-path change. Rollback removes the shared expression and restores the previous query helpers. There is no migration to downgrade and no numeric source data to restore.
 
 Do not describe R6 as complete after JG-018 alone. JG-019 still owns fresh-PostgreSQL migration/schema parity proof and JG-020 owns the integrated R6 acceptance boundary.
+
+## JG-019 database engine configuration and schema acceptance
+
+JG-019 makes the database test boundary explicit. It does not add or change a
+database migration and it does not rewrite persisted data.
+
+### Shared engine configuration
+
+`backend/app/database.py` exposes `create_jobgrid_engine()`. The application
+engine and test-created engines use this helper so connection-level behavior is
+not limited to the first application connection.
+
+For SQLite connections the helper:
+
+- keeps the JG-018 deterministic `jobgrid_numeric(value)` registration active
+  on every SQLAlchemy engine connection;
+- enables `PRAGMA foreign_keys=ON` so local constraint behavior does not
+  silently ignore relationships that PostgreSQL enforces.
+
+The normal `SessionLocal` used by request handlers, cleanup jobs, and the
+lifecycle backfill remains bound to the configured application engine. There is
+no separate background database engine to configure.
+
+### Disposable SQLite acceptance fixtures
+
+The ordinary local test default no longer relies on a repository-level
+`test.db` file. Pytest creates a temporary suite database when no explicit
+database URL is supplied.
+
+JG-019's SQLite acceptance fixture creates a separate test-named database under
+Pytest's temporary directory for each test. The fixture is used to prove that a
+fresh connection can call `jobgrid_numeric` and that an invalid foreign-key
+write raises an integrity error. Temporary files are disposed with the test and
+are never production data.
+
+### Fresh PostgreSQL schema acceptance
+
+PostgreSQL migration acceptance uses `TEST_DATABASE_URL`, not the ordinary
+`DATABASE_URL`. The two URLs must identify different databases. The target
+database name must clearly be a disposable test database.
+
+The PostgreSQL-marked fixture:
+
+1. connects to the same server's administrative `postgres` database;
+2. drops and recreates only the database named by `TEST_DATABASE_URL`;
+3. runs `alembic upgrade head` against that empty database;
+4. uses SQLAlchemy inspection to compare migrated tables, column nullability,
+   indexes, unique constraints, foreign keys, and declared delete behavior with
+   `Base.metadata`;
+5. runs `alembic upgrade head` again and verifies the schema fingerprint and
+   Alembic revision do not change;
+6. disposes connections and removes the disposable database after the module.
+
+A local run without `TEST_DATABASE_URL` skips the PostgreSQL-only tests and the
+skip is **not** schema-acceptance evidence. In CI, a missing
+`TEST_DATABASE_URL` is a hard test failure. The backend GitHub Actions job
+supplies a dedicated `jobgrid_schema_test` database URL while regular backend
+tests continue using `jobgrid_test`.
+
+### Verification
+
+Focused checks:
+
+```sh
+cd backend
+python -m pytest tests/test_database_dialects.py -q
+
+TEST_DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/jobgrid_schema_test \
+  python -m pytest tests/test_schema_parity.py -q
+
+python -m compileall app
+```
+
+The PostgreSQL account used by the schema test must be allowed to create and
+drop the named disposable test database. Do not point
+`TEST_DATABASE_URL` at production, staging, or the regular test database.
+
+Repository CI remains the integration gate for the complete PostgreSQL backend
+suite, backend compilation, the frontend production build, and Playwright
+Chromium regressions.
+
+### Rollback and R6 boundary
+
+JG-019 is configuration-and-verification work only. Rollback reverts the shared
+engine helper, test fixtures, schema checks, and CI test URL. There is no
+migration to downgrade and no application data to restore.
+
+SQLite remains a supported functional local runtime, but historical
+PostgreSQL-specific Alembic migrations are not redefined as SQLite-portable.
+Fresh migration/schema acceptance is PostgreSQL-only. JG-020 still owns the
+integrated R6 acceptance boundary.
+
