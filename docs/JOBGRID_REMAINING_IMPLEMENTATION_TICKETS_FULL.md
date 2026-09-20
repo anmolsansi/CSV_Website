@@ -171,7 +171,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 **R7 — Repair CI and establish the production release gate**
 
 - [x] [JG-021 — Correct CI paths readiness and PostgreSQL test composition](#jg-021)
-- [ ] [JG-022 — Add fail-fast production configuration checks](#jg-022)
+- [x] [JG-022 — Add fail-fast production configuration checks](#jg-022)
 - [ ] [JG-023 — Promote audit reproductions into enforced release regressions](#jg-023)
 - [ ] [JG-024 — Run staging login delivery restore and rollback acceptance](#jg-024)
 
@@ -5199,7 +5199,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-022"></a>
 ### JG-022 — Add fail-fast production configuration checks
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P1 release gate  
 **Type:** API/service  
 **Execution position:** 22/64; group step 2/4
@@ -5381,13 +5381,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-022 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: production_test_auth_rejected_before_serving
-- [ ] Required regression passes: default_or_empty_key_rejected
-- [ ] Required regression passes: https_and_cors_validation
-- [ ] Required regression passes: test_environment_dev_login_preserved
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-022 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: production_test_auth_rejected_before_serving
+- [x] Required regression passes: default_or_empty_key_rejected
+- [x] Required regression passes: https_and_cors_validation
+- [x] Required regression passes: test_environment_dev_login_preserved
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -5405,12 +5405,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -5419,11 +5419,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-021` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #88; implementation PR: #89.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-021 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** GitHub issue #88 tracked the work. Implementation PR #89 passed CI run #172 and merged to `main` at `71d025ac50a53ada610ca144575cb2695a0ff638`. Production configuration now fails before database initialization, migrations, route registration, or maintenance startup when `TEST_AUTH=true`, the signing secret is empty/default/short, public frontend or OAuth bases are not HTTPS, or the production CORS allowlist is missing or unsafe. Production no longer registers `/auth/dev-login`; development/test retain the existing `TEST_AUTH`-gated route. Server-controlled cookie policy applies `Secure` and `SameSite=None` in production while preserving localhost-compatible development/test behavior. The required JG-022 regressions passed as part of **315 PostgreSQL backend tests**; backend compilation and the frontend production build also passed. The browser gate collected **134 tests in 18 files** before all **134 Chromium tests passed**. No schema migration, persisted-data rewrite, production deployment, real provider OAuth, SMTP delivery, or staging acceptance was introduced. Those external R7 gates remain separate. JG-023 is the next ordered R7 ticket.
 
 ---
 
