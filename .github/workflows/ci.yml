@@ -126,7 +126,8 @@ jobs:
           set -euo pipefail
           mkdir -p ci-artifacts
           {
-            echo "commit_sha=${GITHUB_SHA}"
+            echo "source_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_sha=${GITHUB_SHA}"
             echo "node=$(node --version)"
             echo "npm=$(npm --version)"
             echo "playwright=$(npx playwright --version)"
@@ -275,7 +276,8 @@ jobs:
             exit 1
           fi
           {
-            echo "commit_sha=${GITHUB_SHA}"
+            echo "source_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_sha=${GITHUB_SHA}"
             echo "migration_revision=$MIGRATION_REVISION"
             echo "python=$(python --version 2>&1)"
             echo "pip=$(python -m pip --version)"
