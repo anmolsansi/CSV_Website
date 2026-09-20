@@ -371,6 +371,11 @@ def test_batch_size_over_500_is_rejected_with_failure_result(db_session):
 
 def test_worker_persists_success_health(db_session, monkeypatch):
     now = datetime(2026, 9, 20, 12, 0, 0)
+    db_session.query(User).update(
+        {User.retention_days: None},
+        synchronize_session=False,
+    )
+    db_session.commit()
     user = _create_user(db_session, retention_days=30)
     _create_row(db_session, user, clicked_at=now - timedelta(days=31))
     db_session.query(MaintenanceStatus).delete()
