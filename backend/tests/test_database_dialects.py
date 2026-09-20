@@ -22,6 +22,24 @@ ASCENDING_VALUES = ["-3", "2", "10", "85%", "$99.50", "1,000", "invalid", ""]
 DESCENDING_VALUES = ["1,000", "$99.50", "85%", "10", "2", "-3", "invalid", ""]
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+CI_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
+PLAYWRIGHT_CONFIG_PATH = REPOSITORY_ROOT / "frontend" / "playwright.config.ts"
+
+
+def _ci_workflow_text():
+    text = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert text.strip(), "CI workflow must not be empty"
+    return text
+
+
+def _workflow_step(text, step_name):
+    marker = f"      - name: {step_name}"
+    start = text.index(marker)
+    end = text.find("\n      - ", start + len(marker))
+    return text[start:] if end == -1 else text[start:end]
+
+
 def _seed_numeric_rows(engine, marker):
     Session = sessionmaker(bind=engine)
     db = Session()
@@ -244,3 +262,70 @@ def test_release_requires_real_postgres_result(engine, postgres_test_url):
         "R6 release acceptance is approved for PostgreSQL 16; "
         f"observed server_version_num={server_version_num}"
     )
+
+
+
+def test_workflow_command_resolves_backend_directory():
+    workflow = _ci_workflow_text()
+    start_step = _workflow_step(workflow, "Start migrated backend server")
+
+    assert "working-directory: ${{ github.workspace }}/backend" in start_step
+    assert "python -m alembic upgrade head" in start_step
+    assert "python -m uvicorn app.main:app" in start_step
+    assert "cd ../backend" not in workflow
+
+
+def test_health_timeout_fails_job():
+    start_step = _workflow_step(
+        _ci_workflow_text(), "Start migrated backend server"
+    )
+
+    assert "for attempt in $(seq 1 60)" in start_step
+    assert "curl -fsS http://localhost:8000/health" in start_step
+    assert 'kill -0 "$BACKEND_PID"' in start_step
+    assert 'if [ "$READY" -ne 1 ]' in start_step
+    assert "backend-server.log" in start_step
+    assert "postgresql" in start_step and "***:***@" in start_step
+    assert "exit 1" in start_step
+    assert "sleep 5" not in start_step
+
+
+def test_postgres_suite_and_browser_suite_run():
+    workflow = _ci_workflow_text()
+    playwright_config = PLAYWRIGHT_CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert workflow.count("image: postgres:16") >= 2
+    assert "DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_test" in workflow
+    assert "TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_schema_test" in workflow
+    assert "DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_test" in workflow
+    assert "TEST_DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_schema_test" in workflow
+    assert "- name: Run pytest" in workflow
+    assert "- name: Run E2E tests" in workflow
+    assert "npx playwright test --project=chromium" in workflow
+    assert "dependencies: ['setup']" in playwright_config
+
+
+def test_zero_tests_or_failed_setup_is_not_success():
+    workflow = _ci_workflow_text()
+    backend_collection = _workflow_step(
+        workflow, "Verify backend test collection is nonempty"
+    )
+    browser_collection = _workflow_step(
+        workflow, "Verify browser test collection is nonempty"
+    )
+    e2e_step = _workflow_step(workflow, "Run E2E tests")
+    playwright_config = PLAYWRIGHT_CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "pytest tests/ --collect-only -q" in backend_collection
+    assert "set -euo pipefail" in backend_collection
+    assert "|| true" not in backend_collection
+
+    assert "playwright test --list --project=chromium" in browser_collection
+    assert "Total: [1-9][0-9]* tests?" in browser_collection
+    assert "exit 1" in browser_collection
+    assert "|| true" not in browser_collection
+
+    assert "npx playwright test --project=chromium" in e2e_step
+    assert "dependencies: ['setup']" in playwright_config
+    assert "ENVIRONMENT: production" not in workflow
+    assert "${{ secrets." not in workflow
