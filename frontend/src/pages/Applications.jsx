@@ -67,6 +67,7 @@ export default function Applications() {
   const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
   const [drafts, setDrafts] = useState({})
   const [fieldErrors, setFieldErrors] = useState({})
+  const [focusTarget, setFocusTarget] = useState(null)
   const [pendingRows, setPendingRows] = useState(new Set())
   const [bulkPending, setBulkPending] = useState(false)
   const pendingMutationRef = useRef(new Set())
@@ -93,6 +94,14 @@ export default function Applications() {
   useEffect(() => {
     refresh()
   }, [])
+
+  useEffect(() => {
+    if (!focusTarget || pendingRows.has(focusTarget.itemId)) return
+    const node = fieldRefs.current[`${focusTarget.itemId}:${focusTarget.field}`]
+    if (!node) return
+    node.focus()
+    setFocusTarget(null)
+  }, [focusTarget, pendingRows, fieldErrors])
 
   const updateFilter = (key, value) => {
     const nextFilters = { ...filters, [key]: value }
@@ -154,12 +163,6 @@ export default function Applications() {
     })
   }
 
-  const focusFirstInvalidField = (itemId, formatted) => {
-    const target = formatted.fields.find((item) => item.field && item.field !== 'non_field')
-    if (!target) return
-    requestAnimationFrame(() => fieldRefs.current[draftKey(itemId, target.field)]?.focus())
-  }
-
   const updateApp = async (itemId, payload, { draftFields = Object.keys(payload) } = {}) => {
     if (pendingMutationRef.current.has(itemId)) return null
 
@@ -183,7 +186,8 @@ export default function Applications() {
     } catch (error) {
       const formatted = formatApiError(error, 'Could not save this application. Correct the highlighted fields and retry.')
       setFieldErrors((prev) => ({ ...prev, [itemId]: apiFieldErrors(error, formatted.message) }))
-      focusFirstInvalidField(itemId, formatted)
+      const firstInvalid = formatted.fields.find((item) => item.field && item.field !== 'non_field')
+      if (firstInvalid) setFocusTarget({ itemId, field: firstInvalid.field })
       toast(formatted.message, 'error')
       return null
     } finally {
