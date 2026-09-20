@@ -272,3 +272,79 @@ def require_owned_bulk_ids(
             status_code=404,
         )
     return normalized.ids
+
+
+def format_error_detail(
+    detail: Any,
+    *,
+    default_code: str = "validation_error",
+) -> dict[str, Any]:
+    """Normalize legacy/new error details without serializing unknown payloads."""
+    if isinstance(detail, Mapping):
+        code = detail.get("code")
+        if not isinstance(code, str) or not code:
+            code = default_code
+
+        fields = detail.get("fields")
+        if isinstance(fields, list):
+            normalized_fields = _normalize_field_list(fields)
+            if normalized_fields:
+                return {"code": code, "fields": normalized_fields}
+
+        legacy_detail = detail.get("detail")
+        if isinstance(legacy_detail, str):
+            return {
+                "code": code,
+                "fields": [{"field": "__root__", "message": legacy_detail}],
+            }
+
+        legacy_message = detail.get("message")
+        if isinstance(legacy_message, str):
+            return {
+                "code": code,
+                "fields": [{"field": "__root__", "message": legacy_message}],
+            }
+
+        legacy_fields = [
+            {"field": str(key), "message": value}
+            for key, value in detail.items()
+            if key not in {"code", "fields", "detail", "message"}
+            and isinstance(value, str)
+        ]
+        if legacy_fields:
+            return {"code": code, "fields": legacy_fields}
+
+        return _generic_error_detail(code)
+
+    if isinstance(detail, list):
+        normalized_fields = _normalize_field_list(detail)
+        if normalized_fields:
+            return {"code": default_code, "fields": normalized_fields}
+        return _generic_error_detail(default_code)
+
+    if isinstance(detail, str):
+        return {
+            "code": default_code,
+            "fields": [{"field": "__root__", "message": detail}],
+        }
+
+    return _generic_error_detail(default_code)
+
+
+def _normalize_field_list(fields: list[Any]) -> list[dict[str, str]]:
+    normalized = []
+    for entry in fields:
+        if not isinstance(entry, Mapping):
+            continue
+        field = entry.get("field")
+        message = entry.get("message")
+        if isinstance(field, str) and field and isinstance(message, str) and message:
+            normalized.append({"field": field, "message": message})
+    return normalized
+
+
+def _generic_error_detail(code: str) -> dict[str, Any]:
+    return {
+        "code": code,
+        "fields": [{"field": "__root__", "message": "Validation failed."}],
+    }
