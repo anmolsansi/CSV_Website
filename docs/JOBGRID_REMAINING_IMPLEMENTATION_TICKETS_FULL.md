@@ -922,7 +922,7 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 - [ ] Required regression passes: test_merge_preserves_newer_destination: no existing note/status is overwritten
 - [ ] Required regression passes: test_wrong_account_and_reference_injection: no foreign IDs attached
 - [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
-- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -3514,7 +3514,7 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 - [x] Required regression passes: preview_has_no_side_effect
 - [x] Required regression passes: failed_health_does_not_look_healthy
 - [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
