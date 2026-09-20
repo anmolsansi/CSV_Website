@@ -42,6 +42,14 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_test
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_schema_test
+      TEST_AUTH: "true"
+      SECRET_KEY: jg021-ci-e2e-test-secret-not-production
+      FRONTEND_URL: http://localhost:5173
+      ENVIRONMENT: test
+      RUN_MAINTENANCE_JOBS: "false"
     defaults:
       run:
         working-directory: frontend
@@ -64,22 +72,91 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: pip install -r backend/requirements.txt
 
-      - name: Start backend server
-        working-directory: backend
+      - name: Start migrated backend server
+        working-directory: ${{ github.workspace }}/backend
+        shell: bash
         run: |
-          DATABASE_URL="postgresql+psycopg2://postgres:postgres@localhost:5432/jobgrid_test" \
-          TEST_AUTH=true \
-          SECRET_KEY=test-secret-ci \
-          FRONTEND_URL=http://localhost:5173 \
-          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
-          curl -sf http://localhost:8000/health || exit 1
+          set -euo pipefail
+          mkdir -p ci-artifacts
+
+          sanitize_log() {
+            sed -E               -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g'               -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g'
+          }
+
+          if ! python -m alembic upgrade head > /tmp/jobgrid-alembic.log 2>&1; then
+            sanitize_log < /tmp/jobgrid-alembic.log > ci-artifacts/alembic.log
+            cat ci-artifacts/alembic.log
+            exit 1
+          fi
+
+          MIGRATION_REVISION="$(python -m alembic current 2>/dev/null | sed -nE 's/^([0-9A-Za-z_-]+).*/\1/p' | head -n 1)"
+          if [ -z "$MIGRATION_REVISION" ]; then
+            echo "Unable to determine the applied Alembic revision."
+            exit 1
+          fi
+          echo "Migration revision: $MIGRATION_REVISION"
+
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/jobgrid-backend.log 2>&1 &
+          BACKEND_PID=$!
+          READY=0
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/health > /dev/null; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$READY" -ne 1 ]; then
+            sanitize_log < /tmp/jobgrid-backend.log > ci-artifacts/backend-server.log
+            cat ci-artifacts/backend-server.log
+            exit 1
+          fi
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
+      - name: Verify browser test collection is nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          COLLECTION_OUTPUT="$(npx playwright test --list --project=chromium)"
+          printf '%s\n' "$COLLECTION_OUTPUT" | tee ci-artifacts/playwright-collection.txt
+          if ! printf '%s\n' "$COLLECTION_OUTPUT" | grep -Eq 'Total: [1-9][0-9]* tests? in [1-9][0-9]* files?'; then
+            echo "Playwright collection is empty or could not be verified."
+            exit 1
+          fi
+
       - name: Run E2E tests
         run: npx playwright test --project=chromium
+
+      - name: Sanitize backend logs on failure
+        if: failure()
+        working-directory: ${{ github.workspace }}/backend
+        shell: bash
+        run: |
+          mkdir -p ci-artifacts
+          if [ -f /tmp/jobgrid-backend.log ]; then
+            sed -E               -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g'               -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g'               /tmp/jobgrid-backend.log > ci-artifacts/backend-server.log
+          fi
+
+      - name: Upload E2E failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            backend/ci-artifacts/
+            frontend/ci-artifacts/
+            frontend/playwright-report/
+            frontend/test-results/
 
   backend:
     name: Backend Compile Check
@@ -116,6 +193,14 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_test
+      TEST_DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_schema_test
+      TEST_AUTH: "true"
+      SECRET_KEY: jg021-ci-backend-test-secret-not-production
+      FRONTEND_URL: http://localhost:5173
+      ENVIRONMENT: test
+      RUN_MAINTENANCE_JOBS: "false"
     defaults:
       run:
         working-directory: backend
@@ -130,12 +215,21 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Verify backend test collection is nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          pytest tests/ --collect-only -q | tee ci-artifacts/pytest-collection.txt
+
       - name: Run pytest
-        run: pytest tests/ -v --tb=short
-        env:
-          DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_test
-          TEST_DATABASE_URL: postgresql+psycopg2://testuser:testpass@localhost:5432/jobgrid_schema_test
-          TEST_AUTH: "true"
-          SECRET_KEY: test-secret-key-for-ci
-          FRONTEND_URL: http://localhost:5173
-          ENVIRONMENT: test
+        run: pytest tests/ -v --tb=short --junitxml=ci-artifacts/pytest.xml
+
+      - name: Upload backend failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-failure-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: backend/ci-artifacts/
