@@ -398,6 +398,20 @@ class UserGoal(Base):
     applypilot_per_day = Column(Integer, default=5)
 
 
+class MaintenanceStatus(Base):
+    """Durable aggregate health for cross-process maintenance workers."""
+
+    __tablename__ = "maintenance_status"
+
+    job_name = Column(String(100), primary_key=True)
+    outcome = Column(String(32), nullable=False)
+    last_attempted_at = Column(DateTime, nullable=False)
+    last_successful_at = Column(DateTime, nullable=True)
+    last_failed_at = Column(DateTime, nullable=True)
+    result_json = Column(JSON, default=dict, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class BackupImportMap(Base):
     """Stable mapping from a portable backup reference to a destination row."""
 
