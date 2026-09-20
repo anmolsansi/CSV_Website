@@ -1182,3 +1182,76 @@ JG-016 has no migration. Rollback is an application-code rollback only and must 
 If compatibility requires temporarily backing out writer enforcement, revert the JG-016 route/service adoption while retaining JG-015 validation helpers and all persisted lifecycle history. The strict JG-001 backup parser remains the authoritative restore boundary.
 
 R5 is still not fully released after JG-016 alone. JG-017 owns visible frontend field-error rendering and asynchronous import feedback before the complete R5 group acceptance fixture is closed.
+
+## JG-017 frontend validation feedback and external import lifecycle
+
+JG-017 completes the R5 interface boundary. It does not add a database migration or change the JG-016 writer contract. The frontend now renders the validation information already returned by the backend, preserves unsaved user input after rejected mutations, and keeps import busy state aligned with the real asynchronous work.
+
+### Shared frontend error contract
+
+`frontend/src/api/client.js` exports `formatApiError()` and `apiFieldErrors()`. The formatter accepts the JG-016 normalized envelope:
+
+```json
+{
+  "detail": {
+    "code": "validation_error",
+    "fields": [
+      {"field": "applied_at", "message": "Applied date cannot be cleared while status remains applied."}
+    ]
+  }
+}
+```
+
+It also accepts legacy string details and string-valued detail objects while the older callers remain in service. Unknown response shapes use a bounded generic message instead of reflecting request payloads or nested server data. Network failures use a retryable network message. Authentication redirects remain owned by the existing Axios response interceptor.
+
+### Applications editing behavior
+
+`frontend/src/pages/Applications.jsx` separates editable drafts from the last persisted server row for company, status, application date, follow-up date, and notes.
+
+- Company, application date, and follow-up date submit on blur or Enter.
+- Notes submit on blur so Enter remains available for multiline text.
+- Status keeps the existing immediate-selection behavior.
+- A row has at most one application mutation in flight. Its editing controls and Mark applied action are disabled until that request settles.
+- Bulk Mark applied also has an explicit pending guard.
+- Failed validation keeps the draft visible, renders the backend field message beside the matching control, and returns focus to the first invalid field.
+- A successful mutation first uses the returned server record and then refreshes the application query so the screen is reconciled with persisted values.
+- Application and follow-up dates are not written merely because the table rendered. A request is sent only after the user explicitly changes the date or uses a quick action.
+
+The backend remains authoritative for invariants such as refusing to clear `applied_at` while the resulting status is still `applied`.
+
+### External JSON import behavior
+
+`frontend/src/pages/ImportExternal.jsx` no longer nests asynchronous work inside `FileReader.onload`. Selecting a file now performs one guarded `await file.text()` parse flow. Importing performs exactly one awaited `POST /crm/import/external` call inside its own `try/catch/finally`.
+
+Changing the selected file immediately clears the prior preview, parsed records, success result, and error state. A stale slower file read cannot overwrite a newer selection. Invalid JSON or an unsupported top-level shape leaves Import disabled.
+
+A valid file keeps the complete parsed record array separately from the visible preview. The screen therefore reports, for example, `Preview (10 of 25 rows)` while displaying only ten rows. A valid empty file is shown as an empty result and cannot be submitted.
+
+During an import request the button displays `Importing...` and remains disabled through the API response. Validation or network failure preserves the selected file and valid preview so the user can correct or retry without reselecting the file. Only a confirmed server response displays the imported `created` count.
+
+### Verification
+
+Focused frontend checks:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/application-validation.spec.ts --project=chromium
+```
+
+`frontend/tests/application-validation.spec.ts` verifies:
+
+- clearing an applied application's date with Enter shows the `applied_at` field error, preserves the draft, focuses the invalid control, and leaves the persisted date unchanged after reload;
+- file-read and network failures are recoverable and do not create an unhandled page error;
+- the Import button stays disabled while the request is pending;
+- a 25-row file reports a 10-of-25 preview, and replacing it with invalid JSON clears the stale preview and disables Import;
+- a company draft can submit with Enter and remains persisted after the server refresh and page reload.
+
+Repository CI remains the integration gate for the PostgreSQL backend suite, backend compilation, production frontend build, and complete Playwright Chromium regression set.
+
+### Rollback and R5 completion boundary
+
+JG-017 changes frontend application code and tests only. No migration, data rewrite, or new durable state is introduced. Rollback can revert the JG-017 frontend/error-formatting commits while retaining JG-015 validation helpers, JG-016 writer enforcement, and all existing application/lifecycle data.
+
+After the JG-017 focused fixture and repository CI pass, the R5 implementation group is locally complete. JG-018 is the next ordered roadmap item. External production release proof remains separate from local implementation status.
+
