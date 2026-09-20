@@ -23,6 +23,52 @@ client.interceptors.response.use(
   }
 )
 
+export function formatApiError(error, fallback = 'Request failed. Please retry.') {
+  const detail = error?.response?.data?.detail
+  const status = error?.response?.status
+  const code = typeof detail?.code === 'string'
+    ? detail.code
+    : status
+      ? 'request_failed'
+      : 'network_error'
+
+  let fields = []
+  if (Array.isArray(detail?.fields)) {
+    fields = detail.fields
+      .filter((item) => item && typeof item.message === 'string')
+      .map((item) => ({
+        field: typeof item.field === 'string' && item.field ? item.field : 'non_field',
+        message: item.message,
+      }))
+  } else if (typeof detail === 'string' && detail) {
+    fields = [{ field: 'non_field', message: detail }]
+  } else if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    fields = Object.entries(detail)
+      .filter(([key, value]) => key !== 'code' && typeof value === 'string' && value)
+      .map(([field, message]) => ({ field, message }))
+  }
+
+  if (fields.length === 0) {
+    fields = [{
+      field: 'non_field',
+      message: status ? fallback : 'Network error. Please retry.',
+    }]
+  }
+
+  return {
+    code,
+    fields,
+    message: fields[0].message,
+  }
+}
+
+export function apiFieldErrors(error, fallback) {
+  return formatApiError(error, fallback).fields.reduce((acc, item) => {
+    if (!acc[item.field]) acc[item.field] = item.message
+    return acc
+  }, {})
+}
+
 function todayWindowParams() {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
