@@ -7,6 +7,7 @@ import CsvUpload from '../components/CsvUpload'
 import DataTable from '../components/DataTable'
 import RowDrawer from '../components/RowDrawer'
 import BackupRestore from '../components/BackupRestore'
+import RetentionSettings from '../components/RetentionSettings'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
 const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false }
@@ -610,6 +611,8 @@ export default function Dashboard() {
             <strong>{stats.greenToday}</strong>
           </div>
         </div>
+
+        <RetentionSettings />
 
         <div className="export-bar">
           <label>Export</label>
