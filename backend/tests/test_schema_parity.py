@@ -188,14 +188,21 @@ def _metadata_indexes(table):
 
 
 def _actual_indexes(inspector, table_name):
-    return {
-        (
-            tuple(index.get("column_names") or ()),
-            bool(index.get("unique")),
-        )
-        for index in inspector.get_indexes(table_name)
-        if not index.get("duplicates_constraint")
-    }
+    unique_columns = _actual_unique_constraints(inspector, table_name)
+    signatures = set()
+
+    for index in inspector.get_indexes(table_name):
+        columns = tuple(index.get("column_names") or ())
+        is_unique = bool(index.get("unique"))
+
+        # PostgreSQL may expose the physical index that backs a UNIQUE
+        # constraint without setting duplicates_constraint. The constraint is
+        # compared separately below, so do not count its backing index twice.
+        if is_unique and columns in unique_columns:
+            continue
+        signatures.add((columns, is_unique))
+
+    return signatures
 
 
 def _metadata_unique_constraints(table):
