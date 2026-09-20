@@ -757,9 +757,9 @@ The new runtime controls are:
 
 All default to disabled. `DELETE_AFTER_DAYS` is deprecated compatibility configuration and is **not** mapped into the new controls.
 
-The old cleanup implementation mixed implicit archive with hard deletion and depended on a nonexistent row-update timestamp. JG-012 replaces that function with a non-destructive compatibility shim and prevents the scheduler from registering maintenance jobs unless `RUN_MAINTENANCE_JOBS=true`. The shim still performs no archive or purge. JG-013 owns the bounded observable archive worker that will eventually use the explicit retention contract.
+The old cleanup implementation mixed implicit archive with hard deletion and depended on a nonexistent row-update timestamp. JG-012 retired that unsafe behavior and made scheduler registration opt-in. JG-013 now supplies the bounded automatic archive worker described below. The worker uses the authenticated account's persisted retention policy and never maps `DELETE_AFTER_DAYS` or `AUTO_ARCHIVE_AFTER_DAYS` into an account policy.
 
-Permanent purge remains disabled and is not implemented by JG-012.
+Permanent purge remains disabled and is not implemented by JG-012 or JG-013.
 
 ### Backup contract
 
@@ -794,3 +794,90 @@ Disable maintenance registration first. JG-012 already defaults it off.
 Application rollback can leave `archived_at` and `retention_days` in place safely. Do not downgrade revision 006 after users have meaningful retention values without exporting them first. Never convert `archived_at=NULL` legacy rows into purge candidates during rollback.
 
 JG-013 may change maintenance execution, but it must preserve these storage and compatibility rules.
+
+
+## JG-013 bounded observable automatic archive
+
+JG-013 replaces the JG-012 compatibility shim with a bounded, observable archive worker. It is a service/maintenance change only. It adds no database migration, public API, settings UI, permanent-delete path, or production activation.
+
+### Eligibility and transaction boundary
+
+`backend/app/services/retention.py` owns the archive selection and mutation contract. One row is eligible only when all of these are true:
+
+- the owning `User.retention_days` is an enabled value from 7 through 3650;
+- `CsvRow.clicked_at` is known and is at or before `now - retention_days`;
+- `CsvRow.archived` is still false.
+
+An old `created_at` value is not visit evidence. Accounts with `retention_days=NULL`, `0`, or an invalid persisted value are treated as disabled. The deprecated `DELETE_AFTER_DAYS` value is never consulted. `AUTO_ARCHIVE_AFTER_DAYS=0` is also a global operator kill switch: the scheduled/manual worker returns disabled before opening a maintenance session. A positive value permits the worker to run but does not override or replace the account's persisted retention threshold.
+
+Candidates are ordered by `CsvRow.id` and limited to 500 per invocation. PostgreSQL candidate reads use `FOR UPDATE SKIP LOCKED`. The write repeats the `archived=false` predicate before atomically setting `archived=true` and `archived_at=<run UTC time>`. This keeps retries safe if another transaction changed a selected row. One run commits one bounded batch. A second run resumes with the next eligible IDs. Re-running after the batch is exhausted reports zero new archives and never resets an existing archive timestamp.
+
+The automatic worker contains no hard-delete code. Existing legacy archived rows with `archived_at=NULL` remain untouched, and permanent purge remains reserved for the later recoverable-archive work.
+
+### Locking and scheduler behavior
+
+`backend/app/jobs.py` retains the historical `cleanup_clicked_rows` function name for scheduler compatibility, but its behavior is now the JG-013 archive job.
+
+Every invocation first attempts a non-blocking in-process lock. On PostgreSQL it then holds a dedicated session-level advisory lock for the complete service call. The advisory lock prevents two designated maintenance processes from running the archive batch at the same time, while `FOR UPDATE SKIP LOCKED` and the conditional archive update provide an additional row-level safety boundary. A contending invocation does not wait and does not report ordinary zero work. It returns a structured skipped result and logs `outcome=skipped reason=lock_contended`.
+
+SQLite remains a local/test mode. It uses the in-process guard plus SQLite's serialized write behavior; multi-process maintenance deployment is not supported there. Production multi-process exclusion relies on PostgreSQL plus the designated-maintenance-process deployment rule.
+
+The FastAPI lifespan still registers maintenance only when:
+
+```text
+RUN_MAINTENANCE_JOBS=true
+```
+
+The default remains `false`. Registration itself has an in-process guard, and the APScheduler job uses `coalesce=True` and `max_instances=1`. Even in a designated process, `AUTO_ARCHIVE_AFTER_DAYS=0` keeps automatic archive inert. Generic web workers therefore remain inactive unless a deployment explicitly designates one process to run maintenance.
+
+### Result and failure contract
+
+Every completed or skipped invocation returns exactly these aggregate fields:
+
+```json
+{
+  "scanned": 0,
+  "archived": 0,
+  "skipped": 0,
+  "failed": 0,
+  "duration_ms": 0
+}
+```
+
+For a normal batch, `scanned` is the selected candidate count, `archived` is the successful first-transition count, and `skipped` accounts for candidates that ceased to be eligible before the conditional update. For lock contention, `scanned=0` and `skipped=1` marks a skipped invocation so it is distinguishable from a healthy no-work run.
+
+Database/query/update/commit failures roll back the active transaction. They raise `RetentionJobError` with a result whose `failed` value is non-zero. The scheduler therefore observes a failed invocation instead of a false zero-success result. Operational logs contain only the outcome and aggregate counts/timing. They do not include user IDs, job URLs, notes, or imported content.
+
+### Operator controls and recovery
+
+Do not enable maintenance only because JG-013 is deployed. The safe rollout sequence is:
+
+1. deploy the code with `RUN_MAINTENANCE_JOBS=false`;
+2. verify migrations remain at the existing JG-012 head and run the cleanup regression suite on a disposable PostgreSQL database;
+3. configure retention only for accounts that explicitly opted in;
+4. after archive execution is operationally approved, change `AUTO_ARCHIVE_AFTER_DAYS` from `0` to a positive value; this opens the global gate but does not replace account-specific `retention_days`;
+5. designate one maintenance process and set `RUN_MAINTENANCE_JOBS=true` only for that process;
+6. monitor aggregate cleanup outcomes and return `AUTO_ARCHIVE_AFTER_DAYS=0` or `RUN_MAINTENANCE_JOBS=false` immediately if failures or unexpected counts appear.
+
+A deliberate operator can execute one bounded run from the backend environment with:
+
+```sh
+python -c "from app.jobs import cleanup_clicked_rows; print(cleanup_clicked_rows())"
+```
+
+That command can archive eligible rows and must only be run against the intended environment. It never purges data.
+
+Rollback begins by setting `AUTO_ARCHIVE_AFTER_DAYS=0` and `RUN_MAINTENANCE_JOBS=false`, then stopping/restarting the designated process so no new job is registered. Application code can then roll back while retaining `archived_at` and `retention_days`; do not erase archive timestamps or reinterpret unknown legacy timestamps.
+
+### Verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest tests/test_cleanup_job.py -q
+python -m pytest tests/test_archive_timestamps.py tests/test_application_memory.py tests/test_rows.py -q
+python -m compileall app
+```
+
+`test_cleanup_job.py` covers old unvisited rows, disabled policies, the exact retention boundary, 500-row batching/resume, repeat-run timestamp stability, rollback with a non-zero failure signal, overlapping worker suppression, lock release after failure, and PostgreSQL advisory-lock contention/recovery. Repository CI remains the integration gate for the complete PostgreSQL backend suite, backend compilation, frontend production build, and Playwright regressions.
