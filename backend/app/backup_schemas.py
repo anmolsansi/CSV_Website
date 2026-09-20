@@ -388,6 +388,19 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
         **_entries(["user_id"], "reconstructed", "Ownership is always the authenticated destination user."),
         **_entries(["open_per_day", "apply_per_day", "followup_per_day", "applypilot_per_day"], "exported", "Durable goal preferences are portable user data."),
     },
+    "MaintenanceStatus": _entries(
+        [
+            "job_name",
+            "outcome",
+            "last_attempted_at",
+            "last_successful_at",
+            "last_failed_at",
+            "result_json",
+            "updated_at",
+        ],
+        "excluded",
+        "Operational worker health is environment state, not portable user data.",
+    ),
 }
 
 
