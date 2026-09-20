@@ -133,15 +133,19 @@ def maintenance_health(
     now: datetime | None = None,
 ) -> dict:
     """Return safe worker health; missing, failed, and stale state is unavailable."""
+    status = db.get(MaintenanceStatus, ARCHIVE_MAINTENANCE_JOB_NAME)
     if not auto_archive_enabled:
         return {
             "status": "disabled",
-            "last_successful_cleanup_at": None,
-            "last_attempted_cleanup_at": None,
-            "last_outcome": "disabled",
+            "last_successful_cleanup_at": (
+                status.last_successful_at if status is not None else None
+            ),
+            "last_attempted_cleanup_at": (
+                status.last_attempted_at if status is not None else None
+            ),
+            "last_outcome": status.outcome if status is not None else "disabled",
         }
 
-    status = db.get(MaintenanceStatus, ARCHIVE_MAINTENANCE_JOB_NAME)
     if status is None:
         return {
             "status": "unavailable",
