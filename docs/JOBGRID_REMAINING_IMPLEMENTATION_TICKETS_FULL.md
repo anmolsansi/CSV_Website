@@ -4496,7 +4496,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-019"></a>
 ### JG-019 — Register SQLite functions in app and test engines and add real schema checks
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** service/contract  
 **Execution position:** 19/64; group step 2/3
@@ -4578,6 +4578,7 @@ Audit defect 6: score sorting returns 500 on SQLite; Alembic uses PostgreSQL JSO
 | `backend/tests/conftest.py` | EXISTS | Regression fixture and assertions for this ticket |
 | `backend/tests/test_schema_parity.py` | EXISTS | Regression fixture and assertions for this ticket |
 | `backend/tests/test_database_dialects.py` | PROPOSED NEW | Regression fixture and assertions for this ticket |
+| `.github/workflows/ci.yml` | EXISTS | Mandatory isolated PostgreSQL schema-acceptance wiring |
 | `docs/JOBGRID_BUILD_GUIDE.md` | PROPOSED NEW | Implemented behavior, commands and limitations only |
 
 Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. The named proposed build guide is created by JG-001. Shared backup files are included when this ticket evolves persisted data; edit their feature-specific schema/export/restore branches and tests only.
@@ -4675,13 +4676,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-019 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: new_connection_has_function
-- [ ] Required regression passes: foreign_key_fixture_enforced
-- [ ] Required regression passes: fresh_postgres_matches_metadata
-- [ ] Required regression passes: migration_replay_is_noop
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-019 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: new_connection_has_function
+- [x] Required regression passes: foreign_key_fixture_enforced
+- [x] Required regression passes: fresh_postgres_matches_metadata
+- [x] Required regression passes: migration_replay_is_noop
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -4699,12 +4700,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -4713,11 +4714,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-018` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #79; implementation PR: #80.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-018 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** GitHub issue #79 tracked the work. Implementation PR #80 merged to `main` at `09095049b7fd72dc8ff99aeffede69631e965bd8`. Final implementation CI run #159 passed all 288 PostgreSQL backend tests, the backend compile check, the frontend production build, and all 133 Playwright Chromium tests. JG-019 now routes the application and fixture-created SQLite engines through shared connection setup, keeps the JG-018 `jobgrid_numeric(value)` adapter available on new connections, enables SQLite foreign-key enforcement, and uses disposable SQLite acceptance databases instead of a persistent repository-level test file. Mandatory CI supplies an isolated `TEST_DATABASE_URL` distinct from the normal backend test database; PostgreSQL-only schema acceptance fails in CI if that URL is absent and a local skip is explicitly not acceptance evidence. The fresh PostgreSQL check recreates only the named disposable test database, runs `alembic upgrade head`, inspects actual tables, column nullability, ordinary indexes, semantic uniqueness guarantees, foreign keys and declared delete behavior against ORM metadata, then replays `upgrade head` and proves the schema fingerprint and Alembic head remain unchanged. CI attempts #157 and #158 exposed PostgreSQL's existing unique-index representation for `uq_backup_import_map_identity`; the final comparator treats equivalent unique-index/UniqueConstraint representations as the same enforced uniqueness guarantee while still comparing ordinary indexes separately. No migration, model change, persisted-data rewrite, production database mutation, or JG-020 integrated R6 activation was introduced. The required CI workflow edit is recorded as an execution-time scope correction because the frozen JG-019 contract required mandatory `TEST_DATABASE_URL` wiring even though the original file table omitted the workflow path. JG-020 remains the next ordered R6 acceptance ticket.
 
 ---
 
