@@ -3098,7 +3098,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-013"></a>
 ### JG-013 — Replace broken cleanup with a bounded observable archive job
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** service/contract  
 **Execution position:** 13/64; group step 2/3
@@ -3274,13 +3274,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-013 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: old_unvisited_is_preserved
-- [ ] Required regression passes: 500_row_batch_limit_and_resume
-- [ ] Required regression passes: cleanup_failure_not_zero_success
-- [ ] Required regression passes: two_workers_do_not_double_count
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-013 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: old_unvisited_is_preserved
+- [x] Required regression passes: 500_row_batch_limit_and_resume
+- [x] Required regression passes: cleanup_failure_not_zero_success
+- [x] Required regression passes: two_workers_do_not_double_count
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -3298,12 +3298,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -3316,7 +3316,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-012 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** Implementation PR #61 merged to `main` at `b3436a499c1a0658d57f70effb009824c556a223`. Final CI run #119 passed 213 PostgreSQL backend tests, including advisory-lock contention/recovery coverage, the backend compile check, the frontend production build, and 124 Playwright Chromium tests. The replacement cleanup worker is bounded to 500 rows, uses known `clicked_at` plus per-account retention policy, honors the global archive kill switch, uses process/PostgreSQL locking, propagates non-zero failure state, and contains no hard-delete path. Local/CI state is complete. Production maintenance activation and the JG-014 retention-health UI were not performed by this ticket and remain separate rollout work.
 
 ---
 
