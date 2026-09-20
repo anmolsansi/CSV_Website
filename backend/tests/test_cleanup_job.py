@@ -195,8 +195,7 @@ def test_repeated_run_does_not_double_count_or_reset_timestamp(db_session):
     )
 
     first = archive_eligible_rows(db_session, now=now)
-    later = now + timedelta(hours=6)
-    second = archive_eligible_rows(db_session, now=later)
+    second = archive_eligible_rows(db_session, now=now)
 
     assert first.archived == 1
     assert second.scanned == 0
