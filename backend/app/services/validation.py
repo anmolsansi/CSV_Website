@@ -76,3 +76,73 @@ def explicit_model_fields(model: BaseModel) -> dict[str, Any]:
     """Return only caller-supplied Pydantic fields, preserving explicit clears."""
     supplied = set(model.model_fields_set)
     return model.model_dump(include=supplied, exclude_unset=True)
+
+
+def _resolve_timezone(timezone_name: str | None, *, field: str) -> ZoneInfo:
+    if not timezone_name:
+        raise ValidationContractError(
+            "A valid IANA timezone is required for date-only values.",
+            field=field,
+        )
+    try:
+        return ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValidationContractError(
+            "A valid IANA timezone is required for date-only values.",
+            field=field,
+        ) from exc
+
+
+def parse_timestamp(
+    value: Any,
+    *,
+    timezone_name: str | None = None,
+    field: str = "timestamp",
+    allow_clear: bool = True,
+) -> datetime | None:
+    """Parse the R5 timestamp contract into the app's UTC-naive storage form."""
+    if value is None or value == "":
+        if allow_clear:
+            return None
+        raise ValidationContractError(
+            "This timestamp cannot be cleared.",
+            field=field,
+        )
+
+    if not isinstance(value, str):
+        raise ValidationContractError(
+            "Timestamp must be an ISO-8601 string, null, or an empty string.",
+            field=field,
+        )
+
+    if _DATE_ONLY_RE.fullmatch(value):
+        try:
+            parsed_date = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValidationContractError(
+                "Date is not valid.",
+                field=field,
+            ) from exc
+        account_timezone = _resolve_timezone(timezone_name, field=field)
+        local_midnight = datetime.combine(
+            parsed_date,
+            time.min,
+            tzinfo=account_timezone,
+        )
+        return local_midnight.astimezone(timezone.utc).replace(tzinfo=None)
+
+    normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValidationContractError(
+            "Timestamp must be valid ISO-8601.",
+            field=field,
+        ) from exc
+
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValidationContractError(
+            "Datetime values must include an explicit UTC offset or Z.",
+            field=field,
+        )
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
