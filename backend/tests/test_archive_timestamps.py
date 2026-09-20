@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.config import settings
+from app.jobs import cleanup_clicked_rows
 from app.models import CsvRow, JobTrack, User
 
 
@@ -84,6 +85,21 @@ def test_retention_defaults_are_disabled():
     assert settings.AUTO_ARCHIVE_AFTER_DAYS == 0
     assert settings.AUTO_PURGE_AFTER_DAYS == 0
     assert settings.RUN_MAINTENANCE_JOBS is False
+
+
+def test_retired_legacy_cleanup_is_non_destructive(auth_client, db_session):
+    rows = _reset_and_seed(auth_client)
+    row_id = rows[0]["id"]
+    before = db_session.get(CsvRow, row_id)
+    assert before.archived is False
+    assert before.archived_at is None
+
+    assert cleanup_clicked_rows() == 0
+
+    db_session.expire_all()
+    after = db_session.get(CsvRow, row_id)
+    assert after.archived is False
+    assert after.archived_at is None
 
 
 def test_retention_preference_validation_and_account_isolation(auth_client):
