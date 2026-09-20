@@ -158,7 +158,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **R5 — Unify status date and import validation**
 
-- [ ] [JG-015 — Create reusable status timestamp URL and bulk validators](#jg-015)
+- [x] [JG-015 — Create reusable status timestamp URL and bulk validators](#jg-015)
 - [ ] [JG-016 — Apply validation atomically to every application writer](#jg-016)
 - [ ] [JG-017 — Render field errors and fix asynchronous import feedback](#jg-017)
 
@@ -3578,7 +3578,7 @@ Try an invalid status, impossible date and overlong note through API and UI; all
 <a id="jg-015"></a>
 ### JG-015 — Create reusable status timestamp URL and bulk validators
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** service/contract  
 **Execution position:** 15/64; group step 1/3
@@ -3751,13 +3751,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-015 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: parameterized_status_allowed_and_rejected
-- [ ] Required regression passes: omitted_null_empty_date_semantics
-- [ ] Required regression passes: date_only_kolkata_conversion
-- [ ] Required regression passes: bulk_duplicate_missing_foreign_and_max_count
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-015 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: parameterized_status_allowed_and_rejected
+- [x] Required regression passes: omitted_null_empty_date_semantics
+- [x] Required regression passes: date_only_kolkata_conversion
+- [x] Required regression passes: bulk_duplicate_missing_foreign_and_max_count
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -3775,12 +3775,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -3789,11 +3789,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-014` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #66; implementation PR: #67.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-014 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** Implementation PR #67 merged to `main` at `460cc9777d53e9994452cc4a59dd9053f1c5784c`. CI run #133 on the implementation head passed 239 PostgreSQL backend tests, including all 17 JG-015 regression cases, the backend compile check, the frontend production build, and 128 Playwright Chromium tests; Vercel also passed. The reusable service contract now validates central statuses, preserves omitted-versus-explicit-clear semantics, parses date-only values only with an explicit account timezone, enforces timestamp/text/URL limits, normalizes bounded bulk IDs with source indices and safe ownership failure, and normalizes legacy/new error details without reflecting unknown payloads. No schema migration or persisted-data rewrite was introduced. Existing application writers remain intentionally behavior-compatible until JG-016 adopts the shared validators atomically, and JG-017 still owns frontend field-error/import feedback. Local/CI implementation is complete; no production feature activation was performed.
 
 ---
 
