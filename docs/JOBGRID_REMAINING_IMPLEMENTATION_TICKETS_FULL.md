@@ -2869,7 +2869,7 @@ Create an unvisited old row, a visited eligible row and a recently visited row i
 <a id="jg-012"></a>
 ### JG-012 — Introduce explicit archive timestamps and disabled-by-default retention
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** schema/contract  
 **Execution position:** 12/64; group step 1/3
@@ -3049,13 +3049,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-012 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: archive_twice_preserves_timestamp
-- [ ] Required regression passes: existing_archived_unknown_date_is_not_purgeable
-- [ ] Required regression passes: migration_does_not_hide_unvisited_rows
-- [ ] Required regression passes: backup_preserves_archive_state
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-012 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: archive_twice_preserves_timestamp
+- [x] Required regression passes: existing_archived_unknown_date_is_not_purgeable
+- [x] Required regression passes: migration_does_not_hide_unvisited_rows
+- [x] Required regression passes: backup_preserves_archive_state
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -3073,12 +3073,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -3091,7 +3091,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-011 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** Implementation PR #58 merged to `main` at `2f6611fab9ace9617a212436412408c046b1eee2`. Final CI run #111 passed 202 PostgreSQL backend tests, the backend compile check, the frontend production build, and 124 Playwright Chromium tests. The legacy destructive cleanup path is retired and maintenance registration remains disabled by default; JG-013 still owns the bounded automatic archive worker and no permanent purge is active. Local/CI state is complete. External staging deployment and production retention activation were not performed by this ticket and remain separate rollout states.
 
 ---
 
