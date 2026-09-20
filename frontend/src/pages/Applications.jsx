@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { api } from '../api/client'
+import { api, apiFieldErrors, formatApiError } from '../api/client'
 import { applicationNavigationState, applicationStateQuery, queryValidationMessage, serializeApplicationQuery } from '../api/queryParams'
 import { useToast } from '../App'
 
@@ -65,6 +65,12 @@ export default function Applications() {
   const settledQueryRef = useRef(null)
   const requestSequenceRef = useRef(0)
   const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
+  const [drafts, setDrafts] = useState({})
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [pendingRows, setPendingRows] = useState(new Set())
+  const [bulkPending, setBulkPending] = useState(false)
+  const pendingMutationRef = useRef(new Set())
+  const fieldRefs = useRef({})
   const toast = useToast()
 
   const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page) => {
@@ -110,15 +116,84 @@ export default function Applications() {
     refresh(filters, sort, newPage)
   }
 
-  const updateApp = async (itemId, payload) => {
-    const updated = await api.updateApplication(itemId, payload)
-    setApplications((prev) =>
-      prev.map((app) => (app.id === itemId ? { ...app, ...updated } : app))
-    )
+  const draftKey = (itemId, field) => `${itemId}:${field}`
+
+  const draftValue = (app, field, fallback) => {
+    const key = draftKey(app.id, field)
+    return Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : fallback
   }
 
-  const markApplied = (app) => {
-    updateApp(app.id, { mark_applied: true })
+  const setDraftValue = (itemId, field, value) => {
+    const key = draftKey(itemId, field)
+    setDrafts((prev) => ({ ...prev, [key]: value }))
+    setFieldErrors((prev) => {
+      if (!prev[itemId]?.[field]) return prev
+      const nextRow = { ...prev[itemId] }
+      delete nextRow[field]
+      const next = { ...prev }
+      if (Object.keys(nextRow).length === 0) delete next[itemId]
+      else next[itemId] = nextRow
+      return next
+    })
+  }
+
+  const clearDraftFields = (itemId, fields) => {
+    setDrafts((prev) => {
+      const next = { ...prev }
+      fields.forEach((field) => delete next[draftKey(itemId, field)])
+      return next
+    })
+  }
+
+  const setPendingRow = (itemId, pending) => {
+    setPendingRows((prev) => {
+      const next = new Set(prev)
+      if (pending) next.add(itemId)
+      else next.delete(itemId)
+      return next
+    })
+  }
+
+  const focusFirstInvalidField = (itemId, formatted) => {
+    const target = formatted.fields.find((item) => item.field && item.field !== 'non_field')
+    if (!target) return
+    requestAnimationFrame(() => fieldRefs.current[draftKey(itemId, target.field)]?.focus())
+  }
+
+  const updateApp = async (itemId, payload, { draftFields = Object.keys(payload) } = {}) => {
+    if (pendingMutationRef.current.has(itemId)) return null
+
+    pendingMutationRef.current.add(itemId)
+    setPendingRow(itemId, true)
+    setFieldErrors((prev) => {
+      if (!prev[itemId]) return prev
+      const next = { ...prev }
+      delete next[itemId]
+      return next
+    })
+
+    try {
+      const updated = await api.updateApplication(itemId, payload)
+      setApplications((prev) =>
+        prev.map((app) => (app.id === itemId ? { ...app, ...updated } : app))
+      )
+      clearDraftFields(itemId, draftFields)
+      await refresh()
+      return updated
+    } catch (error) {
+      const formatted = formatApiError(error, 'Could not save this application. Correct the highlighted fields and retry.')
+      setFieldErrors((prev) => ({ ...prev, [itemId]: apiFieldErrors(error, formatted.message) }))
+      focusFirstInvalidField(itemId, formatted)
+      toast(formatted.message, 'error')
+      return null
+    } finally {
+      pendingMutationRef.current.delete(itemId)
+      setPendingRow(itemId, false)
+    }
+  }
+
+  const markApplied = async (app) => {
+    await updateApp(app.id, { mark_applied: true }, { draftFields: [] })
   }
 
   const toggleSelect = (id) => {
@@ -138,13 +213,21 @@ export default function Applications() {
   }
 
   const bulkMarkApplied = async () => {
-    if (selectedIds.size === 0) return
+    if (selectedIds.size === 0 || bulkPending) return
     const confirmed = window.confirm(`Mark ${selectedIds.size} application(s) as applied?`)
     if (!confirmed) return
-    await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
-    toast(`Marked ${selectedIds.size} as applied`, 'success')
-    setSelectedIds(new Set())
-    refresh()
+
+    setBulkPending(true)
+    try {
+      await api.bulkUpdateApplications([...selectedIds], { mark_applied: true })
+      toast(`Marked ${selectedIds.size} as applied`, 'success')
+      setSelectedIds(new Set())
+      await refresh()
+    } catch (error) {
+      toast(formatApiError(error, 'Could not update the selected applications. Please retry.').message, 'error')
+    } finally {
+      setBulkPending(false)
+    }
   }
 
   const [exportFormat, setExportFormat] = useState('csv')
@@ -319,7 +402,7 @@ export default function Applications() {
       {selectedIds.size > 0 && (
         <div className="sticky-toolbar">
           <span className="toolbar-count"><strong>{selectedIds.size}</strong> selected</span>
-          <button className="btn btn-green" onClick={bulkMarkApplied}>Mark applied</button>
+          <button className="btn btn-green" onClick={bulkMarkApplied} disabled={bulkPending}>{bulkPending ? 'Saving...' : 'Mark applied'}</button>
           <button className="btn btn-grey" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
         </div>
       )}
@@ -356,33 +439,141 @@ export default function Applications() {
                       onChange={() => toggleSelect(app.id)}
                     />
                   </td>
-                  {!hiddenColumns.includes('company') && <td><input className="inline-input" value={app.company || ''} onChange={(e) => updateApp(app.id, { company: e.target.value })} /></td>}
+                  {!hiddenColumns.includes('company') && (
+                    <td>
+                      <input
+                        className="inline-input"
+                        ref={(node) => { fieldRefs.current[draftKey(app.id, 'company')] = node }}
+                        value={draftValue(app, 'company', app.company || '')}
+                        aria-invalid={Boolean(fieldErrors[app.id]?.company)}
+                        aria-describedby={fieldErrors[app.id]?.company ? `app-${app.id}-company-error` : undefined}
+                        disabled={pendingRows.has(app.id)}
+                        onChange={(e) => setDraftValue(app.id, 'company', e.target.value)}
+                        onBlur={(e) => {
+                          if (e.target.value !== (app.company || '')) updateApp(app.id, { company: e.target.value }, { draftFields: ['company'] })
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            if (e.currentTarget.value !== (app.company || '')) updateApp(app.id, { company: e.currentTarget.value }, { draftFields: ['company'] })
+                          }
+                        }}
+                      />
+                      {fieldErrors[app.id]?.company && <p id={`app-${app.id}-company-error`} className="error-msg" role="alert">{fieldErrors[app.id].company}</p>}
+                    </td>
+                  )}
                   {!hiddenColumns.includes('title') && <td>{app.title}</td>}
-                  {!hiddenColumns.includes('status') && <td><select value={app.status} onChange={(e) => updateApp(app.id, { status: e.target.value })}>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></td>}
+                  {!hiddenColumns.includes('status') && (
+                    <td>
+                      <select
+                        ref={(node) => { fieldRefs.current[draftKey(app.id, 'status')] = node }}
+                        value={draftValue(app, 'status', app.status)}
+                        aria-invalid={Boolean(fieldErrors[app.id]?.status)}
+                        aria-describedby={fieldErrors[app.id]?.status ? `app-${app.id}-status-error` : undefined}
+                        disabled={pendingRows.has(app.id)}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setDraftValue(app.id, 'status', value)
+                          updateApp(app.id, { status: value }, { draftFields: ['status'] })
+                        }}
+                      >
+                        {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {fieldErrors[app.id]?.status && <p id={`app-${app.id}-status-error`} className="error-msg" role="alert">{fieldErrors[app.id].status}</p>}
+                    </td>
+                  )}
                   {!hiddenColumns.includes('ats_group') && <td>{app.ats_group}</td>}
                   {!hiddenColumns.includes('search_bucket') && <td>{app.search_bucket}</td>}
                   {!hiddenColumns.includes('resume_match_score') && <td>{app.resume_match_score}</td>}
                   {!hiddenColumns.includes('opened_at') && <td>{formatDateTime(app.opened_at)}</td>}
-                  {!hiddenColumns.includes('applied_at') && <td><input type="datetime-local" value={localInputValue(app.applied_at)} onChange={(e) => updateApp(app.id, { applied_at: inputToIso(e.target.value), status: e.target.value ? 'applied' : app.status })} /></td>}
+                  {!hiddenColumns.includes('applied_at') && (
+                    <td>
+                      <input
+                        type="datetime-local"
+                        ref={(node) => { fieldRefs.current[draftKey(app.id, 'applied_at')] = node }}
+                        value={draftValue(app, 'applied_at', localInputValue(app.applied_at))}
+                        aria-invalid={Boolean(fieldErrors[app.id]?.applied_at)}
+                        aria-describedby={fieldErrors[app.id]?.applied_at ? `app-${app.id}-applied-error` : undefined}
+                        disabled={pendingRows.has(app.id)}
+                        onChange={(e) => setDraftValue(app.id, 'applied_at', e.target.value)}
+                        onBlur={(e) => {
+                          const value = e.target.value
+                          if (value !== localInputValue(app.applied_at)) {
+                            updateApp(app.id, { applied_at: inputToIso(value), status: value ? 'applied' : app.status }, { draftFields: ['applied_at'] })
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const value = e.currentTarget.value
+                            if (value !== localInputValue(app.applied_at)) {
+                              updateApp(app.id, { applied_at: inputToIso(value), status: value ? 'applied' : app.status }, { draftFields: ['applied_at'] })
+                            }
+                          }
+                        }}
+                      />
+                      {fieldErrors[app.id]?.applied_at && <p id={`app-${app.id}-applied-error`} className="error-msg" role="alert">{fieldErrors[app.id].applied_at}</p>}
+                    </td>
+                  )}
                   {!hiddenColumns.includes('follow_up_at') && (
                     <td>
                       <div className="follow-up-cell">
-                        <input type="datetime-local" value={localInputValue(app.follow_up_at)} onChange={(e) => updateApp(app.id, { follow_up_at: inputToIso(e.target.value) })} />
+                        <input
+                          type="datetime-local"
+                          ref={(node) => { fieldRefs.current[draftKey(app.id, 'follow_up_at')] = node }}
+                          value={draftValue(app, 'follow_up_at', localInputValue(app.follow_up_at))}
+                          aria-invalid={Boolean(fieldErrors[app.id]?.follow_up_at)}
+                          aria-describedby={fieldErrors[app.id]?.follow_up_at ? `app-${app.id}-followup-error` : undefined}
+                          disabled={pendingRows.has(app.id)}
+                          onChange={(e) => setDraftValue(app.id, 'follow_up_at', e.target.value)}
+                          onBlur={(e) => {
+                            const value = e.target.value
+                            if (value !== localInputValue(app.follow_up_at)) updateApp(app.id, { follow_up_at: inputToIso(value) }, { draftFields: ['follow_up_at'] })
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              const value = e.currentTarget.value
+                              if (value !== localInputValue(app.follow_up_at)) updateApp(app.id, { follow_up_at: inputToIso(value) }, { draftFields: ['follow_up_at'] })
+                            }
+                          }}
+                        />
+                        {fieldErrors[app.id]?.follow_up_at && <p id={`app-${app.id}-followup-error`} className="error-msg" role="alert">{fieldErrors[app.id].follow_up_at}</p>}
                         <div className="follow-up-quick-btns">
-                          <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: new Date(Date.now() + 3 * 86400000).toISOString() })}>+3d</button>
-                          <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: new Date(Date.now() + 7 * 86400000).toISOString() })}>+7d</button>
-                          <button className="btn btn-grey btn-sm" onClick={() => {
+                          <button className="btn btn-grey btn-sm" disabled={pendingRows.has(app.id)} onClick={() => updateApp(app.id, { follow_up_at: new Date(Date.now() + 3 * 86400000).toISOString() }, { draftFields: ['follow_up_at'] })}>+3d</button>
+                          <button className="btn btn-grey btn-sm" disabled={pendingRows.has(app.id)} onClick={() => updateApp(app.id, { follow_up_at: new Date(Date.now() + 7 * 86400000).toISOString() }, { draftFields: ['follow_up_at'] })}>+7d</button>
+                          <button className="btn btn-grey btn-sm" disabled={pendingRows.has(app.id)} onClick={() => {
                             const now = new Date(); const day = now.getDay(); const daysUntilMon = (8 - day) % 7 || 7
-                            updateApp(app.id, { follow_up_at: new Date(now.getTime() + daysUntilMon * 86400000).toISOString() })
+                            updateApp(app.id, { follow_up_at: new Date(now.getTime() + daysUntilMon * 86400000).toISOString() }, { draftFields: ['follow_up_at'] })
                           }}>Mon</button>
-                          {app.follow_up_at && <button className="btn btn-grey btn-sm" onClick={() => updateApp(app.id, { follow_up_at: '' })}>Clear</button>}
+                          {app.follow_up_at && <button className="btn btn-grey btn-sm" disabled={pendingRows.has(app.id)} onClick={() => updateApp(app.id, { follow_up_at: '' }, { draftFields: ['follow_up_at'] })}>Clear</button>}
                         </div>
                       </div>
                     </td>
                   )}
-                  {!hiddenColumns.includes('notes') && <td><textarea value={app.notes || ''} onChange={(e) => updateApp(app.id, { notes: e.target.value })} /></td>}
+                  {!hiddenColumns.includes('notes') && (
+                    <td>
+                      <textarea
+                        ref={(node) => { fieldRefs.current[draftKey(app.id, 'notes')] = node }}
+                        value={draftValue(app, 'notes', app.notes || '')}
+                        aria-invalid={Boolean(fieldErrors[app.id]?.notes)}
+                        aria-describedby={fieldErrors[app.id]?.notes ? `app-${app.id}-notes-error` : undefined}
+                        disabled={pendingRows.has(app.id)}
+                        onChange={(e) => setDraftValue(app.id, 'notes', e.target.value)}
+                        onBlur={(e) => {
+                          if (e.target.value !== (app.notes || '')) updateApp(app.id, { notes: e.target.value }, { draftFields: ['notes'] })
+                        }}
+                      />
+                      {fieldErrors[app.id]?.notes && <p id={`app-${app.id}-notes-error`} className="error-msg" role="alert">{fieldErrors[app.id].notes}</p>}
+                    </td>
+                  )}
                   {!hiddenColumns.includes('url') && <td><button className="btn btn-blue" onClick={() => window.open(app.url, '_blank', 'noopener')}>Open</button></td>}
-                  <td><button className="btn btn-green" onClick={() => markApplied(app)}>Mark applied</button></td>
+                  <td>
+                    <button className="btn btn-green" disabled={pendingRows.has(app.id)} onClick={() => markApplied(app)}>
+                      {pendingRows.has(app.id) ? 'Saving...' : 'Mark applied'}
+                    </button>
+                    {fieldErrors[app.id]?.non_field && <p className="error-msg" role="alert">{fieldErrors[app.id].non_field}</p>}
+                  </td>
                 </tr>
               ))}
             </tbody>
