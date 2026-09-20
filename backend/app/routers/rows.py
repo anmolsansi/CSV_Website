@@ -330,7 +330,16 @@ def delete_rows(
     )
 
     if payload.mode == "archive":
-        updated = query.update({CsvRow.archived: True}, synchronize_session=False)
+        # Only the first false -> true transition owns the archive timestamp.
+        # Legacy archived rows can have archived_at=NULL and must remain unknown.
+        archive_now = datetime.utcnow()
+        updated = query.filter(CsvRow.archived.is_(False)).update(
+            {
+                CsvRow.archived: True,
+                CsvRow.archived_at: archive_now,
+            },
+            synchronize_session=False,
+        )
         db.commit()
         return {"archived": updated, "deleted": 0}
 
