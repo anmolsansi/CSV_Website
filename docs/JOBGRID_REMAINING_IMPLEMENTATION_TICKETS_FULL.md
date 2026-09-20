@@ -164,7 +164,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **R6 — Make local numeric sorting and schema validation honest**
 
-- [ ] [JG-018 — Define one numeric parsing contract and dialect adapters](#jg-018)
+- [x] [JG-018 — Define one numeric parsing contract and dialect adapters](#jg-018)
 - [ ] [JG-019 — Register SQLite functions in app and test engines and add real schema checks](#jg-019)
 - [ ] [JG-020 — Document and verify both runtime paths](#jg-020)
 
@@ -4273,7 +4273,7 @@ Create scores 2,10,85%,1,000,$99.50,-3,blank and invalid. Sort ascending and des
 <a id="jg-018"></a>
 ### JG-018 — Define one numeric parsing contract and dialect adapters
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** API/service  
 **Execution position:** 18/64; group step 1/3
@@ -4447,13 +4447,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-018 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: numeric_order_not_lexical
-- [ ] Required regression passes: invalid_values_last_both_directions
-- [ ] Required regression passes: negative_decimal_percentage_currency
-- [ ] Required regression passes: long_or_nonfinite_value_is_null
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-018 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: numeric_order_not_lexical
+- [x] Required regression passes: invalid_values_last_both_directions
+- [x] Required regression passes: negative_decimal_percentage_currency
+- [x] Required regression passes: long_or_nonfinite_value_is_null
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -4471,12 +4471,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -4485,11 +4485,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-017` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #76; implementation PR: #77.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-017 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** GitHub issue #76 tracked the work. Implementation PR #77 merged to `main` at `d4336b9dc70bec1b55aa58aa339c0266fd3bd134`. Final implementation CI run #153 passed 284 PostgreSQL backend tests, the backend compile check, the frontend production build, and all 133 Playwright Chromium tests; Vercel also passed. JG-018 now owns one finite Decimal/null parsing contract with a 128-character source cap, deterministic SQLite `jobgrid_numeric(value)` registration on SQLAlchemy engine connections, and a dialect-aware SQL expression that uses SQLite UDF calls or bounded PostgreSQL regexp validation plus `NUMERIC` cast. All four numeric CSV sort fields, salary filters, application score sorting/filtering, and posted-age filters reuse the same semantics. Invalid or empty values remain null and sort last in either direction, equal numeric values retain descending-ID tie-breaking, and stored source text is not rewritten. Focused regressions cover numeric-versus-lexical ordering, invalid/null ordering, signed decimal/percentage/currency input, overlong/non-finite-like input, all numeric fields, salary/application query reuse, SQLite registration, PostgreSQL compilation, and source-text preservation. The first CI attempt exposed psycopg2 percent-literal escaping in the custom compiler; the follow-up commit rendered regex literals through SQLAlchemy and final CI #153 passed. No database migration or persisted-data rewrite was introduced. JG-019 is the next ordered R6 implementation ticket; R6 integrated acceptance remains owned by JG-020.
 
 ---
 
