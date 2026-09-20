@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Float, asc, case, cast, desc, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
