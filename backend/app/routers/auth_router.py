@@ -46,9 +46,7 @@ def dev_login(payload: DevLoginRequest, db: Session = Depends(get_db)):
         "session_token",
         jwt_token,
         max_age=60 * 60 * 24 * 7,
-        httponly=True,
-        secure=False,
-        samesite="lax",
+        **_cookie_options(),
     )
     return resp
 
