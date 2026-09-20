@@ -1732,3 +1732,93 @@ Repository CI remains the broader integration gate for PostgreSQL backend tests,
 JG-022 has no migration and does not rewrite persisted data. If the startup/configuration or cookie behavior regresses, revert the JG-022 application/configuration commits. Do not downgrade the database.
 
 A passing JG-022 local or CI result establishes this configuration gate only. Real provider OAuth, SMTP sandbox delivery, staging restore comparison, and production release evidence remain later R7 work and must not be inferred from this ticket.
+
+## JG-023 release regression gate
+
+JG-023 promotes the September 12 audit failures into a named release gate. It does not change application runtime behavior, database schema, persisted data, or public API contracts. The gate makes the repaired contracts hard to drop silently during later work.
+
+### Enforced backend contracts
+
+`backend/tests/test_release_contracts.py` is the release manifest and adds direct regressions for boundaries that are easiest to lose during integration. Repository CI executes it together with the existing deep regressions for:
+
+- complete v2 backup round trip with retained application/company/date/note data;
+- filtered export parity with the complete multi-filter, multi-page browse result;
+- shared visited/saved/applied metric reconciliation;
+- invalid application status/date and malformed backup rejection before mutation;
+- cleanup failure being reported as failure rather than successful zero work;
+- numeric ordering on the primary CI database plus separate SQLite numeric functional coverage;
+- cross-account mutation/visit/export denial; and
+- durable company/application history after source-row deletion, including company names containing a slash.
+
+The release manifest must be nonempty. CI also parses the focused JUnit result and rejects zero tests, failures, errors, or skips. A skipped release contract is not a passing release contract.
+
+Focused backend verification:
+
+```sh
+cd backend
+python -m pytest \
+  tests/test_release_contracts.py \
+  tests/test_backup_restore.py::test_restore_applied_company_notes_and_dates \
+  tests/test_filtered_exports.py::test_filtered_export_equals_all_list_pages \
+  tests/test_metric_consistency.py::test_shared_metrics_agree_across_analytics_goals_and_weekly \
+  tests/test_cleanup_job.py::test_cleanup_failure_not_zero_success \
+  tests/test_numeric_sort.py::test_numeric_order_not_lexical \
+  -q
+```
+
+In CI, the backend release gate runs with PostgreSQL configuration after `alembic upgrade head` has succeeded and the applied revision has been recorded. The full backend suite still runs afterward. The explicit SQLite numeric regression remains useful local/dialect coverage, but it is not migration or production-database acceptance.
+
+### Enforced browser contract
+
+`frontend/tests/release-workflows.spec.ts` creates a nonempty synthetic job set and verifies the complete top-five workflow. It checks that the browser uses the server's complete filtered/sorted candidate query, opens exactly five eligible HTTPS jobs, severs `window.opener`, persists exactly those successful visits, and records no additional visits when popups are blocked.
+
+The existing `frontend/unit/open-jobs.test.mjs` suite is also part of the JG-023 CI gate. It preserves unsafe-URL rejection and the lower-level blocked/failed popup behavior.
+
+Focused browser verification:
+
+```sh
+cd frontend
+node --test unit/open-jobs.test.mjs
+npm run test:e2e -- tests/release-workflows.spec.ts --project=chromium
+```
+
+CI fails if Playwright cannot collect at least one focused release test. The full Chromium suite runs after the focused workflow.
+
+### Release evidence
+
+Each CI run writes synthetic evidence next to the test results.
+
+Backend evidence records:
+
+- Git commit SHA;
+- applied Alembic revision;
+- Python and pip versions;
+- FastAPI, SQLAlchemy, Alembic, pytest, and PostgreSQL driver package versions;
+- `backend/requirements.txt` SHA-256; and
+- focused release test count with zero failures, errors, and skips.
+
+Browser evidence records:
+
+- Git commit SHA;
+- Node and npm versions;
+- Playwright and Chromium versions;
+- `frontend/package-lock.json` SHA-256;
+- focused Playwright collection output; and
+- focused workflow output.
+
+GitHub Actions uploads these files as seven-day `jg023-backend-release-evidence-<sha>` and `jg023-browser-release-evidence-<sha>` artifacts. These artifacts contain synthetic test/runtime metadata only. They must not contain database URLs, signing secrets, OAuth credentials, SMTP credentials, imported private text, or production data.
+
+### Release-state vocabulary
+
+JG-023 keeps three states separate:
+
+- **local-ready** means the implementation and required synthetic release regressions are green for the recorded commit, including mandatory repository CI. It does not claim external provider or deployment acceptance.
+- **staging-accepted** means the authorized staging gates for the same release candidate have passed, including the external checks owned by JG-024 such as real OAuth/SMTP and restore rehearsal where configured.
+- **released** means that an accepted release candidate was actually deployed to the intended production environment and its required post-deploy smoke/recovery evidence was recorded.
+
+A ticket can be marked completed in the implementation roadmap when its own definition of done is satisfied without calling that state `released`. Do not use a generic `Done` label to imply staging or production acceptance.
+
+### Rollback
+
+JG-023 is tests, CI configuration, and documentation only. If the release gate itself is incorrect, revert the JG-023 test/workflow/documentation commits together. No database downgrade, data rewrite, queue drain, or user-data recovery operation belongs to this rollback. Real OAuth, SMTP, staging restore, deployment, and production-release proof remain JG-024 responsibilities.
+
