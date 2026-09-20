@@ -808,7 +808,7 @@ JG-013 replaces the JG-012 compatibility shim with a bounded, observable archive
 - `CsvRow.clicked_at` is known and is at or before `now - retention_days`;
 - `CsvRow.archived` is still false.
 
-An old `created_at` value is not visit evidence. Accounts with `retention_days=NULL`, `0`, or an invalid persisted value are treated as disabled. The deprecated `DELETE_AFTER_DAYS` value is never consulted, and the disabled `AUTO_ARCHIVE_AFTER_DAYS` environment setting is not used as a fallback account policy.
+An old `created_at` value is not visit evidence. Accounts with `retention_days=NULL`, `0`, or an invalid persisted value are treated as disabled. The deprecated `DELETE_AFTER_DAYS` value is never consulted. `AUTO_ARCHIVE_AFTER_DAYS=0` is also a global operator kill switch: the scheduled/manual worker returns disabled before opening a maintenance session. A positive value permits the worker to run but does not override or replace the account's persisted retention threshold.
 
 Candidates are ordered by `CsvRow.id` and limited to 500 per invocation. PostgreSQL candidate reads use `FOR UPDATE SKIP LOCKED`. The write repeats the `archived=false` predicate before atomically setting `archived=true` and `archived_at=<run UTC time>`. This keeps retries safe if another transaction changed a selected row. One run commits one bounded batch. A second run resumes with the next eligible IDs. Re-running after the batch is exhausted reports zero new archives and never resets an existing archive timestamp.
 
@@ -828,7 +828,7 @@ The FastAPI lifespan still registers maintenance only when:
 RUN_MAINTENANCE_JOBS=true
 ```
 
-The default remains `false`. Registration itself has an in-process guard, and the APScheduler job uses `coalesce=True` and `max_instances=1`. Generic web workers therefore remain inactive unless a deployment explicitly designates one process to run maintenance.
+The default remains `false`. Registration itself has an in-process guard, and the APScheduler job uses `coalesce=True` and `max_instances=1`. Even in a designated process, `AUTO_ARCHIVE_AFTER_DAYS=0` keeps automatic archive inert. Generic web workers therefore remain inactive unless a deployment explicitly designates one process to run maintenance.
 
 ### Result and failure contract
 
@@ -855,8 +855,9 @@ Do not enable maintenance only because JG-013 is deployed. The safe rollout sequ
 1. deploy the code with `RUN_MAINTENANCE_JOBS=false`;
 2. verify migrations remain at the existing JG-012 head and run the cleanup regression suite on a disposable PostgreSQL database;
 3. configure retention only for accounts that explicitly opted in;
-4. designate one maintenance process and set `RUN_MAINTENANCE_JOBS=true` only for that process;
-5. monitor aggregate cleanup outcomes and disable the flag immediately if failures or unexpected counts appear.
+4. after archive execution is operationally approved, change `AUTO_ARCHIVE_AFTER_DAYS` from `0` to a positive value; this opens the global gate but does not replace account-specific `retention_days`;
+5. designate one maintenance process and set `RUN_MAINTENANCE_JOBS=true` only for that process;
+6. monitor aggregate cleanup outcomes and return `AUTO_ARCHIVE_AFTER_DAYS=0` or `RUN_MAINTENANCE_JOBS=false` immediately if failures or unexpected counts appear.
 
 A deliberate operator can execute one bounded run from the backend environment with:
 
@@ -866,7 +867,7 @@ python -c "from app.jobs import cleanup_clicked_rows; print(cleanup_clicked_rows
 
 That command can archive eligible rows and must only be run against the intended environment. It never purges data.
 
-Rollback begins by setting `RUN_MAINTENANCE_JOBS=false` and stopping/restarting the designated process so no new job is registered. Application code can then roll back while retaining `archived_at` and `retention_days`; do not erase archive timestamps or reinterpret unknown legacy timestamps.
+Rollback begins by setting `AUTO_ARCHIVE_AFTER_DAYS=0` and `RUN_MAINTENANCE_JOBS=false`, then stopping/restarting the designated process so no new job is registered. Application code can then roll back while retaining `archived_at` and `retention_days`; do not erase archive timestamps or reinterpret unknown legacy timestamps.
 
 ### Verification
 
