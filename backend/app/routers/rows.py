@@ -5,7 +5,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Float, asc, case, cast, desc, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 
@@ -14,66 +14,24 @@ from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
 from ..schemas import ColumnPrefIn, RowDeleteIn
 from ..services.lifecycle import LifecycleEventError, record_visit
-from ..services.row_queries import RowQuery, build_row_query, order_row_query
+from ..services.row_queries import (
+    RowQuery,
+    build_row_query,
+    order_row_query,
+    resolve_row_sort_column,
+)
 from .crm import emit_event, calculate_priority_score, calculate_triage
 
 router = APIRouter(tags=["rows"])
 logger = logging.getLogger(__name__)
 
-NUMERIC_SORT_COLUMNS = {
-    "page_number",
-    "posted_age_days",
-    "jd_text_length",
-    "resume_match_score",
-}
-
-
-class RetentionPreferenceIn(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    retention_days: int | None
-
-
-def _validate_retention_days(value: int | None) -> int | None:
-    if value is None or value == 0 or 7 <= value <= 3650:
-        return value
-    raise HTTPException(
-        status_code=422,
-        detail="retention_days must be 0 (disabled) or between 7 and 3650 days",
-    )
-
-
-def _clean_columns(columns: list[str]) -> list[str]:
-    seen = set()
-    cleaned = []
-    for col in columns:
-        if col in CSV_COLUMNS and col not in seen:
-            cleaned.append(col)
-            seen.add(col)
-    return cleaned
-
-
-def _numeric_sort_expression(column):
-    """Sort text-backed numeric columns as numbers, not strings."""
-    cleaned = func.nullif(func.regexp_replace(column, r"[%,$,\s]", "", "g"), "")
-    return case(
-        (cleaned.op("~")(r"^-?\d+(\.\d+)?$"), cast(cleaned, Float)),
-        else_=None,
-    )
-
-
 def _safe_sort_column(sort_by: str):
-    if sort_by == "created_at":
-        return CsvRow.created_at
-    if sort_by == "clicked_at":
-        return CsvRow.clicked_at
-    if sort_by not in CSV_COLUMNS:
-        raise HTTPException(400, "Invalid sort column")
+    """Compatibility wrapper around the shared row sort contract."""
 
-    column = getattr(CsvRow, sort_by)
-    if sort_by in NUMERIC_SORT_COLUMNS:
-        return _numeric_sort_expression(column)
-    return column
+    try:
+        return resolve_row_sort_column(sort_by)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid sort column") from exc
 
 
 def _parse_utc_naive(value: str | None):
