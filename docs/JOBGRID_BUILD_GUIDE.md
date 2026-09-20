@@ -1073,3 +1073,112 @@ Repository CI remains the final integration gate for the PostgreSQL backend suit
 JG-015 has no migration and writes no new persisted data. If rollback is required before JG-016 adopts these helpers, remove the validation service and schema alias together. Existing application writers remain behavior-compatible because JG-015 does not route them through the new contract.
 
 Do not mark R5 fully released after JG-015 alone. JG-016 must apply the validators atomically to every application writer, and JG-017 must render the normalized failures and repair asynchronous import feedback before the R5 group acceptance fixture is complete.
+
+
+## JG-016 atomic validation across application writers
+
+JG-016 activates the reusable JG-015 validation contract at every active application-writing boundary. It is a code-only API/service change. There is no schema migration, no persisted-data rewrite, and no JG-017 frontend field-error work in this ticket.
+
+### Active writer matrix
+
+The following writers now validate the complete logical request before mutating ORM state:
+
+- `POST /crm/from-row/{row_id}`: validates the source row URL plus company/title limits before upsert.
+- `POST /crm/from-rows/bulk`: normalizes 1..500 strict positive row IDs, verifies account ownership for the full set, validates all source rows, then writes one transaction.
+- `PATCH /crm/applications/{item_id}`: validates only explicitly supplied patch fields, including status, text limits, and account-timezone timestamp parsing.
+- `PATCH /crm/applications/bulk`: normalizes IDs, preloads every owned application, validates the patch against every target record, then applies the batch atomically.
+- `POST /crm/import/external`: validates every input record before constructing the first `JobTrack`. A later invalid record therefore causes zero imported records.
+- `POST /crm/applypilot/import`: validates every result and preloads matching owned tracks before mutation. Missing tracks keep the historical skip behavior.
+
+Bulk IDs are strict integers at the Pydantic transport boundary. Strings and booleans are not silently coerced into IDs. Duplicate IDs normalize in first-seen order.
+
+### Status and timestamp rules
+
+The central statuses remain:
+
+`opened`, `applied`, `follow_up`, `interview`, `rejected`, `offer`, `not_applying`.
+
+Status may be omitted. Explicit null is invalid when a writer supplies a status field.
+
+Application patch timestamps use the authenticated user's stored IANA timezone. A date-only value is local midnight converted to the repository's naive-UTC storage convention. Full timestamps require `Z` or an explicit numeric offset. Invalid or impossible values fail before mutation.
+
+Omitted timestamps remain unchanged. Explicit null or empty string clears a clearable timestamp, except `applied_at` cannot be explicitly cleared when the resulting status is still `applied`.
+
+Ordinary ApplyPilot retries preserve the first stored `applied_at`. When a submitted result omits `submitted_at`, the lifecycle service only creates an application time if one does not already exist. An explicitly supplied different timestamp remains a deliberate correction and follows the existing lifecycle correction-event contract.
+
+External import preserves its historical no-invention rule: `status="applied"` with an omitted `applied_at` can represent a legacy applied record whose exact application time is unknown. An explicitly supplied null/empty applied date combined with applied status is rejected.
+
+### Atomicity, ownership, and errors
+
+Every bulk writer verifies all referenced owned IDs before the first write. Missing and foreign IDs use the same not-found outcome so account existence is not disclosed.
+
+Validation failures use the JG-015 field envelope:
+
+```json
+{
+  "detail": {
+    "code": "validation_error",
+    "fields": [
+      {"field": "applied_at", "message": "Applied date cannot be cleared while status remains applied."}
+    ]
+  }
+}
+```
+
+Expected validation and ownership failures roll back the active transaction. Lifecycle conflicts remain bounded expected failures. Database uniqueness/integrity races roll back and return HTTP 409 with a safe retry message. Unexpected writer failures explicitly roll back, are logged with the operation/request ID, and return HTTP 500 with that request ID without reflecting request bodies, URLs, notes, or credentials.
+
+### Backup JSON safety
+
+The dedicated `backend/app/routers/backup.py` router remains authoritative for `/crm/backup/export` and `/crm/backup/import`. JG-016 removes the dead duplicate CRM backup implementation that called raw `json.loads`.
+
+The live import route continues through `restore_backup_payload()`, which calls the JG-001 `parse_backup_json()` contract before restore routing. Invalid JSON, duplicate keys, non-UTF-8 data, non-finite numbers, and oversized payloads remain bounded parser errors rather than stack traces. JG-016 adds route-level regression coverage proving malformed JSON returns HTTP 400 with `code="invalid_json"`.
+
+### Read-only legacy validation report
+
+Authenticated users can inspect aggregate legacy warnings with:
+
+```http
+GET /crm/applications/validation-report
+```
+
+The response contains counts only:
+
+```json
+{
+  "counts": {
+    "total": 12,
+    "invalid_status": 1,
+    "applied_without_date": 2,
+    "invalid_url": 1,
+    "company_too_long": 0,
+    "title_too_long": 0,
+    "notes_too_long": 0
+  },
+  "repair_mode": "manual_only"
+}
+```
+
+The report is owner-scoped and does not expose row IDs, URLs, companies, titles, notes, or foreign-account data. It never repairs records automatically. Corrections stay deliberate user mutations so lifecycle history remains auditable.
+
+### Verification
+
+Focused JG-016 checks:
+
+```sh
+cd backend
+python -m pytest tests/test_all_application_writers.py tests/test_backup_contract.py -q
+python -m pytest tests/test_lifecycle_mutations.py tests/test_application_memory.py tests/test_crm.py -q
+python -m compileall app
+```
+
+Repository CI remains the integration gate for the complete PostgreSQL backend suite, backend compilation, frontend production build, and Playwright Chromium regressions.
+
+The JG-016 regression fixture proves invalid status rejection across the endpoint matrix, zero-write rollback when a later external-import record is invalid, rejection of clearing an applied record's application date, safe duplicate from-row behavior, account-timezone date-only conversion, ApplyPilot retry preservation, foreign-ID preflight, invalid source URL rejection, text limits, account-scoped aggregate reporting, and strict malformed-backup JSON handling.
+
+### Rollback and activation boundary
+
+JG-016 has no migration. Rollback is an application-code rollback only and must not delete or rewrite already valid application data or lifecycle events.
+
+If compatibility requires temporarily backing out writer enforcement, revert the JG-016 route/service adoption while retaining JG-015 validation helpers and all persisted lifecycle history. The strict JG-001 backup parser remains the authoritative restore boundary.
+
+R5 is still not fully released after JG-016 alone. JG-017 owns visible frontend field-error rendering and asynchronous import feedback before the complete R5 group acceptance fixture is closed.
