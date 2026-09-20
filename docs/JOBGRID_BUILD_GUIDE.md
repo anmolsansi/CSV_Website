@@ -986,4 +986,90 @@ npm run test:e2e -- tests/retention-settings.spec.ts --project=chromium
 
 Revision 007 must also be rehearsed up and down against a disposable database. Repository CI remains the final PostgreSQL/full-suite integration gate.
 
-Rollback starts by keeping `AUTO_ARCHIVE_AFTER_DAYS=0` and `RUN_MAINTENANCE_JOBS=false`. The frontend/API changes can then be rolled back without changing user retention values. The `maintenance_status` table contains operational aggregates only; revision 007 can be downgraded by dropping that table after the worker is stopped. Do not remove `archived_at`, `retention_days`, or reinterpret legacy unknown archive timestamps. Permanent purge remains unavailable.
+Rollback starts by keeping `AUTO_ARCHIVE_AFTER_DAYS=0` and `RUN_MAINTENANCE_JOBS=false`. The frontend/API changes can then be rolled back without changing user retention values. The `maintenance_status` table contains operational aggregates only; revision 007 can be downgraded by dropping that table after the worker is stopped. Do not remove `archived_at`, `retention_days`, or reinterpret legacy unknown archive timestamps. Permanent purge remains unavailable.\n## JG-015 reusable mutation validation contract
+
+JG-015 introduces shared validation primitives for application mutation work without changing the existing database schema or activating stricter validation on public application writers. JG-016 owns route/service adoption, transaction behavior, and writer-wide enforcement. JG-017 owns frontend field-error rendering and import feedback.
+
+### Status and omitted-field behavior
+
+`backend/app/schemas.py` defines the reusable `JobTrackStatus` type with the existing persisted status values:
+
+`opened`, `applied`, `follow_up`, `interview`, `rejected`, `offer`, and `not_applying`.
+
+`backend/app/services/validation.py` exposes `STATUS_VALUES` from the ORM model's authoritative status list and `validate_status()` for service-level validation. A status may be omitted by a patch caller, but an explicitly supplied null or an unrecognized value is invalid.
+
+`explicit_model_fields()` uses Pydantic's `model_fields_set` and `exclude_unset` behavior to distinguish an omitted field from an explicit clear. For example, a request that supplies only `company` does not manufacture timestamp changes, while `applied_at: null` and `follow_up_at: ""` remain visible to the service as explicit clears.
+
+### Timestamp contract
+
+`parse_timestamp()` returns the application's existing UTC-naive storage representation.
+
+- `null` or an empty string clears a timestamp when the caller allows clearing.
+- A date-only value such as `2026-01-02` requires the authenticated account's explicit IANA timezone.
+- Date-only input is interpreted as local midnight and then converted to UTC. In `Asia/Kolkata`, `2026-01-02` becomes `2026-01-01 18:30:00` UTC.
+- Full datetime values must include `Z` or a numeric UTC offset.
+- Offset-less datetimes, impossible dates, invalid timezone names, and unrecognized strings are rejected before mutation.
+
+The helper never uses the server's local timezone. JG-016 is responsible for passing `User.timezone` when a date-only request reaches an application writer.
+
+### Text and URL boundaries
+
+`validate_text_limits()` enforces the R5 limits before ORM construction:
+
+- company: 300 characters;
+- title: 300 characters;
+- notes: 20,000 characters.
+
+`validate_job_url()` accepts a non-empty HTTP(S) URL up to 2,048 characters, requires a host, rejects embedded username/password credentials and whitespace, and returns accepted text unchanged. It does not silently canonicalize or rewrite a user's source URL.
+
+### Bulk ID normalization and ownership checks
+
+`normalize_bulk_ids()` accepts 1 through 500 positive integer entries. It rejects booleans, zero, negative values, strings, empty lists, and oversized batches. Duplicate IDs are normalized in first-seen order while every original source index is retained.
+
+`require_owned_bulk_ids()` compares the normalized IDs with IDs already resolved inside the authenticated account scope. If any requested ID is absent, it raises the shared safe `not_found` result with HTTP status 404 and points to the first source index. It does not distinguish a foreign record from a nonexistent record.
+
+JG-016 must perform the account-scoped query before any write and pass the resulting owned IDs to this helper.
+
+### Error compatibility
+
+`ValidationContractError` carries a safe code, field, message, and intended HTTP status. Its normalized detail shape is:
+
+```json
+{
+  "code": "validation_error",
+  "fields": [
+    {"field": "status", "message": "Invalid value"}
+  ]
+}
+```
+
+`format_error_detail()` converts legacy string details, legacy string-valued dictionaries, and the new field-list form into that shape. Unknown nested payloads are replaced with a generic message rather than stringified, which prevents request bodies or secrets from being reflected accidentally.
+
+JG-015 does not globally replace FastAPI error handling. JG-016 and JG-017 adopt this formatter at the mutation/API and UI boundaries respectively so compatibility can be tested with each activation step.
+
+### Verification
+
+Focused backend validation:
+
+```sh
+cd backend
+python -m pytest tests/test_mutation_validation.py -q
+python -m compileall app
+```
+
+Affected regression coverage:
+
+```sh
+cd backend
+python -m pytest tests/test_crm.py tests/test_application_memory.py tests/test_filtered_exports.py tests/test_query_contracts.py -q
+```
+
+`backend/tests/test_mutation_validation.py` covers every allowed and rejected status, omitted/null/empty timestamp semantics, Kolkata date-only conversion, offset handling, invalid dates, text/URL boundaries, duplicate and oversized bulk IDs, safe missing/foreign ownership behavior, and legacy/new error-detail normalization.
+
+Repository CI remains the final integration gate for the PostgreSQL backend suite, backend compilation, frontend production build, and Playwright regressions.
+
+### Rollback and activation boundary
+
+JG-015 has no migration and writes no new persisted data. If rollback is required before JG-016 adopts these helpers, remove the validation service and schema alias together. Existing application writers remain behavior-compatible because JG-015 does not route them through the new contract.
+
+Do not mark R5 fully released after JG-015 alone. JG-016 must apply the validators atomically to every application writer, and JG-017 must render the normalized failures and repair asynchronous import feedback before the R5 group acceptance fixture is complete.
