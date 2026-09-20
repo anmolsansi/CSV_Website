@@ -1255,3 +1255,73 @@ JG-017 changes frontend application code and tests only. No migration, data rewr
 
 After the JG-017 focused fixture and repository CI pass, the R5 implementation group is locally complete. JG-018 is the next ordered roadmap item. External production release proof remains separate from local implementation status.
 
+
+
+## JG-018 shared numeric parsing and dialect adapters
+
+JG-018 replaces database-specific numeric parsing scattered across the row and application routes with one read-only contract for text-backed numeric fields. It does not change the database schema, rewrite imported CSV text, or claim SQLite Alembic support. PostgreSQL remains the deployment and migration acceptance database, while SQLite keeps functional query support for local development and focused tests.
+
+### Accepted numeric text
+
+`backend/app/services/numeric_values.py` owns the contract. `parse_numeric_text()` first applies the 128-character cap to the original value, removes only percent signs, dollar signs, commas, and whitespace, then accepts one finite decimal number with an optional leading sign and decimal point.
+
+Representative results:
+
+| Source text | Parsed value |
+|---|---:|
+| `2` | `2` |
+| ` 10 ` | `10` |
+| `85%` | `85` |
+| `1,000` | `1000` |
+| `$99.50` | `99.50` |
+| `-3` | `-3` |
+| `+.5` | `0.5` |
+| blank, malformed, exponent notation, NaN/Infinity-like text, or more than 128 characters | null |
+
+Invalid input is never converted to zero. Numeric reads do not write normalized values back to `CsvRow` or `JobTrack`.
+
+### Dialect behavior
+
+`numeric_text_expression()` is a SQLAlchemy expression with one contract and two supported compilers.
+
+- SQLite compiles to `jobgrid_numeric(column)`. `backend/app/database.py` installs a SQLAlchemy connection listener before the primary engine is created. Every SQLite DBAPI connection, including connections from test-created engines after application import, receives the deterministic scalar function.
+- PostgreSQL compiles to a bounded `CASE` expression. Values longer than 128 characters become null before casting. Accepted separator characters are removed with `regexp_replace`, the normalized value must match the numeric regex, and only then is it cast to `NUMERIC`.
+- No unsupported value is cast speculatively, and no invalid value is treated as zero.
+
+### Query behavior
+
+`backend/app/services/row_queries.py` is the shared read-path owner.
+
+The following text-backed Dashboard sort fields use the numeric adapter:
+
+- `page_number`
+- `posted_age_days`
+- `jd_text_length`
+- `resume_match_score`
+
+Salary filters use the same contract for `salary_min_extracted` and `salary_max_extracted`. Application score filters/order and row-derived posted-age filters also use the same expression through the existing shared application query builder.
+
+Both ascending and descending numeric sorts keep invalid/empty values last. Equal numeric values retain the existing deterministic `id DESC` tie breaker. Account scoping, archive filtering, pagination, export query reuse, and application-versus-visit semantics are unchanged.
+
+The legacy private helpers `rows._safe_sort_column()` and `crm.num_expr()` remain as thin compatibility wrappers for existing internal callers/tests, but they no longer contain their own PostgreSQL-specific parsing logic.
+
+### Verification
+
+Focused backend verification:
+
+```sh
+cd backend
+python -m pytest tests/test_numeric_sort.py -q
+python -m pytest tests/test_query_contracts.py tests/test_filtered_exports.py tests/test_application_memory.py tests/test_crm.py -q
+python -m compileall app
+```
+
+`backend/tests/test_numeric_sort.py` covers the accepted/rejected parsing table, the 128-character and non-finite boundaries, SQLite connection registration, numeric rather than lexical ordering, null-last ordering in both directions, descending-ID ties, all four numeric CSV sort fields, separator-aware salary filters, application score/posted-age behavior, PostgreSQL/SQLite SQL compilation, and preservation of stored source text.
+
+Repository CI remains the integration gate for PostgreSQL backend tests, backend compilation, the frontend production build, and Playwright Chromium regressions.
+
+### Rollback and R6 boundary
+
+JG-018 is a code-only read-path change. Rollback removes the shared expression and restores the previous query helpers. There is no migration to downgrade and no numeric source data to restore.
+
+Do not describe R6 as complete after JG-018 alone. JG-019 still owns fresh-PostgreSQL migration/schema parity proof and JG-020 owns the integrated R6 acceptance boundary.
