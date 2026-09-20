@@ -120,6 +120,42 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
+      - name: Record JG-023 browser release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          {
+            echo "commit_sha=${GITHUB_SHA}"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "playwright=$(npx playwright --version)"
+            echo "package_lock_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
+            printf "chromium="
+            node --input-type=module -e "import { chromium } from 'playwright'; const browser = await chromium.launch({ headless: true }); console.log(browser.version()); await browser.close();"
+          } > ci-artifacts/jg023-browser-release-evidence.txt
+
+      - name: Run tab-helper safety regressions
+        run: node --test unit/open-jobs.test.mjs
+
+      - name: Verify JG-023 browser release collection is nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          COLLECTION_OUTPUT="$(npx playwright test --list tests/release-workflows.spec.ts --project=chromium)"
+          printf '%s\n' "$COLLECTION_OUTPUT" | tee ci-artifacts/jg023-playwright-collection.txt
+          if ! printf '%s\n' "$COLLECTION_OUTPUT" | grep -Eq 'Total: [1-9][0-9]* tests? in [1-9][0-9]* files?'; then
+            echo "JG-023 browser release collection is empty or could not be verified."
+            exit 1
+          fi
+
+      - name: Run JG-023 browser release workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx playwright test tests/release-workflows.spec.ts --project=chromium --reporter=line | tee ci-artifacts/jg023-playwright-focused.txt
+
       - name: Verify browser test collection is nonempty
         shell: bash
         run: |
@@ -134,6 +170,18 @@ jobs:
 
       - name: Run E2E tests
         run: npx playwright test --project=chromium
+
+      - name: Upload JG-023 browser release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jg023-browser-release-evidence-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            frontend/ci-artifacts/jg023-browser-release-evidence.txt
+            frontend/ci-artifacts/jg023-playwright-collection.txt
+            frontend/ci-artifacts/jg023-playwright-focused.txt
 
       - name: Sanitize backend logs on failure
         if: failure()
@@ -215,6 +263,78 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Apply migrations and record JG-023 backend release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          python -m alembic upgrade head
+          MIGRATION_REVISION="$(python -m alembic current 2>/dev/null | sed -nE 's/^([0-9A-Za-z_-]+).*/\1/p' | head -n 1)"
+          if [ -z "$MIGRATION_REVISION" ]; then
+            echo "Unable to determine the applied Alembic revision."
+            exit 1
+          fi
+          {
+            echo "commit_sha=${GITHUB_SHA}"
+            echo "migration_revision=$MIGRATION_REVISION"
+            echo "python=$(python --version 2>&1)"
+            echo "pip=$(python -m pip --version)"
+            echo "requirements_sha256=$(sha256sum requirements.txt | awk '{print $1}')"
+            python - <<'PY'
+          import importlib.metadata as metadata
+          for package in ("fastapi", "sqlalchemy", "alembic", "pytest", "psycopg2-binary"):
+              print(f"{package}={metadata.version(package)}")
+          PY
+          } > ci-artifacts/jg023-backend-release-evidence.txt
+
+      - name: Verify JG-023 backend release collection is nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest \
+            tests/test_release_contracts.py \
+            tests/test_backup_restore.py::test_restore_applied_company_notes_and_dates \
+            tests/test_filtered_exports.py::test_filtered_export_equals_all_list_pages \
+            tests/test_metric_consistency.py::test_shared_metrics_agree_across_analytics_goals_and_weekly \
+            tests/test_cleanup_job.py::test_cleanup_failure_not_zero_success \
+            tests/test_numeric_sort.py::test_numeric_order_not_lexical \
+            --collect-only -q | tee ci-artifacts/jg023-pytest-collection.txt
+          if ! grep -Eq '[1-9][0-9]* tests? collected' ci-artifacts/jg023-pytest-collection.txt; then
+            echo "JG-023 backend release collection is empty."
+            exit 1
+          fi
+
+      - name: Run JG-023 backend release contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest \
+            tests/test_release_contracts.py \
+            tests/test_backup_restore.py::test_restore_applied_company_notes_and_dates \
+            tests/test_filtered_exports.py::test_filtered_export_equals_all_list_pages \
+            tests/test_metric_consistency.py::test_shared_metrics_agree_across_analytics_goals_and_weekly \
+            tests/test_cleanup_job.py::test_cleanup_failure_not_zero_success \
+            tests/test_numeric_sort.py::test_numeric_order_not_lexical \
+            -q --junitxml=ci-artifacts/jg023-release-contracts.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          path = "ci-artifacts/jg023-release-contracts.xml"
+          root = ET.parse(path).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          tests = sum(int(s.attrib.get("tests", "0")) for s in suites)
+          failures = sum(int(s.attrib.get("failures", "0")) for s in suites)
+          errors = sum(int(s.attrib.get("errors", "0")) for s in suites)
+          skipped = sum(int(s.attrib.get("skipped", "0")) for s in suites)
+          if tests <= 0 or failures or errors or skipped:
+              raise SystemExit(
+                  f"JG-023 release gate rejected tests={tests} failures={failures} "
+                  f"errors={errors} skipped={skipped}"
+              )
+          with open("ci-artifacts/jg023-backend-release-evidence.txt", "a", encoding="utf-8") as handle:
+              handle.write(f"focused_tests={tests}\n")
+              handle.write("focused_failures=0\nfocused_errors=0\nfocused_skipped=0\n")
+          PY
+
       - name: Verify backend test collection is nonempty
         shell: bash
         run: |
@@ -224,6 +344,19 @@ jobs:
 
       - name: Run pytest
         run: pytest tests/ -v --tb=short --junitxml=ci-artifacts/pytest.xml
+
+      - name: Upload JG-023 backend release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jg023-backend-release-evidence-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            backend/ci-artifacts/jg023-backend-release-evidence.txt
+            backend/ci-artifacts/jg023-pytest-collection.txt
+            backend/ci-artifacts/jg023-release-contracts.xml
+            backend/ci-artifacts/pytest.xml
 
       - name: Upload backend failure artifacts
         if: failure()
