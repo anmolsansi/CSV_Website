@@ -16,7 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
 from .backup_schemas import MAX_BACKUP_JSON_BYTES
-from .config import settings
+from .config import cookie_security_options, settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .middleware import MetricsMiddleware
@@ -116,7 +116,13 @@ async def reject_oversized_backup_import_request(request: Request, call_next):
     return await call_next(request)
 
 
-app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+_session_cookie_options = cookie_security_options(settings.ENVIRONMENT)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    https_only=_session_cookie_options["secure"],
+    same_site=_session_cookie_options["samesite"],
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
