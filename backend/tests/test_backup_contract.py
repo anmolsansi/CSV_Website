@@ -36,6 +36,7 @@ from app.models import (
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
+    MaintenanceStatus,
     OAuthIdentity,
     SavedView,
     SearchSession,
@@ -122,6 +123,7 @@ def test_assert_complete_model_field_inventory():
         "AuditEvent": AuditEvent,
         "ApplyPilotBatch": ApplyPilotBatch,
         "UserGoal": UserGoal,
+        "MaintenanceStatus": MaintenanceStatus,
     }
 
     assert tuple(CSV_COLUMNS) == CSV_ROW_TEXT_FIELDS

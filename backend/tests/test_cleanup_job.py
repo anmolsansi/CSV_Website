@@ -4,12 +4,14 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.orm import sessionmaker
 
 import app.jobs as jobs_module
 from app.database import engine
-from app.models import CsvRow, User
+from app.models import CsvRow, MaintenanceStatus, User
 from app.services.retention import (
     CleanupResult,
+    ARCHIVE_MAINTENANCE_JOB_NAME,
     RetentionJobError,
     archive_eligible_rows,
 )
@@ -365,3 +367,82 @@ def test_batch_size_over_500_is_rejected_with_failure_result(db_session):
 
     assert exc_info.value.result.failed == 1
     assert exc_info.value.result.archived == 0
+
+
+def test_worker_persists_success_health(db_session, monkeypatch):
+    now = datetime(2026, 9, 20, 12, 0, 0)
+    db_session.query(User).update(
+        {User.retention_days: None},
+        synchronize_session=False,
+    )
+    db_session.commit()
+    user = _create_user(db_session, retention_days=30)
+    _create_row(db_session, user, clicked_at=now - timedelta(days=31))
+    db_session.query(MaintenanceStatus).delete()
+    db_session.commit()
+
+    TestSession = sessionmaker(bind=db_session.get_bind())
+    monkeypatch.setattr(jobs_module.settings, "AUTO_ARCHIVE_AFTER_DAYS", 30)
+
+    result = jobs_module.cleanup_clicked_rows(
+        session_factory=TestSession,
+        now=now,
+    )
+
+    assert result["archived"] == 1
+    db_session.expire_all()
+    status = db_session.get(MaintenanceStatus, ARCHIVE_MAINTENANCE_JOB_NAME)
+    assert status is not None
+    assert status.outcome == "success"
+    assert status.last_attempted_at == now
+    assert status.last_successful_at == now
+    assert status.last_failed_at is None
+    assert status.result_json["archived"] == 1
+
+
+def test_worker_failure_preserves_last_success_health(db_session, monkeypatch):
+    previous_success = datetime(2026, 9, 20, 11, 0, 0)
+    failed_at = datetime(2026, 9, 20, 12, 0, 0)
+    db_session.query(MaintenanceStatus).delete()
+    db_session.add(
+        MaintenanceStatus(
+            job_name=ARCHIVE_MAINTENANCE_JOB_NAME,
+            outcome="success",
+            last_attempted_at=previous_success,
+            last_successful_at=previous_success,
+            last_failed_at=None,
+            result_json={
+                "scanned": 0,
+                "archived": 0,
+                "skipped": 0,
+                "failed": 0,
+                "duration_ms": 1,
+            },
+            updated_at=previous_success,
+        )
+    )
+    db_session.commit()
+
+    def fail_archive(_db, **_kwargs):
+        raise RetentionJobError(
+            "synthetic failure",
+            CleanupResult(scanned=1, failed=1, duration_ms=2),
+        )
+
+    TestSession = sessionmaker(bind=db_session.get_bind())
+    monkeypatch.setattr(jobs_module.settings, "AUTO_ARCHIVE_AFTER_DAYS", 30)
+    monkeypatch.setattr(jobs_module, "archive_eligible_rows", fail_archive)
+
+    with pytest.raises(RetentionJobError):
+        jobs_module.cleanup_clicked_rows(
+            session_factory=TestSession,
+            now=failed_at,
+        )
+
+    db_session.expire_all()
+    status = db_session.get(MaintenanceStatus, ARCHIVE_MAINTENANCE_JOB_NAME)
+    assert status.outcome == "failed"
+    assert status.last_attempted_at == failed_at
+    assert status.last_failed_at == failed_at
+    assert status.last_successful_at == previous_success
+    assert status.result_json["failed"] == 1

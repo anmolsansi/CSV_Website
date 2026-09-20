@@ -17,6 +17,7 @@ from .services.retention import (
     MAX_ARCHIVE_BATCH_SIZE,
     RetentionJobError,
     archive_eligible_rows,
+    record_maintenance_outcome,
 )
 
 
@@ -27,6 +28,39 @@ logger = logging.getLogger(__name__)
 # Python process. PostgreSQL supplies the cross-process boundary in production.
 POSTGRES_CLEANUP_LOCK_KEY = 0x4A47303133
 _cleanup_process_lock = threading.Lock()
+
+
+def _record_cleanup_health(
+    *,
+    session_factory: Callable[[], Session],
+    outcome: str,
+    result: CleanupResult,
+    attempted_at: datetime | None,
+) -> None:
+    """Persist worker health separately from the archive transaction.
+
+    Health-write failure must not turn already committed archive work into a
+    false data failure. The API will surface missing/stale health as unavailable.
+    """
+    db = session_factory()
+    try:
+        record_maintenance_outcome(
+            db,
+            outcome=outcome,
+            result=result,
+            attempted_at=attempted_at,
+        )
+        db.commit()
+    except Exception:
+        rollback = getattr(db, "rollback", None)
+        if rollback is not None:
+            rollback()
+        logger.exception(
+            "cleanup_archive_job outcome=health_write_failed source_outcome=%s",
+            outcome,
+        )
+    finally:
+        db.close()
 
 
 @contextmanager
@@ -93,6 +127,12 @@ def cleanup_clicked_rows(
             "scanned=0 archived=0 skipped=0 failed=0 duration_ms=%s",
             result.duration_ms,
         )
+        _record_cleanup_health(
+            session_factory=session_factory,
+            outcome="disabled",
+            result=result,
+            attempted_at=now,
+        )
         return result.as_dict()
 
     try:
@@ -110,6 +150,12 @@ def cleanup_clicked_rows(
                     result.skipped,
                     result.failed,
                     result.duration_ms,
+                )
+                _record_cleanup_health(
+                    session_factory=session_factory,
+                    outcome="skipped",
+                    result=result,
+                    attempted_at=now,
                 )
                 return result.as_dict()
 
@@ -134,6 +180,12 @@ def cleanup_clicked_rows(
                 result.failed,
                 result.duration_ms,
             )
+            _record_cleanup_health(
+                session_factory=session_factory,
+                outcome=outcome,
+                result=result,
+                attempted_at=now,
+            )
             return result.as_dict()
     except RetentionJobError as exc:
         result = exc.result
@@ -146,6 +198,12 @@ def cleanup_clicked_rows(
             result.failed,
             result.duration_ms,
         )
+        _record_cleanup_health(
+            session_factory=session_factory,
+            outcome="failed",
+            result=result,
+            attempted_at=now,
+        )
         raise
     except Exception as exc:
         result = CleanupResult(
@@ -157,5 +215,11 @@ def cleanup_clicked_rows(
             "skipped=0 failed=%s duration_ms=%s",
             result.failed,
             result.duration_ms,
+        )
+        _record_cleanup_health(
+            session_factory=session_factory,
+            outcome="failed",
+            result=result,
+            attempted_at=now,
         )
         raise RetentionJobError("automatic archive worker failed", result) from exc
