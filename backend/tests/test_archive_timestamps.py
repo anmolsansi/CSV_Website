@@ -71,9 +71,14 @@ def test_migration_does_not_hide_unvisited_rows(auth_client, db_session):
     rows = _reset_and_seed(auth_client)
     visible_ids = {row["id"] for row in rows}
 
+    owner = db_session.query(User).filter_by(email="test@jobgrid.dev").one()
     unvisited = (
         db_session.query(CsvRow)
-        .filter(CsvRow.clicked.is_(False), CsvRow.archived.is_(False))
+        .filter(
+            CsvRow.user_id == owner.id,
+            CsvRow.clicked.is_(False),
+            CsvRow.archived.is_(False),
+        )
         .first()
     )
     assert unvisited is not None
