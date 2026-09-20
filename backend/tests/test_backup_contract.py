@@ -562,3 +562,32 @@ def test_older_v2_backup_defaults_new_retention_fields_to_null():
     assert document.sections.csv_rows[0].archived_at is None
     if document.sections.user_profile:
         assert document.sections.user_profile[0].retention_days is None
+
+
+def test_v22_profile_without_retention_days_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["schema_revision"] = "2.2.0"
+    payload["sections"]["user_profile"] = [
+        {"backup_ref": "profile-legacy", "timezone": "UTC"}
+    ]
+    _rechecksum(payload)
+
+    document = validate_backup_v2(payload)
+    assert document.sections.user_profile[0].retention_days is None
+
+
+@pytest.mark.parametrize("retention_days", [-1, 1, 6, 3651])
+def test_backup_rejects_invalid_retention_days(retention_days):
+    payload = _valid_payload()
+    payload["sections"]["user_profile"] = [
+        {
+            "backup_ref": "profile-invalid-retention",
+            "timezone": "UTC",
+            "retention_days": retention_days,
+        }
+    ]
+    _rechecksum(payload)
+
+    with pytest.raises(BackupContractError) as exc:
+        validate_backup_v2(payload)
+    assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
