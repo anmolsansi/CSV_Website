@@ -697,3 +697,100 @@ The TEST_AUTH-only reset deletes lifecycle facts before deleting tracks and rows
 ### Rollback
 
 JG-011 is a code-only read-path/UI cutover. Roll back the application and frontend changes together if required, but retain migration 005, account timezone values, and all lifecycle events. Never delete or rewrite lifecycle history to make an older reader match. No dependency or schema downgrade is required.
+
+
+## JG-012 explicit archive timestamps and disabled retention
+
+JG-012 replaces the ambiguous archive-age contract with explicit persisted state. It does not implement the JG-013 cleanup worker or enable permanent purge.
+
+### Storage and migration
+
+Alembic revision `006` adds two nullable fields:
+
+- `CsvRow.archived_at` records the UTC instant of the first explicit false-to-true archive transition.
+- `User.retention_days` stores the account's future automatic-archive preference.
+
+The migration performs no data backfill. Existing `archived=true` rows keep `archived_at=NULL` because their real archive time is unknown. Existing users keep `retention_days=NULL`, which means automatic archive is disabled. An index on `csv_rows.archived_at` supports the bounded maintenance reads owned by JG-013.
+
+Do not infer an archive timestamp from `created_at`, `clicked_at`, deployment time, or migration time. Unknown age stays unknown.
+
+### Manual archive behavior
+
+`DELETE /rows` with `{"mode":"archive"}` remains account-scoped. The mutation now filters to `archived=false` rows and atomically sets:
+
+- `archived=true`
+- `archived_at=<current UTC time>`
+
+Repeating the same archive request reports zero newly archived rows and does not move the timestamp. Archiving a source row does not detach or delete its `JobTrack` snapshot and does not rewrite `duplicate_of_id` links.
+
+Legacy rows that were already archived before revision 006 remain archived with `archived_at=NULL`. Repeating archive on them does not invent a timestamp.
+
+### Retention preference
+
+`GET /preferences` now includes `retention_days` in addition to the existing column-preference fields.
+
+Set retention with:
+
+```http
+PUT /preferences/retention
+Content-Type: application/json
+
+{"retention_days": 30}
+```
+
+Accepted values are:
+
+- `null` or `0`: disabled
+- any integer from `7` through `3650`
+
+Negative values, `1..6`, values above `3650`, non-integer values, and unknown request fields are rejected. The authenticated user is the only account that can be changed by this route.
+
+The existing `PUT /preferences` column-preference request remains compatible. Its response now also reports the account retention value.
+
+### Runtime safety and legacy cleanup retirement
+
+The new runtime controls are:
+
+- `AUTO_ARCHIVE_AFTER_DAYS=0`
+- `AUTO_PURGE_AFTER_DAYS=0`
+- `RUN_MAINTENANCE_JOBS=false`
+
+All default to disabled. `DELETE_AFTER_DAYS` is deprecated compatibility configuration and is **not** mapped into the new controls.
+
+The old cleanup implementation mixed implicit archive with hard deletion and depended on a nonexistent row-update timestamp. JG-012 replaces that function with a non-destructive compatibility shim and prevents the scheduler from registering maintenance jobs unless `RUN_MAINTENANCE_JOBS=true`. The shim still performs no archive or purge. JG-013 owns the bounded observable archive worker that will eventually use the explicit retention contract.
+
+Permanent purge remains disabled and is not implemented by JG-012.
+
+### Backup contract
+
+Backup schema revision `2.3.0` exports:
+
+- `csv_rows[].archived_at`
+- `user_profile[].retention_days`
+
+Restore writes the exact archived state/timestamp and applies the retention preference to the authenticated destination profile. Both additions are nullable with defaults, so older valid v2 backups that do not contain these fields remain readable and restore them as `NULL`.
+
+Retention values inside backups use the same `0` or `7..3650` validation rule.
+
+### Verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest tests/test_archive_timestamps.py tests/test_backup_contract.py -q
+python -m pytest tests/test_application_memory.py tests/test_rows.py tests/test_schema_parity.py -q
+python -m compileall app
+```
+
+The JG-012 regressions prove first-archive timestamp stability, preservation of unknown legacy archive dates, visibility of unvisited rows after the additive schema change, authenticated retention validation/account isolation, preservation of application/duplicate relationships, disabled legacy cleanup, and backup/restore round-trip fidelity.
+
+Run revision 006 against a disposable PostgreSQL database from revision 005 before production rollout. ORM `create_all` coverage does not replace migration-upgrade verification.
+
+### Rollback
+
+Disable maintenance registration first. JG-012 already defaults it off.
+
+Application rollback can leave `archived_at` and `retention_days` in place safely. Do not downgrade revision 006 after users have meaningful retention values without exporting them first. Never convert `archived_at=NULL` legacy rows into purge candidates during rollback.
+
+JG-013 may change maintenance execution, but it must preserve these storage and compatibility rules.
