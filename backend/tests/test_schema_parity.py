@@ -179,45 +179,45 @@ def migrated_postgres_database(postgres_test_url):
 
 def _metadata_indexes(table):
     return {
-        (
-            tuple(column.name for column in index.columns),
-            bool(index.unique),
-        )
+        tuple(column.name for column in index.columns)
         for index in table.indexes
+        if not index.unique
     }
 
 
 def _actual_indexes(inspector, table_name):
-    unique_columns = _actual_unique_constraints(inspector, table_name)
-    signatures = set()
-
-    for index in inspector.get_indexes(table_name):
-        columns = tuple(index.get("column_names") or ())
-        is_unique = bool(index.get("unique"))
-
-        # PostgreSQL may expose the physical index that backs a UNIQUE
-        # constraint without setting duplicates_constraint. The constraint is
-        # compared separately below, so do not count its backing index twice.
-        if is_unique and columns in unique_columns:
-            continue
-        signatures.add((columns, is_unique))
-
-    return signatures
-
-
-def _metadata_unique_constraints(table):
     return {
+        tuple(index.get("column_names") or ())
+        for index in inspector.get_indexes(table_name)
+        if not index.get("unique")
+    }
+
+
+def _metadata_uniqueness(table):
+    signatures = {
         tuple(column.name for column in constraint.columns)
         for constraint in table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
+    signatures.update(
+        tuple(column.name for column in index.columns)
+        for index in table.indexes
+        if index.unique
+    )
+    return signatures
 
 
-def _actual_unique_constraints(inspector, table_name):
-    return {
+def _actual_uniqueness(inspector, table_name):
+    signatures = {
         tuple(constraint.get("column_names") or ())
         for constraint in inspector.get_unique_constraints(table_name)
     }
+    signatures.update(
+        tuple(index.get("column_names") or ())
+        for index in inspector.get_indexes(table_name)
+        if index.get("unique")
+    )
+    return signatures
 
 
 def _normalize_ondelete(value):
@@ -279,9 +279,9 @@ def _assert_postgres_matches_metadata(engine):
         assert _actual_indexes(inspector, table_name) == _metadata_indexes(table), (
             table_name
         )
-        assert _actual_unique_constraints(
-            inspector, table_name
-        ) == _metadata_unique_constraints(table), table_name
+        assert _actual_uniqueness(inspector, table_name) == _metadata_uniqueness(
+            table
+        ), table_name
         assert _actual_foreign_keys(
             inspector, table_name
         ) == _metadata_foreign_keys(table), table_name
@@ -305,7 +305,7 @@ def _schema_fingerprint(engine):
                     )
                 ),
                 tuple(sorted(_actual_indexes(inspector, table_name))),
-                tuple(sorted(_actual_unique_constraints(inspector, table_name))),
+                tuple(sorted(_actual_uniqueness(inspector, table_name))),
                 tuple(sorted(_actual_foreign_keys(inspector, table_name))),
             )
         )
