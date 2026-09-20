@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 import re
 import sqlite3
 
-from sqlalchemy import Numeric, event
+from sqlalchemy import Numeric, String, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.functions import FunctionElement
@@ -100,14 +100,21 @@ def _compile_sqlite_numeric(element, compiler, **kw):
 @compiles(NumericTextExpression, "postgresql")
 def _compile_postgresql_numeric(element, compiler, **kw):
     column_sql = compiler.process(list(element.clauses)[0], **kw)
+    separator_pattern = compiler.render_literal_value(
+        _POSTGRES_SEPARATOR_PATTERN,
+        String(),
+    )
+    number_pattern = compiler.render_literal_value(
+        _POSTGRES_NUMBER_PATTERN,
+        String(),
+    )
     cleaned_sql = (
-        f"regexp_replace({column_sql}, "
-        f"'{_POSTGRES_SEPARATOR_PATTERN}', '', 'g')"
+        f"regexp_replace({column_sql}, {separator_pattern}, '', 'g')"
     )
     return (
         "CASE "
         f"WHEN char_length({column_sql}) > {MAX_NUMERIC_TEXT_LENGTH} THEN NULL "
-        f"WHEN {cleaned_sql} ~ '{_POSTGRES_NUMBER_PATTERN}' "
+        f"WHEN {cleaned_sql} ~ {number_pattern} "
         f"THEN CAST({cleaned_sql} AS NUMERIC) "
         "ELSE NULL END"
     )
