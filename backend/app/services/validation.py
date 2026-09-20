@@ -146,3 +146,75 @@ def parse_timestamp(
             field=field,
         )
     return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def validate_text_limits(values: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate mutable JobTrack text fields without rewriting accepted values."""
+    limits = {
+        "company": MAX_COMPANY_TITLE_CHARS,
+        "title": MAX_COMPANY_TITLE_CHARS,
+        "notes": MAX_NOTES_CHARS,
+    }
+    validated = dict(values)
+    for field, limit in limits.items():
+        if field not in values:
+            continue
+        value = values[field]
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValidationContractError(
+                "Value must be a string or null.",
+                field=field,
+            )
+        if len(value) > limit:
+            raise ValidationContractError(
+                f"Value must be at most {limit} characters.",
+                field=field,
+            )
+    return validated
+
+
+def validate_job_url(value: Any, *, field: str = "url") -> str:
+    if not isinstance(value, str) or not value:
+        raise ValidationContractError(
+            "URL must be a non-empty HTTP(S) URL.",
+            field=field,
+        )
+    if len(value) > MAX_JOB_URL_CHARS:
+        raise ValidationContractError(
+            f"URL must be at most {MAX_JOB_URL_CHARS} characters.",
+            field=field,
+            status_code=413,
+        )
+    if any(char.isspace() for char in value):
+        raise ValidationContractError(
+            "URL must not contain whitespace.",
+            field=field,
+        )
+
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValidationContractError(
+            "URL is malformed.",
+            field=field,
+        ) from exc
+
+    if parsed.scheme.lower() not in _ALLOWED_URL_SCHEMES:
+        raise ValidationContractError(
+            "URL scheme must be http or https.",
+            field=field,
+        )
+    if not parsed.hostname:
+        raise ValidationContractError(
+            "URL must include a host.",
+            field=field,
+        )
+    if parsed.username is not None or parsed.password is not None:
+        raise ValidationContractError(
+            "URL credentials are not allowed.",
+            field=field,
+        )
+    return value
