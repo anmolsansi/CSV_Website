@@ -3323,7 +3323,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-014"></a>
 ### JG-014 — Expose retention policy and maintenance health safely
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** interface integration  
 **Execution position:** 14/64; group step 3/3
@@ -3508,13 +3508,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-014 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: retention-settings.spec.ts: defaults off and values validated
-- [ ] Required regression passes: cross_account_policy_write_is_denied
-- [ ] Required regression passes: preview_has_no_side_effect
-- [ ] Required regression passes: failed_health_does_not_look_healthy
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-014 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: retention-settings.spec.ts: defaults off and values validated
+- [x] Required regression passes: cross_account_policy_write_is_denied
+- [x] Required regression passes: preview_has_no_side_effect
+- [x] Required regression passes: failed_health_does_not_look_healthy
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -3532,12 +3532,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -3550,7 +3550,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-013 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** Implementation PR #64 merged to `main` at `e8ee79dcb926f05e9ce29d67c30abd19044fea92`. Final CI run #128 passed 222 PostgreSQL backend tests, the backend compile check, the frontend production build, and 128 Playwright Chromium tests. The ticket now exposes authenticated GET/PATCH `/crm/profile/retention`, an account-scoped read-only eligibility preview, explicit-save UI validation, and durable cross-process maintenance health through additive Alembic revision 007. Failed, missing, stale, or freshly re-enabled worker health degrades to unavailable rather than pretending zero work; opening settings and saving policy never invokes cleanup. Production automatic archive, permanent purge, and user-facing archived-row recovery remain disabled/out of scope until their explicit rollout/later-ticket gates. Local/CI state is complete; no production maintenance activation was performed.
 
 ---
 
