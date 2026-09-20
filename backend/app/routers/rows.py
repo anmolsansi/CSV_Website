@@ -25,6 +25,31 @@ from .crm import emit_event, calculate_priority_score, calculate_triage
 router = APIRouter(tags=["rows"])
 logger = logging.getLogger(__name__)
 
+
+class RetentionPreferenceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    retention_days: int | None
+
+
+def _validate_retention_days(value: int | None) -> int | None:
+    if value is None or value == 0 or 7 <= value <= 3650:
+        return value
+    raise HTTPException(
+        status_code=422,
+        detail="retention_days must be 0 (disabled) or between 7 and 3650 days",
+    )
+
+
+def _clean_columns(columns: list[str]) -> list[str]:
+    seen = set()
+    cleaned = []
+    for col in columns:
+        if col in CSV_COLUMNS and col not in seen:
+            cleaned.append(col)
+            seen.add(col)
+    return cleaned
+
 def _safe_sort_column(sort_by: str):
     """Compatibility wrapper around the shared row sort contract."""
 
