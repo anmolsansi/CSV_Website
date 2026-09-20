@@ -35,15 +35,19 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler.add_job(
-        cleanup_clicked_rows,
-        "interval",
-        minutes=settings.CLEANUP_INTERVAL_MINUTES,
-        id="cleanup_clicked_rows",
-    )
-    scheduler.start()
+    maintenance_started = False
+    if settings.RUN_MAINTENANCE_JOBS:
+        scheduler.add_job(
+            cleanup_clicked_rows,
+            "interval",
+            minutes=settings.CLEANUP_INTERVAL_MINUTES,
+            id="cleanup_clicked_rows",
+        )
+        scheduler.start()
+        maintenance_started = True
     yield
-    scheduler.shutdown()
+    if maintenance_started:
+        scheduler.shutdown()
 
 
 app = FastAPI(title="CSV URL Tracker", lifespan=lifespan)

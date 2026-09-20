@@ -490,3 +490,104 @@ def test_multiple_user_profiles_are_rejected():
     with pytest.raises(BackupContractError) as exc:
         validate_backup_v2(payload)
     assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
+
+
+def test_backup_preserves_archive_state(db_session):
+    archived_at = datetime(2026, 9, 20, 5, 45, 0)
+    source = User(
+        email="archive-backup-source@jobgrid.dev",
+        timezone="America/Chicago",
+        retention_days=30,
+    )
+    db_session.add(source)
+    db_session.flush()
+    db_session.add(
+        CsvRow(
+            user_id=source.id,
+            upload_batch_id="jg012-source",
+            url="https://example.com/jg012/archive-state",
+            title="Archive State",
+            clicked=True,
+            archived=True,
+            archived_at=archived_at,
+        )
+    )
+    db_session.commit()
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["schema_revision"] == BACKUP_SCHEMA_REVISION
+    assert payload["sections"]["csv_rows"][0]["archived"] is True
+    assert payload["sections"]["csv_rows"][0]["archived_at"] == "2026-09-20T05:45:00Z"
+    assert payload["sections"]["user_profile"][0]["retention_days"] == 30
+
+    target = User(
+        email="archive-backup-target@jobgrid.dev",
+        timezone="UTC",
+        retention_days=None,
+    )
+    db_session.add(target)
+    db_session.commit()
+    target_id = target.id
+
+    document = validate_backup_v2(payload)
+    result = restore_backup_v2(db_session, target_id, document, "merge_missing")
+    assert result["counts"]["csv_rows"]["created"] == 1
+    assert result["counts"]["user_profile"]["created"] == 1
+
+    db_session.expire_all()
+    restored = (
+        db_session.query(CsvRow)
+        .filter_by(
+            user_id=target_id,
+            url="https://example.com/jg012/archive-state",
+        )
+        .one()
+    )
+    restored_user = db_session.get(User, target_id)
+    assert restored.archived is True
+    assert restored.archived_at == archived_at
+    assert restored_user.retention_days == 30
+    assert restored_user.timezone == "America/Chicago"
+
+
+def test_older_v2_backup_defaults_new_retention_fields_to_null():
+    payload = _valid_payload()
+    payload["schema_revision"] = "2.2.0"
+    payload["sections"]["csv_rows"][0].pop("archived_at", None)
+    if payload["sections"]["user_profile"]:
+        payload["sections"]["user_profile"][0].pop("retention_days", None)
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    document = validate_backup_v2(payload)
+    assert document.sections.csv_rows[0].archived_at is None
+    if document.sections.user_profile:
+        assert document.sections.user_profile[0].retention_days is None
+
+
+def test_v22_profile_without_retention_days_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["schema_revision"] = "2.2.0"
+    payload["sections"]["user_profile"] = [
+        {"backup_ref": "profile-legacy", "timezone": "UTC"}
+    ]
+    _rechecksum(payload)
+
+    document = validate_backup_v2(payload)
+    assert document.sections.user_profile[0].retention_days is None
+
+
+@pytest.mark.parametrize("retention_days", [-1, 1, 6, 3651])
+def test_backup_rejects_invalid_retention_days(retention_days):
+    payload = _valid_payload()
+    payload["sections"]["user_profile"] = [
+        {
+            "backup_ref": "profile-invalid-retention",
+            "timezone": "UTC",
+            "retention_days": retention_days,
+        }
+    ]
+    _rechecksum(payload)
+
+    with pytest.raises(BackupContractError) as exc:
+        validate_backup_v2(payload)
+    assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")

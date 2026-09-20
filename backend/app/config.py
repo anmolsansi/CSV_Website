@@ -40,6 +40,18 @@ class Settings:
         or [FRONTEND_URL, "http://127.0.0.1:5173"]
     )
     CLEANUP_INTERVAL_MINUTES = int(os.getenv("CLEANUP_INTERVAL_MINUTES", "60"))
+
+    # JG-012 retention contract. These new controls are deliberately disabled
+    # by default and are not derived from the legacy DELETE_AFTER_DAYS value.
+    AUTO_ARCHIVE_AFTER_DAYS = int(os.getenv("AUTO_ARCHIVE_AFTER_DAYS", "0"))
+    AUTO_PURGE_AFTER_DAYS = int(os.getenv("AUTO_PURGE_AFTER_DAYS", "0"))
+    RUN_MAINTENANCE_JOBS = (
+        os.getenv("RUN_MAINTENANCE_JOBS", "false").lower() == "true"
+    )
+
+    # Deprecated compatibility setting. JG-013 removes the legacy cleanup
+    # behavior that still references this name. Do not map it into either new
+    # retention control, because that could silently activate destructive work.
     DELETE_AFTER_DAYS = int(os.getenv("DELETE_AFTER_DAYS", "2"))
     TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
 

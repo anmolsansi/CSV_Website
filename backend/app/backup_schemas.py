@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.2.0"
+BACKUP_SCHEMA_REVISION = "2.3.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -117,6 +117,9 @@ CsvRowBackupV2 = create_model(
     clicked=(bool, ...),
     clicked_at=(str | None, ...),
     archived=(bool, ...),
+    # Optional default keeps older v2 payloads valid while new exports carry
+    # the explicit archive timestamp.
+    archived_at=(str | None, None),
     is_duplicate=(bool, ...),
     duplicate_of_ref=(str | None, ...),
     **_csv_dynamic_fields,
@@ -229,13 +232,24 @@ class UserGoalBackupV2(BackupRecordBase):
 
 class UserProfileBackupV2(BackupRecordBase):
     timezone: str = Field(min_length=1, max_length=64)
+    # Missing/null remains valid for v2 backups produced before JG-012.
+    retention_days: int | None = None
 
     @model_validator(mode="after")
-    def validate_timezone(self):
+    def validate_profile_preferences(self):
         try:
             ZoneInfo(self.timezone)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError("timezone must be a valid IANA timezone name.") from exc
+
+        if (
+            self.retention_days is not None
+            and self.retention_days != 0
+            and not 7 <= self.retention_days <= 3650
+        ):
+            raise ValueError(
+                "retention_days must be 0 (disabled) or between 7 and 3650 days."
+            )
         return self
 
 
@@ -293,7 +307,7 @@ def _entries(
 
 CSV_ROW_EXPORTED_COLUMNS = (
     "upload_batch_id", "created_at", "clicked", "clicked_at", "archived",
-    "is_duplicate", *CSV_ROW_TEXT_FIELDS
+    "archived_at", "is_duplicate", *CSV_ROW_TEXT_FIELDS
 )
 
 MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
@@ -304,9 +318,9 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             "User/account identity is not portable backup data; restore is owned by the authenticated destination user.",
         ),
         **_entries(
-            ["timezone"],
+            ["timezone", "retention_days"],
             "exported",
-            "Account timezone is a portable user preference; authentication identity remains excluded.",
+            "Account timezone and retention policy are portable user preferences; authentication identity remains excluded.",
         ),
     },
     "OAuthIdentity": _entries(
@@ -630,6 +644,36 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_user_profile_section:
         # Revisions 2.0.0 and 2.1.0 predate portable account timezone.
         checksum_sections.pop("user_profile", None)
+
+    # Preserve the exact canonical shape of older v2 documents. Pydantic fills
+    # the new nullable JG-012 fields with None for runtime compatibility, but
+    # those keys did not exist when older checksums were produced.
+    raw_csv_rows = (
+        raw_sections.get("csv_rows", [])
+        if isinstance(raw_sections, Mapping)
+        else []
+    )
+    for index, raw_record in enumerate(raw_csv_rows):
+        if (
+            isinstance(raw_record, Mapping)
+            and "archived_at" not in raw_record
+            and index < len(checksum_sections.get("csv_rows", []))
+        ):
+            checksum_sections["csv_rows"][index].pop("archived_at", None)
+
+    raw_profiles = (
+        raw_sections.get("user_profile", [])
+        if isinstance(raw_sections, Mapping)
+        else []
+    )
+    for index, raw_record in enumerate(raw_profiles):
+        if (
+            isinstance(raw_record, Mapping)
+            and "retention_days" not in raw_record
+            and index < len(checksum_sections.get("user_profile", []))
+        ):
+            checksum_sections["user_profile"][index].pop("retention_days", None)
+
     expected_checksum = compute_sections_checksum(checksum_sections)
     if document.checksum_sha256 != expected_checksum:
         raise BackupContractError("invalid_checksum", 400, "Backup checksum does not match canonical sections JSON.")

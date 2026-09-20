@@ -82,6 +82,9 @@ class User(Base):
     email = Column(String(320), unique=True, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     timezone = Column(String(64), nullable=False, default="UTC")
+    # JG-012: null/0 disables automatic archive; configured values are
+    # validated at the authenticated API boundary.
+    retention_days = Column(Integer, nullable=True)
 
     identities = relationship(
         "OAuthIdentity", back_populates="user", cascade="all, delete-orphan"
@@ -155,6 +158,9 @@ class CsvRow(Base):
     clicked = Column(Boolean, default=False, nullable=False)
     clicked_at = Column(DateTime, nullable=True, index=True)
     archived = Column(Boolean, default=False, nullable=False, index=True)
+    # Legacy archived rows intentionally keep this NULL. A timestamp is written
+    # only when an unarchived row transitions into the archive.
+    archived_at = Column(DateTime, nullable=True, index=True)
     is_duplicate = Column(Boolean, default=False, nullable=False, index=True)
     duplicate_of_id = Column(Integer, ForeignKey("csv_rows.id"), nullable=True, index=True)
 
