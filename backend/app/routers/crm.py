@@ -395,15 +395,45 @@ def filtered_query(db, user_id, status=None, company=None, ats_group=None, searc
     )
 
 @router.post("/from-row/{row_id}")
-def create_from_row(row_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
-    if not row:
-        raise HTTPException(404, "Row not found")
-    now = datetime.utcnow()
-    item = upsert_from_row(db, user.id, row, now)
-    db.commit()
-    db.refresh(item)
-    return to_out(item)
+def create_from_row(
+    row_id: int,
+    x_operation_id: str | None = Header(None, alias="X-Operation-ID"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    operation_id = _request_operation_id(x_operation_id)
+    started = perf_counter()
+    try:
+        row = db.query(CsvRow).filter_by(id=row_id, user_id=user.id).first()
+        if not row:
+            raise HTTPException(404, "Row not found")
+        _validate_row_application_seed(row)
+        item = upsert_from_row(db, user.id, row, datetime.utcnow())
+        db.commit()
+        db.refresh(item)
+        _log_lifecycle_outcome(
+            action="from_row",
+            operation_id=operation_id,
+            outcome="success",
+            affected=1,
+            started=started,
+        )
+        return to_out(item)
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db, exc, action="from_row", operation_id=operation_id, started=started
+        )
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db, exc, action="from_row", operation_id=operation_id, started=started
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db, exc, action="from_row", operation_id=operation_id, started=started
+        )
 
 
 @router.get("/applications")
@@ -552,23 +582,40 @@ def bulk_create_from_rows(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    requested_ids = list(dict.fromkeys(payload.row_ids))
-    rows = (
-        db.query(CsvRow)
-        .filter(CsvRow.id.in_(requested_ids), CsvRow.user_id == user.id)
-        .all()
-    )
-    if not requested_ids or len(rows) != len(requested_ids):
-        raise HTTPException(404, "One or more rows not found")
-
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    now = datetime.utcnow()
-    created = 0
-    items = []
     try:
-        for row in rows:
-            item = db.query(JobTrack).filter_by(user_id=user.id, url=row.url).first()
+        normalized = normalize_bulk_ids(payload.row_ids, field="row_ids")
+        rows = (
+            db.query(CsvRow)
+            .filter(CsvRow.id.in_(normalized.ids), CsvRow.user_id == user.id)
+            .all()
+        )
+        by_id = {row.id: row for row in rows}
+        require_owned_bulk_ids(normalized, by_id, field="row_ids")
+        ordered_rows = [by_id[row_id] for row_id in normalized.ids]
+
+        status_supplied = "status" in payload.model_fields_set
+        target_status = validate_status(payload.status) if status_supplied else None
+        for row in ordered_rows:
+            _validate_row_application_seed(row)
+
+        now = datetime.utcnow()
+        existing_tracks = {
+            item.url: item
+            for item in (
+                db.query(JobTrack)
+                .filter(
+                    JobTrack.user_id == user.id,
+                    JobTrack.url.in_([row.url for row in ordered_rows]),
+                )
+                .all()
+            )
+        }
+        created = 0
+        items = []
+        for row in ordered_rows:
+            item = existing_tracks.get(row.url)
             if item is None:
                 item = JobTrack(
                     user_id=user.id,
@@ -580,6 +627,7 @@ def bulk_create_from_rows(
                 )
                 db.add(item)
                 db.flush()
+                existing_tracks[row.url] = item
                 created += 1
             item.csv_row_id = row.id
             for field, source_field in [
@@ -590,7 +638,7 @@ def bulk_create_from_rows(
                 ("resume_match_score", "resume_match_score"),
             ]:
                 setattr(item, field, getattr(item, field) or getattr(row, source_field))
-            if payload.status:
+            if status_supplied:
                 apply_job_track_changes(
                     db,
                     user_id=user.id,
@@ -598,7 +646,7 @@ def bulk_create_from_rows(
                     source="bulk_from_rows",
                     operation_id=operation_id,
                     now=now,
-                    status=payload.status,
+                    status=target_status,
                 )
             else:
                 item.updated_at = now
@@ -621,6 +669,20 @@ def bulk_create_from_rows(
             affected=len(items),
             started=started,
         )
+        return {
+            "created": created,
+            "updated": len(items) - created,
+            "skipped": 0,
+            "application_ids": application_ids,
+        }
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            started=started,
+        )
     except LifecycleEventError as exc:
         _raise_lifecycle_http(
             db,
@@ -630,12 +692,25 @@ def bulk_create_from_rows(
             affected=0,
             started=started,
         )
-    return {
-        "created": created,
-        "updated": len(items) - created,
-        "skipped": 0,
-        "application_ids": application_ids,
-    }
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="bulk_from_rows",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 @router.patch("/applications/{item_id}")
