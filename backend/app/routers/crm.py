@@ -13,6 +13,7 @@ from sqlalchemy import Float, asc, case, cast, desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..config import settings
 from ..database import get_db
 from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, ApplyPilotBatch, AuditEvent, CsvRow, JobLifecycleEvent, JobTrack, SavedView, SearchSession, User, UserGoal
 from ..scoring import _parse_score, priority_score as scoring_priority_score, improved_triage as scoring_triage, skills_extraction
@@ -37,6 +38,12 @@ from ..services.row_queries import (
     order_application_query,
     order_row_query,
     resolve_row_sort_column,
+)
+from ..services.retention import (
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
+    count_eligible_rows,
+    maintenance_health,
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -544,6 +551,67 @@ def update_app(
             started=started,
         )
     return to_out(item)
+
+
+def _retention_profile_response(db: Session, user: User) -> dict:
+    archive_after_days = int(user.retention_days or 0)
+    return {
+        "archive_after_days": archive_after_days,
+        "eligible_row_count": count_eligible_rows(
+            db,
+            user_id=user.id,
+            retention_days=archive_after_days,
+        ),
+        "maintenance": maintenance_health(
+            db,
+            auto_archive_enabled=settings.AUTO_ARCHIVE_AFTER_DAYS > 0,
+            cleanup_interval_minutes=settings.CLEANUP_INTERVAL_MINUTES,
+        ),
+        "purge_available": False,
+        "archived_rows_ui_available": False,
+        "recovery_message": (
+            "Archived rows are preserved. Until JG-062 ships recovery requires "
+            "the existing API/operator workflow."
+        ),
+    }
+
+
+@router.get("/profile/retention")
+def get_profile_retention(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the saved policy, read-only eligibility preview, and safe health."""
+    return _retention_profile_response(db, user)
+
+
+@router.patch("/profile/retention")
+def update_profile_retention(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if set(payload) != {"archive_after_days"}:
+        raise HTTPException(
+            422,
+            "Request body must contain exactly one field: archive_after_days.",
+        )
+
+    value = payload.get("archive_after_days")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or (value != 0 and not MIN_RETENTION_DAYS <= value <= MAX_RETENTION_DAYS)
+    ):
+        raise HTTPException(
+            422,
+            "archive_after_days must be 0 (disabled) or between 7 and 3650 days.",
+        )
+
+    user.retention_days = value
+    db.commit()
+    db.refresh(user)
+    return _retention_profile_response(db, user)
 
 
 @router.get("/profile/timezone")
