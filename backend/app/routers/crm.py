@@ -229,18 +229,6 @@ def _validate_row_application_seed(row: CsvRow) -> None:
     )
 
 
-def _prepare_track_patch(data: dict) -> dict:
-    prepared = dict(data)
-    try:
-        if "applied_at" in prepared:
-            prepared["applied_at"] = parse_dt(prepared["applied_at"])
-        if "follow_up_at" in prepared:
-            prepared["follow_up_at"] = parse_dt(prepared["follow_up_at"])
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "Invalid datetime value") from exc
-    return prepared
-
-
 def _apply_track_patch(
     db: Session,
     *,
