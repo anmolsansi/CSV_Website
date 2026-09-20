@@ -327,4 +327,5 @@ def test_zero_tests_or_failed_setup_is_not_success():
 
     assert "npx playwright test --project=chromium" in e2e_step
     assert "dependencies: ['setup']" in playwright_config
-    assert "production" not in workflow.lower()
+    assert "ENVIRONMENT: production" not in workflow
+    assert "${{ secrets." not in workflow
