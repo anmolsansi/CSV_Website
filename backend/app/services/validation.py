@@ -218,3 +218,57 @@ def validate_job_url(value: Any, *, field: str = "url") -> str:
             field=field,
         )
     return value
+
+
+def normalize_bulk_ids(values: Sequence[Any], *, field: str = "ids") -> NormalizedBulkIds:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise ValidationContractError(
+            "Bulk IDs must be a list.",
+            field=field,
+        )
+    if not 1 <= len(values) <= MAX_BULK_IDS:
+        raise ValidationContractError(
+            f"Bulk IDs must contain between 1 and {MAX_BULK_IDS} entries.",
+            field=field,
+        )
+
+    order: list[int] = []
+    positions: dict[int, list[int]] = {}
+    for index, value in enumerate(values):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValidationContractError(
+                "Bulk IDs must be positive integers.",
+                field=f"{field}[{index}]",
+            )
+        if value not in positions:
+            positions[value] = []
+            order.append(value)
+        positions[value].append(index)
+
+    return NormalizedBulkIds(
+        ids=tuple(order),
+        source_indices={
+            value: tuple(source_indices)
+            for value, source_indices in positions.items()
+        },
+    )
+
+
+def require_owned_bulk_ids(
+    normalized: NormalizedBulkIds,
+    owned_ids: Iterable[int],
+    *,
+    field: str = "ids",
+) -> tuple[int, ...]:
+    owned = set(owned_ids)
+    missing = [value for value in normalized.ids if value not in owned]
+    if missing:
+        first_missing = missing[0]
+        source_index = normalized.source_indices[first_missing][0]
+        raise ValidationContractError(
+            "One or more applications were not found.",
+            field=f"{field}[{source_index}]",
+            code="not_found",
+            status_code=404,
+        )
+    return normalized.ids
