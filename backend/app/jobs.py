@@ -10,6 +10,7 @@ from typing import Callable, Iterator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from .config import settings
 from .database import SessionLocal, engine
 from .services.retention import (
     CleanupResult,
@@ -83,6 +84,17 @@ def cleanup_clicked_rows(
     never uses row creation time as visit evidence.
     """
     started = perf_counter()
+    if settings.AUTO_ARCHIVE_AFTER_DAYS <= 0:
+        result = CleanupResult(
+            duration_ms=int((perf_counter() - started) * 1000),
+        )
+        logger.info(
+            "cleanup_archive_job outcome=disabled reason=auto_archive_disabled "
+            "scanned=0 archived=0 skipped=0 failed=0 duration_ms=%s",
+            result.duration_ms,
+        )
+        return result.as_dict()
+
     try:
         with cleanup_job_lock() as acquired:
             if not acquired:
