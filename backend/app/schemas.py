@@ -6,6 +6,17 @@ from pydantic import BaseModel
 from .models import CSV_COLUMNS
 
 
+JobTrackStatus = Literal[
+    "opened",
+    "applied",
+    "follow_up",
+    "interview",
+    "rejected",
+    "offer",
+    "not_applying",
+]
+
+
 class UserOut(BaseModel):
     id: int
     email: str
@@ -43,7 +54,7 @@ class BulkUpdateIn(BaseModel):
 
 class BulkFromRowsIn(BaseModel):
     row_ids: List[int]
-    status: Optional[Literal['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']] = None
+    status: Optional[JobTrackStatus] = None
 
 
 class SavedViewIn(BaseModel):
