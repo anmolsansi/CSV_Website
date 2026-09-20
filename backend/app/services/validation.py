@@ -175,6 +175,45 @@ def validate_text_limits(values: Mapping[str, Any]) -> dict[str, Any]:
     return validated
 
 
+def prepare_job_track_patch(
+    values: Mapping[str, Any],
+    *,
+    timezone_name: str | None,
+    current_status: str,
+    current_applied_at: datetime | None,
+) -> dict[str, Any]:
+    """Validate one application patch before the caller mutates ORM state."""
+    prepared = validate_text_limits(values)
+
+    if "status" in prepared:
+        prepared["status"] = validate_status(prepared["status"])
+
+    for field in ("applied_at", "follow_up_at"):
+        if field in prepared:
+            prepared[field] = parse_timestamp(
+                prepared[field],
+                timezone_name=timezone_name,
+                field=field,
+            )
+
+    target_status = prepared.get("status", current_status)
+    if prepared.get("mark_applied"):
+        target_status = "applied"
+    target_applied_at = prepared.get("applied_at", current_applied_at)
+
+    if (
+        "applied_at" in prepared
+        and target_applied_at is None
+        and target_status == "applied"
+    ):
+        raise ValidationContractError(
+            "Applied date cannot be cleared while status remains applied.",
+            field="applied_at",
+        )
+
+    return prepared
+
+
 def validate_job_url(value: Any, *, field: str = "url") -> str:
     if not isinstance(value, str) or not value:
         raise ValidationContractError(
