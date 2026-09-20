@@ -52,7 +52,9 @@ def _record_cleanup_health(
         )
         db.commit()
     except Exception:
-        db.rollback()
+        rollback = getattr(db, "rollback", None)
+        if rollback is not None:
+            rollback()
         logger.exception(
             "cleanup_archive_job outcome=health_write_failed source_outcome=%s",
             outcome,
