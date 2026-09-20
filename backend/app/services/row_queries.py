@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Literal
 
-from sqlalchemy import Float, asc, case, desc, func, or_
+from sqlalchemy import asc, desc, func, or_
 from sqlalchemy.orm import Query, Session
 
 from ..models import CSV_COLUMNS, CsvRow, JobTrack
+from .numeric_values import numeric_text_expression
 
 
 @dataclass(frozen=True)
@@ -81,11 +82,7 @@ def resolve_row_sort_column(sort_by: str):
 
     column = getattr(CsvRow, sort_by)
     if sort_by in ROW_NUMERIC_SORT_COLUMNS:
-        cleaned = func.nullif(func.regexp_replace(column, r"[%,$,\s]", "", "g"), "")
-        return case(
-            (cleaned.op("~")(r"^-?\d+(\.\d+)?$"), func.cast(cleaned, Float)),
-            else_=None,
-        )
+        return numeric_text_expression(column)
     return column
 
 
@@ -113,13 +110,11 @@ def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
 
     if params.salary_min is not None:
         query = query.filter(
-            CsvRow.salary_min_extracted.isnot(None),
-            func.cast(CsvRow.salary_min_extracted, Float) >= params.salary_min,
+            numeric_text_expression(CsvRow.salary_min_extracted) >= params.salary_min
         )
     if params.salary_max is not None:
         query = query.filter(
-            CsvRow.salary_max_extracted.isnot(None),
-            func.cast(CsvRow.salary_max_extracted, Float) <= params.salary_max,
+            numeric_text_expression(CsvRow.salary_max_extracted) <= params.salary_max
         )
     if params.has_error:
         query = query.filter(CsvRow.error.isnot(None), CsvRow.error != "")

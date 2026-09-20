@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import Float, asc, case, cast, desc, func, or_
+from sqlalchemy import desc, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ from ..services.lifecycle import (
     rolling_week_utc_bounds,
     validate_timezone_name,
 )
+from ..services.numeric_values import numeric_text_expression
 from ..services.row_queries import (
     ApplicationQuery,
     RowQuery,
@@ -261,8 +262,9 @@ def _apply_track_patch(
 
 
 def num_expr(col):
-    cleaned = func.nullif(func.regexp_replace(col, r"[%,$,\s]", "", "g"), "")
-    return case((cleaned.op("~")(r"^-?\d+(\.\d+)?$"), cast(cleaned, Float)), else_=None)
+    """Compatibility wrapper around the shared text-backed numeric adapter."""
+
+    return numeric_text_expression(col)
 
 
 def to_out(item):
