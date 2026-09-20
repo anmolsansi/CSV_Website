@@ -34,7 +34,7 @@ def _seed_numeric_rows(engine, marker):
             db.add(
                 CsvRow(
                     user_id=user.id,
-                    upload_batch_id=f"jg020-{marker}",
+                    upload_batch_id=f"jg020-{uuid4().hex[:20]}",
                     url=f"https://example.test/jg020/{marker}/{index}",
                     company_guess=marker,
                     title=f"{marker} score {index}",
