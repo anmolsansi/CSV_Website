@@ -881,3 +881,109 @@ python -m compileall app
 ```
 
 `test_cleanup_job.py` covers old unvisited rows, disabled policies, the exact retention boundary, 500-row batching/resume, repeat-run timestamp stability, rollback with a non-zero failure signal, overlapping worker suppression, lock release after failure, and PostgreSQL advisory-lock contention/recovery. Repository CI remains the integration gate for the complete PostgreSQL backend suite, backend compilation, frontend production build, and Playwright regressions.
+
+
+## JG-014 retention policy and maintenance health
+
+JG-014 adds the account settings/API layer on top of the JG-012 policy fields and JG-013 bounded archive worker. It does **not** activate production maintenance, expose permanent purge, or add user-facing archived-row recovery.
+
+### Durable maintenance health
+
+Alembic revision `007` adds `maintenance_status`, keyed by `job_name`. The row stores only aggregate operational state:
+
+- latest outcome;
+- last attempted cleanup time;
+- last successful cleanup time;
+- last failed cleanup time;
+- the existing aggregate cleanup result;
+- update time.
+
+The table has no user-owned data and is deliberately excluded from portable user backups. It exists because the designated maintenance process and API-serving workers may be different processes. Process-local timestamps would disappear on restart or be invisible to another worker, and `CsvRow.archived_at` cannot prove that a zero-work cleanup ran successfully.
+
+The archive worker records `success` or `no_work` only after the bounded archive transaction completes. A later failure updates failure/attempt state but preserves the prior successful timestamp. Health persistence runs in a separate transaction, so a health-write problem cannot turn already committed archive work into a false archive failure. Missing health then degrades safely to unavailable.
+
+### Retention profile API
+
+Authenticated account settings are available at:
+
+```http
+GET /crm/profile/retention
+```
+
+The response contains:
+
+```json
+{
+  "archive_after_days": 0,
+  "eligible_row_count": 0,
+  "maintenance": {
+    "status": "disabled",
+    "last_successful_cleanup_at": null,
+    "last_attempted_cleanup_at": null,
+    "last_outcome": "disabled"
+  },
+  "purge_available": false,
+  "archived_rows_ui_available": false,
+  "recovery_message": "Archived rows are preserved. Until JG-062 ships recovery requires the existing API/operator workflow."
+}
+```
+
+`eligible_row_count` is a read-only preview for the authenticated account. It counts only rows that are still unarchived, have a known `clicked_at`, and are at or before the saved account cutoff. Reading the endpoint never calls the archive worker and never mutates rows.
+
+Update the policy with:
+
+```http
+PATCH /crm/profile/retention
+Content-Type: application/json
+
+{"archive_after_days": 30}
+```
+
+The request body must contain exactly one field. Accepted values are `0` for disabled or an integer from `7` through `3650`. The route has no user-ID parameter, so it can change only the authenticated account. Existing `GET /preferences` and `PUT /preferences/retention` behavior remains compatible.
+
+Saving a positive account policy does not turn on the operator worker. `AUTO_ARCHIVE_AFTER_DAYS=0` remains the global archive kill switch, `RUN_MAINTENANCE_JOBS=false` remains the generic-process default, and `AUTO_PURGE_AFTER_DAYS=0` remains the purge boundary.
+
+### Health interpretation
+
+The UI/API exposes only three health states:
+
+- `disabled`: the global automatic-archive kill switch is off;
+- `healthy`: the latest durable state has a successful cleanup within the freshness window and no later failure;
+- `unavailable`: no successful state exists, a failure occurred after the last success, or the last success is stale.
+
+The freshness window is the larger of two cleanup intervals or one cleanup interval plus five minutes. A failed or stale worker is never presented as a healthy zero-work run. The eligibility preview remains a separate database calculation.
+
+### Dashboard behavior
+
+`frontend/src/components/RetentionSettings.jsx` loads the profile when Dashboard opens. The control defaults to `0`, validates `0` or `7..3650`, and requires an explicit **Save**. Editing the input alone makes no request. While a save is pending the button is disabled, failed saves retain the draft, successful saves refresh the server result, and load failures expose a Retry action.
+
+The panel shows the saved-policy eligibility preview, maintenance health, last successful cleanup time when known, and a permanent-purge unavailable message. Before JG-062 there is no archived-row recovery link. The panel explains that preserved archived rows require the existing API/operator recovery workflow.
+
+### Operations, verification, and rollback
+
+**Operational owner:** the deployment operator responsible for the single designated JobGrid maintenance process. No generic web worker should be enabled merely because this UI is deployed.
+
+One bounded manual run remains:
+
+```sh
+cd backend
+python -c "from app.jobs import cleanup_clicked_rows; print(cleanup_clicked_rows())"
+```
+
+That command can archive eligible rows when the global archive gate is enabled. It never purges rows.
+
+Focused verification:
+
+```sh
+cd backend
+python -m pytest tests/test_retention_profile.py tests/test_cleanup_job.py tests/test_archive_timestamps.py tests/test_backup_contract.py -q
+python -m compileall app
+
+cd ../frontend
+npm run build
+npm run test:e2e -- tests/retention-settings.spec.ts --project=chromium
+```
+
+Revision 007 must also be rehearsed up and down against a disposable database. Repository CI remains the final PostgreSQL/full-suite integration gate.
+
+Rollback starts by keeping `AUTO_ARCHIVE_AFTER_DAYS=0` and `RUN_MAINTENANCE_JOBS=false`. The frontend/API changes can then be rolled back without changing user retention values. The `maintenance_status` table contains operational aggregates only; revision 007 can be downgraded by dropping that table after the worker is stopped. Do not remove `archived_at`, `retention_days`, or reinterpret legacy unknown archive timestamps. Permanent purge remains unavailable.
