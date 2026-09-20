@@ -1,6 +1,8 @@
 import csv
 import io
+import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -30,24 +32,57 @@ else:
     from .database import Base, engine
     Base.metadata.create_all(bind=engine)
 
+logger = logging.getLogger(__name__)
+
 scheduler = BackgroundScheduler()
+_maintenance_registration_lock = threading.Lock()
+_maintenance_registered = False
+
+
+def _start_maintenance_scheduler() -> bool:
+    """Register maintenance at most once in this Python process."""
+    global _maintenance_registered
+    with _maintenance_registration_lock:
+        if _maintenance_registered:
+            logger.info(
+                "maintenance_scheduler outcome=skipped reason=already_registered"
+            )
+            return False
+        scheduler.add_job(
+            cleanup_clicked_rows,
+            "interval",
+            minutes=settings.CLEANUP_INTERVAL_MINUTES,
+            id="cleanup_clicked_rows",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.start()
+        _maintenance_registered = True
+        logger.info("maintenance_scheduler outcome=started")
+        return True
+
+
+def _stop_maintenance_scheduler() -> None:
+    global _maintenance_registered
+    with _maintenance_registration_lock:
+        if not _maintenance_registered:
+            return
+        scheduler.shutdown(wait=False)
+        _maintenance_registered = False
+        logger.info("maintenance_scheduler outcome=stopped")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     maintenance_started = False
     if settings.RUN_MAINTENANCE_JOBS:
-        scheduler.add_job(
-            cleanup_clicked_rows,
-            "interval",
-            minutes=settings.CLEANUP_INTERVAL_MINUTES,
-            id="cleanup_clicked_rows",
-        )
-        scheduler.start()
-        maintenance_started = True
-    yield
-    if maintenance_started:
-        scheduler.shutdown()
+        maintenance_started = _start_maintenance_scheduler()
+    try:
+        yield
+    finally:
+        if maintenance_started:
+            _stop_maintenance_scheduler()
 
 
 app = FastAPI(title="CSV URL Tracker", lifespan=lifespan)
