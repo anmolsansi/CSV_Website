@@ -152,7 +152,7 @@ test.describe('JG-017 application validation feedback', () => {
 
     releaseRequest?.()
 
-    await expect(page.getByText('Imported 1 applications')).toBeVisible()
+    await expect(page.locator('span').filter({ hasText: 'Imported 1 applications' })).toBeVisible()
     await expect(importButton).toBeEnabled()
   })
 
