@@ -169,7 +169,12 @@ def maintenance_health(
             or status.last_failed_at >= status.last_successful_at
         )
     )
-    health_status = "unavailable" if stale or failed_since_success else "healthy"
+    awaiting_fresh_run = status.outcome == "disabled"
+    health_status = (
+        "unavailable"
+        if stale or failed_since_success or awaiting_fresh_run
+        else "healthy"
+    )
     return {
         "status": health_status,
         "last_successful_cleanup_at": status.last_successful_at,
