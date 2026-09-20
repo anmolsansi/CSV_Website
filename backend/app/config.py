@@ -85,7 +85,9 @@ def validate_runtime_settings(runtime_settings) -> None:
     if (
         len(secret_key.encode("utf-8")) < 32
         or normalized_secret in _INSECURE_SECRET_VALUES
-        or normalized_secret.startswith(("changeme", "change-me", "dev-secret", "test-secret"))
+        or normalized_secret.startswith(
+            ("changeme", "change-me", "dev-secret", "test-secret")
+        )
     ):
         raise ProductionConfigurationError(
             "SECRET_KEY must contain at least 32 random bytes and must not use a default or placeholder value"
