@@ -644,6 +644,36 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_user_profile_section:
         # Revisions 2.0.0 and 2.1.0 predate portable account timezone.
         checksum_sections.pop("user_profile", None)
+
+    # Preserve the exact canonical shape of older v2 documents. Pydantic fills
+    # the new nullable JG-012 fields with None for runtime compatibility, but
+    # those keys did not exist when older checksums were produced.
+    raw_csv_rows = (
+        raw_sections.get("csv_rows", [])
+        if isinstance(raw_sections, Mapping)
+        else []
+    )
+    for index, raw_record in enumerate(raw_csv_rows):
+        if (
+            isinstance(raw_record, Mapping)
+            and "archived_at" not in raw_record
+            and index < len(checksum_sections.get("csv_rows", []))
+        ):
+            checksum_sections["csv_rows"][index].pop("archived_at", None)
+
+    raw_profiles = (
+        raw_sections.get("user_profile", [])
+        if isinstance(raw_sections, Mapping)
+        else []
+    )
+    for index, raw_record in enumerate(raw_profiles):
+        if (
+            isinstance(raw_record, Mapping)
+            and "retention_days" not in raw_record
+            and index < len(checksum_sections.get("user_profile", []))
+        ):
+            checksum_sections["user_profile"][index].pop("retention_days", None)
+
     expected_checksum = compute_sections_checksum(checksum_sections)
     if document.checksum_sha256 != expected_checksum:
         raise BackupContractError("invalid_checksum", 400, "Backup checksum does not match canonical sections JSON.")
