@@ -4725,7 +4725,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-020"></a>
 ### JG-020 — Document and verify both runtime paths
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P2  
 **Type:** verification/operations  
 **Execution position:** 20/64; group step 3/3
@@ -4901,13 +4901,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-020 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: numeric-sort.spec.ts: score order survives reload
-- [ ] Required regression passes: both_dialect_api_responses_are_200
-- [ ] Required regression passes: startup_and_new_connection_smoke
-- [ ] Required regression passes: release_requires_real_postgres_result
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-020 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: numeric-sort.spec.ts: score order survives reload
+- [x] Required regression passes: both_dialect_api_responses_are_200
+- [x] Required regression passes: startup_and_new_connection_smoke
+- [x] Required regression passes: release_requires_real_postgres_result
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -4925,12 +4925,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -4939,11 +4939,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-019` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #82; implementation PR: #83.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-019 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** GitHub issue #82 tracked the work. Implementation PR #83 merged to `main` at `12b9301e9a61bc7f81f2f170b86571ef63077fcd`. Final implementation CI run #164 passed all 291 PostgreSQL backend tests, the backend compile check, the frontend production build, and all 134 Playwright Chromium tests. JG-020 now verifies the frozen eight-value R6 numeric fixture through the public rows API on disposable SQLite and the PostgreSQL runtime, including exact ascending/descending order and null-last behavior. The SQLite startup regression launches two fresh Python interpreters against the same disposable database and proves each process retains `jobgrid_numeric(value)`, foreign-key enforcement, and a healthy application startup. The browser regression uploads the same fixture, asserts exact Resume Score order, reload stability, a successful rows response after reversing sort, and no page errors. Release-capable backend evidence is required to execute on PostgreSQL 16 with a distinct isolated `TEST_DATABASE_URL`; a local SQLite skip is explicitly not release proof. README and the build guide now separate SQLite functional verification from PostgreSQL migration/release acceptance, record that historical PostgreSQL-specific Alembic migrations are not SQLite-portable, and document the code-only rollback boundary without claiming an external production deployment. CI attempt #163 exposed an overlong synthetic `upload_batch_id`; the fixture was bounded to the existing `VARCHAR(36)` contract and run #164 passed cleanly. No migration, persisted-data rewrite, public API change, production database mutation, or deployment was introduced. JG-021 is the next ordered reliability/release-gate ticket.
 
 ---
 
