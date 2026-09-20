@@ -48,6 +48,7 @@ from ..services.retention import (
 from ..services.validation import (
     ValidationContractError,
     explicit_model_fields,
+    legacy_invalid_application_counts,
     normalize_bulk_ids,
     parse_timestamp,
     prepare_job_track_patch,
@@ -502,6 +503,17 @@ def list_apps(status: str | None = Query(None), company: str | None = Query(None
         "page": page,
         "page_size": page_size,
         "has_next": (page * page_size) < total_count,
+    }
+
+
+@router.get("/applications/validation-report")
+def application_validation_report(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return {
+        "counts": legacy_invalid_application_counts(db, user_id=user.id),
+        "repair_mode": "manual_only",
     }
 
 
@@ -1814,50 +1826,6 @@ def company_history(company: str, db: Session = Depends(get_db), user: User = De
 
 # ─── Backup / Restore ────────────────────────────────────────────────
 
-@router.get("/backup/export")
-def export_backup(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.query(CsvRow).filter(CsvRow.user_id == user.id).all()
-    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id).all()
-    views = db.query(SavedView).filter(SavedView.user_id == user.id).all()
-    sessions = db.query(SearchSession).filter(SearchSession.user_id == user.id).all()
-    events = db.query(AuditEvent).filter(AuditEvent.user_id == user.id).order_by(AuditEvent.created_at.desc()).limit(1000).all()
-    batches = db.query(ApplyPilotBatch).filter(ApplyPilotBatch.user_id == user.id).all()
-    backup = {
-        "version": "1.0",
-        "exported_at": datetime.utcnow().isoformat(),
-        "csv_rows": [{"url": r.url, "company_guess": r.company_guess, "title": r.title, "ats_group": r.ats_group, "search_bucket": r.search_bucket, "resume_match_score": r.resume_match_score, "jd_text": r.jd_text, "sponsorship_status": r.sponsorship_status, "location_group": r.location_group, "created_at": str(r.created_at) if r.created_at else None} for r in rows],
-        "job_tracks": [{"url": t.url, "company": t.company, "title": t.title, "status": t.status, "applied_at": str(t.applied_at) if t.applied_at else None, "follow_up_at": str(t.follow_up_at) if t.follow_up_at else None, "notes": t.notes, "created_at": str(t.created_at) if t.created_at else None} for t in tracks],
-        "saved_views": [{"name": v.name, "view_type": v.view_type, "filters": v.filters, "is_pinned": v.is_pinned} for v in views],
-        "sessions": [{"name": s.name, "started_at": str(s.started_at) if s.started_at else None, "ended_at": str(s.ended_at) if s.ended_at else None, "notes": s.notes} for s in sessions],
-        "audit_events": [{"event_type": e.event_type, "entity_type": e.entity_type, "entity_id": e.entity_id, "metadata_json": e.metadata_json, "created_at": str(e.created_at) if e.created_at else None} for e in events],
-        "applypilot_batches": [{"name": b.name, "payload_json": b.payload_json, "status": b.status, "job_count": b.job_count, "created_at": str(b.created_at) if b.created_at else None} for b in batches],
-    }
-    content = json.dumps(backup, indent=2, default=str).encode("utf-8")
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return StreamingResponse(io.BytesIO(content), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="jobgrid_backup_{ts}.json"'})
-
-
-@router.post("/backup/import")
-def import_backup(db: Session = Depends(get_db), user: User = Depends(get_current_user), file: UploadFile = File(...)):
-    content = file.file.read()
-    backup = json.loads(content)
-    imported = {"csv_rows": 0, "job_tracks": 0, "saved_views": 0, "sessions": 0}
-    for r in backup.get("csv_rows", []):
-        existing = db.query(CsvRow).filter_by(user_id=user.id, url=r.get("url")).first()
-        if not existing:
-            row = CsvRow(user_id=user.id, upload_batch_id="import", url=r.get("url", ""), company_guess=r.get("company_guess"), title=r.get("title"), ats_group=r.get("ats_group"), search_bucket=r.get("search_bucket"), resume_match_score=r.get("resume_match_score"), jd_text=r.get("jd_text"), sponsorship_status=r.get("sponsorship_status"), location_group=r.get("location_group"))
-            db.add(row)
-            imported["csv_rows"] += 1
-    for v in backup.get("saved_views", []):
-        existing = db.query(SavedView).filter_by(user_id=user.id, name=v.get("name"), view_type=v.get("view_type")).first()
-        if not existing:
-            view = SavedView(user_id=user.id, name=v.get("name"), view_type=v.get("view_type", "job_links"), filters=v.get("filters", {}), is_pinned=v.get("is_pinned", False))
-            db.add(view)
-            imported["saved_views"] += 1
-    db.commit()
-    return imported
-
-
 # ─── Import External Applications ──────────────────────────────────────
 
 @router.post("/import/external")
@@ -2021,7 +1989,7 @@ def import_external_applications(
         )
 
 
-# ─── Export# ─── Export ───────────────────────────────────────────────────────────────
+# ─── Export ───────────────────────────────────────────────────────────────
 
 EXPORT_DASHBOARD_FIELDS = CSV_COLUMNS + ["clicked", "clicked_at"]
 EXPORT_APPLICATION_FIELDS = CSV_COLUMNS + [
