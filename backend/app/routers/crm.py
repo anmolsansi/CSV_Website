@@ -1456,24 +1456,48 @@ def import_applypilot_results(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    prepared = []
-    try:
-        for result in results:
-            submitted_at = parse_dt(result.submitted_at) if result.submitted_at else None
-            prepared.append((result, submitted_at))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "Invalid submitted_at value") from exc
-
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    updated = 0
     try:
-        for result, submitted_at in prepared:
-            track = db.query(JobTrack).filter_by(user_id=user.id, url=result.url).first()
-            if not track:
+        prepared = []
+        for index, result in enumerate(results):
+            url = validate_job_url(result.url, field=f"results[{index}].url")
+            submitted_at = (
+                parse_timestamp(
+                    result.submitted_at,
+                    timezone_name=user.timezone,
+                    field=f"results[{index}].submitted_at",
+                )
+                if result.submitted_at not in (None, "")
+                else None
+            )
+            note = f"ApplyPilot error: {result.error}" if result.error else None
+            if note is not None:
+                validate_text_limits({"notes": note})
+            prepared.append((result, url, submitted_at, note))
+
+        urls = list(dict.fromkeys(url for _, url, _, _ in prepared))
+        tracks_by_url = {
+            track.url: track
+            for track in (
+                db.query(JobTrack)
+                .filter(JobTrack.user_id == user.id, JobTrack.url.in_(urls))
+                .all()
+                if urls
+                else []
+            )
+        }
+
+        updated = 0
+        for result, url, submitted_at, note in prepared:
+            track = tracks_by_url.get(url)
+            if track is None:
                 continue
             now = datetime.utcnow()
             if result.submitted:
+                lifecycle_kwargs = {"status": "applied"}
+                if submitted_at is not None:
+                    lifecycle_kwargs["applied_at"] = submitted_at
                 apply_job_track_changes(
                     db,
                     user_id=user.id,
@@ -1481,20 +1505,29 @@ def import_applypilot_results(
                     source="applypilot_import",
                     operation_id=operation_id,
                     now=now,
-                    status="applied",
-                    applied_at=submitted_at or now,
+                    **lifecycle_kwargs,
                 )
             else:
                 track.updated_at = now
-            if result.error:
-                track.notes = f"ApplyPilot error: {result.error}"
+            if note is not None:
+                track.notes = note
             updated += 1
+
         db.commit()
         _log_lifecycle_outcome(
             action="applypilot_import",
             operation_id=operation_id,
             outcome="success",
             affected=updated,
+            started=started,
+        )
+        return {"updated": updated}
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
             started=started,
         )
     except LifecycleEventError as exc:
@@ -1506,7 +1539,25 @@ def import_applypilot_results(
             affected=0,
             started=started,
         )
-    return {"updated": updated}
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="applypilot_import",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
 @router.get("/applypilot/readiness/{row_id}")
@@ -1816,53 +1867,101 @@ def import_external_applications(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    prepared = []
-    try:
-        for item in payload:
-            url = item.get("url", "")
-            if not url:
-                continue
-            applied_at = parse_dt(item["applied_at"]) if item.get("applied_at") else None
-            follow_up_at = (
-                parse_dt(item["follow_up_at"]) if item.get("follow_up_at") else None
-            )
-            prepared.append((item, url, applied_at, follow_up_at))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "Invalid import datetime value") from exc
-
     operation_id = _request_operation_id(x_operation_id)
     started = perf_counter()
-    created = 0
     try:
-        for item, url, applied_at, follow_up_at in prepared:
-            existing = db.query(JobTrack).filter_by(user_id=user.id, url=url).first()
-            if existing:
+        prepared = []
+        for index, raw in enumerate(payload):
+            url = validate_job_url(raw.get("url"), field=f"records[{index}].url")
+            text = validate_text_limits(
+                {
+                    "company": raw.get("company", ""),
+                    "title": raw.get("title", ""),
+                    "notes": raw.get("notes", ""),
+                }
+            )
+            status = validate_status(raw.get("status", "opened"), field=f"records[{index}].status")
+
+            applied_supplied = "applied_at" in raw
+            applied_at = (
+                parse_timestamp(
+                    raw.get("applied_at"),
+                    timezone_name=user.timezone,
+                    field=f"records[{index}].applied_at",
+                )
+                if applied_supplied
+                else None
+            )
+            follow_up_supplied = "follow_up_at" in raw
+            follow_up_at = (
+                parse_timestamp(
+                    raw.get("follow_up_at"),
+                    timezone_name=user.timezone,
+                    field=f"records[{index}].follow_up_at",
+                )
+                if follow_up_supplied
+                else None
+            )
+
+            target_status = "applied" if applied_at is not None else status
+            if applied_supplied and applied_at is None and target_status == "applied":
+                raise ValidationContractError(
+                    "Applied date cannot be cleared while status remains applied.",
+                    field=f"records[{index}].applied_at",
+                )
+            prepared.append(
+                {
+                    "url": url,
+                    "company": text["company"],
+                    "title": text["title"],
+                    "notes": text["notes"],
+                    "status": target_status,
+                    "applied_supplied": applied_supplied,
+                    "applied_at": applied_at,
+                    "follow_up_supplied": follow_up_supplied,
+                    "follow_up_at": follow_up_at,
+                }
+            )
+
+        urls = list(dict.fromkeys(record["url"] for record in prepared))
+        existing_by_url = {
+            item.url: item
+            for item in (
+                db.query(JobTrack)
+                .filter(JobTrack.user_id == user.id, JobTrack.url.in_(urls))
+                .all()
+                if urls
+                else []
+            )
+        }
+
+        created = 0
+        for record in prepared:
+            if record["url"] in existing_by_url:
                 continue
 
             now = datetime.utcnow()
             track = JobTrack(
                 user_id=user.id,
-                url=url,
-                company=item.get("company", ""),
-                title=item.get("title", ""),
+                url=record["url"],
+                company=record["company"],
+                title=record["title"],
                 status="opened",
-                notes=item.get("notes", ""),
+                notes=record["notes"],
                 opened_at=now,
             )
             db.add(track)
             db.flush()
+            existing_by_url[record["url"]] = track
 
-            target_status = "applied" if applied_at is not None else item.get(
-                "status", "opened"
-            )
             lifecycle_kwargs = {
-                "status": target_status,
+                "status": record["status"],
                 "infer_applied_at_from_status": False,
             }
-            if applied_at is not None:
-                lifecycle_kwargs["applied_at"] = applied_at
-            if follow_up_at is not None:
-                lifecycle_kwargs["follow_up_at"] = follow_up_at
+            if record["applied_supplied"]:
+                lifecycle_kwargs["applied_at"] = record["applied_at"]
+            if record["follow_up_supplied"]:
+                lifecycle_kwargs["follow_up_at"] = record["follow_up_at"]
 
             apply_job_track_changes(
                 db,
@@ -1874,12 +1973,22 @@ def import_external_applications(
                 **lifecycle_kwargs,
             )
             created += 1
+
         db.commit()
         _log_lifecycle_outcome(
             action="external_import",
             operation_id=operation_id,
             outcome="success",
             affected=created,
+            started=started,
+        )
+        return {"created": created}
+    except ValidationContractError as exc:
+        _raise_validation_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
             started=started,
         )
     except LifecycleEventError as exc:
@@ -1891,10 +2000,28 @@ def import_external_applications(
             affected=0,
             started=started,
         )
-    return {"created": created}
+    except IntegrityError as exc:
+        _raise_integrity_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
+            started=started,
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        _raise_unexpected_http(
+            db,
+            exc,
+            action="external_import",
+            operation_id=operation_id,
+            started=started,
+        )
 
 
-# ─── Export ───────────────────────────────────────────────────────────────
+# ─── Export# ─── Export ───────────────────────────────────────────────────────────────
 
 EXPORT_DASHBOARD_FIELDS = CSV_COLUMNS + ["clicked", "clicked_at"]
 EXPORT_APPLICATION_FIELDS = CSV_COLUMNS + [
