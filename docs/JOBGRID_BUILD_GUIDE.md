@@ -1579,3 +1579,82 @@ this verification gate.
 An external production deployment remains separate evidence. A passing local or
 CI run does not claim that production was deployed or manually smoke-tested.
 
+
+
+## JG-021 CI startup and PostgreSQL release-gate composition
+
+JG-021 hardens the repository CI release gate without changing application schema, persisted data, or public API behavior. The workflow remains split into frontend build, Playwright browser acceptance, backend compile, and backend pytest jobs.
+
+### Backend startup and migration order
+
+The Playwright job runs the backend from `${{ github.workspace }}/backend`. The historical repository-root `cd ../backend` path is not used.
+
+Before Uvicorn starts, CI runs:
+
+```sh
+python -m alembic upgrade head
+```
+
+Migration output is captured instead of echoing connection configuration. After a successful upgrade, the workflow prints only the applied Alembic revision. The E2E API then starts against the disposable PostgreSQL 16 service.
+
+Readiness is not a fixed sleep. CI polls `GET /health` once per second for at most 60 seconds and stops early if the backend process exits. If readiness never succeeds, the step fails. The raw temporary server log is filtered before it is printed or retained so PostgreSQL credentials and named secret environment variables are replaced with bounded redacted values.
+
+### Isolated PostgreSQL test configuration
+
+Both PostgreSQL-backed CI jobs use explicit synthetic credentials declared in the workflow. They do not read repository production secrets.
+
+The backend pytest job uses separate database targets:
+
+- `DATABASE_URL` for the ordinary PostgreSQL test runtime.
+- `TEST_DATABASE_URL` for fresh schema/migration acceptance.
+
+The existing fixture continues to reject a `TEST_DATABASE_URL` that is non-PostgreSQL, does not look explicitly disposable, or resolves to the same database as `DATABASE_URL`.
+
+The Playwright job also receives explicit test-only settings, including `TEST_AUTH=true`, `ENVIRONMENT=test`, and disabled maintenance jobs. These values are scoped to CI and are not production deployment configuration.
+
+### Nonempty collection gates
+
+A green job must prove that tests were actually collected.
+
+Before backend execution, CI runs:
+
+```sh
+pytest tests/ --collect-only -q
+```
+
+Pytest collection is executed with shell pipe failure propagation, so an empty collection or failed collection cannot be hidden by `tee`.
+
+Before browser execution, CI runs:
+
+```sh
+npx playwright test --list --project=chromium
+```
+
+The workflow records the collection output and requires a nonzero Playwright total before running the full Chromium project. The existing `frontend/playwright.config.ts` contract remains unchanged: the `chromium` project depends on the `setup` project, so authentication setup failure fails the browser run instead of being treated as success.
+
+### Failure evidence and retention
+
+Failure evidence is intentionally synthetic and short-lived.
+
+Backend CI writes pytest collection output and JUnit XML to `backend/ci-artifacts/`. The browser job retains its collection output, Playwright report/test-results, and a sanitized backend server log when a failure occurs. Artifact uploads run only on failure and use a 7-day retention period.
+
+Server and migration logs must never be uploaded in raw form when they can contain connection information. The workflow redacts PostgreSQL URL credentials and the values of `DATABASE_URL`, `TEST_DATABASE_URL`, and `SECRET_KEY` before printing or retaining diagnostic output.
+
+### Verification
+
+The focused JG-021 contract regressions live in `backend/tests/test_database_dialects.py`:
+
+- `test_workflow_command_resolves_backend_directory`
+- `test_health_timeout_fails_job`
+- `test_postgres_suite_and_browser_suite_run`
+- `test_zero_tests_or_failed_setup_is_not_success`
+
+They verify the workflow text, bounded health failure behavior, explicit PostgreSQL/browser suite composition, nonempty test collection, synthetic-secret boundary, and preservation of Playwright setup dependency.
+
+Repository CI remains the integrated proof because it executes the actual PostgreSQL 16 backend suite, backend compilation, frontend production build, and Chromium browser suite.
+
+### Rollback and release boundary
+
+JG-021 has no migration file and performs no persisted-data rewrite. If the release gate itself regresses, revert the JG-021 workflow/test/documentation commits. Do not downgrade or rewrite a user database to roll back this ticket.
+
+A locally passing JG-021 CI run is not the complete R7 production release. Later R7 tickets still own production configuration rejection, provider/staging acceptance, backup/restore release evidence, and the final production release gate.
