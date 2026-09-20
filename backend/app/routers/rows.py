@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Float, asc, case, cast, desc, func
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict
 
 from ..auth import get_current_user
 from ..database import get_db
@@ -25,6 +26,21 @@ NUMERIC_SORT_COLUMNS = {
     "jd_text_length",
     "resume_match_score",
 }
+
+
+class RetentionPreferenceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    retention_days: int | None
+
+
+def _validate_retention_days(value: int | None) -> int | None:
+    if value is None or value == 0 or 7 <= value <= 3650:
+        return value
+    raise HTTPException(
+        status_code=422,
+        detail="retention_days must be 0 (disabled) or between 7 and 3650 days",
+    )
 
 
 def _clean_columns(columns: list[str]) -> list[str]:
@@ -340,7 +356,21 @@ def get_preferences(
     return {
         "hidden_columns": _clean_columns(hidden_columns),
         "column_order": _clean_columns(column_order),
+        "retention_days": user.retention_days,
     }
+
+
+@router.put("/preferences/retention")
+def set_retention_preference(
+    payload: RetentionPreferenceIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    retention_days = _validate_retention_days(payload.retention_days)
+    user.retention_days = retention_days
+    db.commit()
+    db.refresh(user)
+    return {"retention_days": user.retention_days}
 
 
 @router.put("/preferences")
@@ -363,4 +393,8 @@ def set_preferences(
         )
         db.add(pref)
     db.commit()
-    return {"hidden_columns": hidden, "column_order": column_order}
+    return {
+        "hidden_columns": hidden,
+        "column_order": column_order,
+        "retention_days": user.retention_days,
+    }
