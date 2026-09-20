@@ -170,7 +170,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **R7 — Repair CI and establish the production release gate**
 
-- [ ] [JG-021 — Correct CI paths readiness and PostgreSQL test composition](#jg-021)
+- [x] [JG-021 — Correct CI paths readiness and PostgreSQL test composition](#jg-021)
 - [ ] [JG-022 — Add fail-fast production configuration checks](#jg-022)
 - [ ] [JG-023 — Promote audit reproductions into enforced release regressions](#jg-023)
 - [ ] [JG-024 — Run staging login delivery restore and rollback acceptance](#jg-024)
@@ -4972,7 +4972,7 @@ Run CI from a standard checkout, confirm backend health and the full browser/pyt
 <a id="jg-021"></a>
 ### JG-021 — Correct CI paths readiness and PostgreSQL test composition
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P1 release gate  
 **Type:** service/contract  
 **Execution position:** 21/64; group step 1/4
@@ -5150,13 +5150,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-021 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: workflow_command_resolves_backend_directory
-- [ ] Required regression passes: health_timeout_fails_job
-- [ ] Required regression passes: postgres_suite_and_browser_suite_run
-- [ ] Required regression passes: zero_tests_or_failed_setup_is_not_success
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-021 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: workflow_command_resolves_backend_directory
+- [x] Required regression passes: health_timeout_fails_job
+- [x] Required regression passes: postgres_suite_and_browser_suite_run
+- [x] Required regression passes: zero_tests_or_failed_setup_is_not_success
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -5174,12 +5174,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -5188,11 +5188,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-020` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #85; implementation PR: #86.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-020 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** GitHub issue #85 tracked the work. Implementation PR #86 passed CI run #168 and merged to `main` at `c006ca64dbbe5f6204ec14cb8799fe8f3218739a`. CI now starts the E2E backend from `${{ github.workspace }}/backend`, runs `alembic upgrade head` before Uvicorn, records only the applied revision, and replaces the fixed startup sleep with bounded one-second health polling for up to 60 seconds. PostgreSQL-backed jobs use explicit synthetic test-only configuration with distinct ordinary and schema-acceptance databases; no repository production secrets are consumed. Backend and Chromium collection gates must be nonempty before full execution, while Chromium continues to depend on the Playwright authentication setup project. Failure-only artifacts retain pytest evidence, Playwright results/traces, and sanitized backend diagnostics for seven days. The four required JG-021 workflow regressions passed as part of **295 PostgreSQL backend tests**, and the browser gate collected **134 tests in 18 files** before all **134 Chromium tests passed**. Frontend production build and backend compile checks also passed. No schema migration file, persisted-data rewrite, public API change, staging action, or production deployment was introduced. JG-022 is the next ordered R7 ticket.
 
 ---
 
