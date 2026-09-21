@@ -688,7 +688,9 @@ def test_backup_round_trip_retains_snooze_and_manual_action(db_session):
     assert portable_item["track_ref"] is not None
     assert portable_item["row_ref"] is not None
     assert portable_item["source_view_ref"] is not None
-    assert str(source.id) not in portable_item["origin_key"]
+    assert portable_item["origin_key"] == (
+        f"view:{portable_item['source_view_ref']}:row:{portable_item['row_ref']}"
+    )
     assert all(
         "action_key" not in override
         for override in payload["sections"]["work_item_overrides"]
