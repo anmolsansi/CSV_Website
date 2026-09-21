@@ -185,7 +185,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 **F2 — Applied-before warnings and company aliases**
 
 - [x] [JG-029 — Implement conservative URL and company identity rules](#jg-029)
-- [ ] [JG-030 — Persist aliases and backfill derived identity safely](#jg-030)
+- [x] [JG-030 — Persist aliases and backfill derived identity safely](#jg-030)
 - [ ] [JG-031 — Expose matching and show applied-before context](#jg-031)
 - [ ] [JG-032 — Validate duplicate warnings against false positives](#jg-032)
 
@@ -7155,7 +7155,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-030"></a>
 ### JG-030 — Persist aliases and backfill derived identity safely
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** Feature rank 2  
 **Type:** schema/contract  
 **Execution position:** 30/64; group step 2/4
@@ -7334,14 +7334,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-030 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: backfill_retry_is_idempotent
-- [ ] Required regression passes: canonical_collision_retains_two_tracks
-- [ ] Required regression passes: aliases_are_account_scoped
-- [ ] Required regression passes: backup_restores_alias_grouping
-- [ ] Required regression passes: dry_run_writes_nothing
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-030 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: backfill_retry_is_idempotent
+- [x] Required regression passes: canonical_collision_retains_two_tracks
+- [x] Required regression passes: aliases_are_account_scoped
+- [x] Required regression passes: backup_restores_alias_grouping
+- [x] Required regression passes: dry_run_writes_nothing
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -7359,12 +7359,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -7377,7 +7377,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-029 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** Tracking issue #111 and implementation PR #112 persist owner-scoped company aliases and derived canonical URL identity without rewriting original URLs or merging canonical collisions. Additive Alembic revision `009` follows the existing `008` head. The required JG-030 regressions, PostgreSQL-backed backend suite, migration application, frontend production build, backend compile check, and Chromium Playwright suite pass on CI run #222 at head `94061441816c9160f101d58f905da5458befae1e`. The Vercel integration still reports an external free-tier deployment-rate limit and is recorded separately from local/CI acceptance rather than treated as a code failure or release proof.
 
 ---
 
