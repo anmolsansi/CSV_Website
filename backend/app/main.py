@@ -188,6 +188,8 @@ if settings.TEST_AUTH:
             existing = db.query(CsvRow).filter_by(user_id=user.id, url=row_data["url"]).first()
             if not existing:
                 row = CsvRow(user_id=user.id, upload_batch_id=batch_id, **row_data)
+                from .services.job_identity import apply_persisted_job_identity
+                apply_persisted_job_identity(row)
                 db.add(row)
                 created += 1
         db.commit()
@@ -197,7 +199,7 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
+        from .models import CompanyAlias, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
@@ -213,6 +215,7 @@ if settings.TEST_AUTH:
         db.query(SavedView).filter_by(user_id=user.id).delete()
         db.query(SearchSession).filter_by(user_id=user.id).delete()
         db.query(JobTrack).filter_by(user_id=user.id).delete()
+        db.query(CompanyAlias).filter_by(user_id=user.id).delete()
         db.query(CsvRow).filter_by(user_id=user.id).delete()
         db.query(UrlHistory).filter_by(user_id=user.id).delete()
         db.commit()
