@@ -12,7 +12,7 @@ import json
 
 from app.database import SessionLocal
 from app.models import CsvRow, JobTrack
-from app.services.job_identity import backfill_identity_batch
+from app.services.job_identity import CANONICALIZATION_VERSION, backfill_identity_batch
 
 
 MODELS = {
@@ -81,7 +81,7 @@ def main() -> int:
 
         # Operational output is deliberately count/ID-only. Never print source
         # or canonical URLs from a real account.
-        print(json.dumps({"identity_rule_version": "ccr-identity-1", "reports": reports}, sort_keys=True))
+        print(json.dumps({"identity_rule_version": CANONICALIZATION_VERSION, "reports": reports}, sort_keys=True))
         return 0
     except Exception:
         session.rollback()
