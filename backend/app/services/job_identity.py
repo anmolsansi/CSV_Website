@@ -11,6 +11,8 @@ from hashlib import sha256
 from ipaddress import ip_address
 import re
 from typing import Any, Literal
+
+from sqlalchemy import and_, func, or_
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 
@@ -298,14 +300,24 @@ def backfill_identity_batch(
     pair_counts = Counter(derived)
     if not dry_run and derived:
         session.flush()
-        hashes = sorted({canonical_hash for _, canonical_hash in derived})
+        candidate_pairs = sorted(set(derived))
         persisted = (
             session.query(
                 model.user_id,
                 model.canonical_url_hash,
-                __import__("sqlalchemy").func.count(model.id),
+                func.count(model.id),
             )
-            .filter(model.canonical_url_hash.in_(hashes))
+            .filter(
+                or_(
+                    *[
+                        and_(
+                            model.user_id == user_id,
+                            model.canonical_url_hash == canonical_hash,
+                        )
+                        for user_id, canonical_hash in candidate_pairs
+                    ]
+                )
+            )
             .group_by(model.user_id, model.canonical_url_hash)
             .all()
         )
