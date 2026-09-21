@@ -172,7 +172,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [x] [JG-021 — Correct CI paths readiness and PostgreSQL test composition](#jg-021)
 - [x] [JG-022 — Add fail-fast production configuration checks](#jg-022)
-- [ ] [JG-023 — Promote audit reproductions into enforced release regressions](#jg-023)
+- [x] [JG-023 — Promote audit reproductions into enforced release regressions](#jg-023)
 - [ ] [JG-024 — Run staging login delivery restore and rollback acceptance](#jg-024)
 
 **F1 — Today queue: the next useful action**
@@ -5430,7 +5430,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-023"></a>
 ### JG-023 — Promote audit reproductions into enforced release regressions
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** P1 release gate  
 **Type:** verification/operations  
 **Execution position:** 23/64; group step 3/4
@@ -5613,17 +5613,33 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 4. At the group final ticket, run the complete fixture end to end and record exact counts/dates/statuses or file hashes. Earlier tickets can only pass their own scope.
 
+#### Completion evidence
+
+- Tracking issue: GitHub #91.
+- Implementation PR: #92.
+- Final PR head: `a51db69ccd50dbdbbac579eee176b92191316477`.
+- Squash merge to `main`: `84ef12ee169ba0560e4f79dceefd1e71238eff1e`.
+- Green GitHub Actions CI: run #178.
+- Focused backend gate: 20 passed, zero failures/errors/skips.
+- Full PostgreSQL backend suite: 330 passed.
+- Tab-helper unit suite: 8 passed.
+- Focused Chromium workflow: passed.
+- Full Chromium suite: 135 passed in 19 files.
+- Frontend production build and backend compile check: passed.
+- Release evidence artifacts: backend artifact ID `10612618833`; browser artifact ID `10613271825`.
+- External staging/production gates: intentionally not claimed; remain JG-024 scope.
+
 #### Acceptance criteria
 
-- [ ] Every numbered JG-023 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: break_each_contract_then_test_fails
-- [ ] Required regression passes: cross_user_scenarios_remain_denied
-- [ ] Required regression passes: test_count_nonzero
-- [ ] Required regression passes: no_manual_skip_counts_as_pass
-- [ ] Required regression passes: original_company_history_survives_source_delete_and_slash_name
-- [ ] Required regression passes: top5_complete_filters_sort_safe_url_popup_blocking_and_click_recording
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-023 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: break_each_contract_then_test_fails
+- [x] Required regression passes: cross_user_scenarios_remain_denied
+- [x] Required regression passes: test_count_nonzero
+- [x] Required regression passes: no_manual_skip_counts_as_pass
+- [x] Required regression passes: original_company_history_survives_source_delete_and_slash_name
+- [x] Required regression passes: top5_complete_filters_sort_safe_url_popup_blocking_and_click_recording
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -5641,12 +5657,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -5655,11 +5671,19 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-022` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #91; implementation PR: #92.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-022 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** GitHub issue #91 tracked the work. Implementation PR #92 merged to `main` at `84ef12ee169ba0560e4f79dceefd1e71238eff1e` after CI run #178 passed on the final PR head `a51db69ccd50dbdbbac579eee176b92191316477`.
+
+JG-023 now enforces the repaired September 12 audit failures as a named release gate. `backend/tests/test_release_contracts.py` plus the existing canonical regressions cover backup round trip, multi-filter export parity, shared metric reconciliation, invalid status/date/backup input, cleanup failure reporting, primary-runtime numeric sorting, SQLite numeric functional coverage, cross-account denial, and durable company/application history after source deletion. `frontend/tests/release-workflows.spec.ts` verifies the complete filtered/sorted top-five flow, safe HTTPS candidates, opener isolation, exact visit persistence, and zero additional visit writes when popups are blocked. CI rejects empty focused collections and rejects focused backend JUnit output containing failures, errors, or skips.
+
+Green CI run #178 recorded **20 focused backend tests passed**, **330 PostgreSQL backend tests passed**, **8 tab-helper tests passed**, and **135 Chromium tests passed across 19 files**. Backend compilation and the frontend production build also passed. Synthetic backend/browser release-evidence artifacts were uploaded with source/workflow SHA, dependency lock hashes, migration/runtime/library/browser versions, collection output, and focused results.
+
+The earlier CI run #176 correctly failed when the first synthetic PostgreSQL fixture exceeded the real `VARCHAR(36)` batch-ID boundary. The fixture was bounded to the production schema, rerun, and then passed. This failure was not hidden or counted as success.
+
+No runtime feature, schema migration, persisted-data rewrite, production deployment, real provider OAuth, SMTP delivery, or staging restore rehearsal was introduced. JG-023 is **local-ready** only. `staging-accepted` and `released` remain separate states owned by JG-024. JG-024 is the next ordered R7 ticket.
 
 ---
 
