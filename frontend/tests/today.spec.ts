@@ -99,7 +99,7 @@ test.describe('JG-027 Today screen', () => {
 
     await page.goto('/today')
 
-    await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Overdue' })).toBeVisible()
     await expect(page.getByText('Review Acme application')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Due today' })).toBeVisible()
@@ -234,7 +234,7 @@ test.describe('JG-027 Today screen', () => {
     await page.getByRole('button', { name: 'Open details' }).click()
     await expect(page.getByRole('heading', { name: 'Applications' })).toBeVisible()
     await expect(page.locator('tbody tr').first().locator('input[type="datetime-local"]').nth(1)).not.toHaveValue('')
-    await expect(page.getByText('Beta')).toBeVisible()
+    await expect(page.locator('tbody tr').first().locator('input.inline-input')).toHaveValue('Beta')
   })
 
   test('saved-view preview shows exact count and caps creation at 20', async ({ page }) => {
