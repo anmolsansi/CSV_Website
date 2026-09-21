@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import event, text
+
+from app.backup_schemas import validate_backup_v2
 from app.config import settings
 from app.models import (
     CsvRow,
@@ -11,7 +15,9 @@ from app.models import (
     SavedView,
     User,
     WorkItem,
+    WorkItemOverride,
 )
+from app.services.backups import export_backup_v2, restore_backup_v2
 from app.services.today import build_today_queue
 from app.today_schemas import followup_action_key, manual_action_key
 
@@ -496,3 +502,257 @@ def test_from_view_preserves_query_sort_and_deduplicates(
 def test_today_requires_authentication(client):
     response = client.get("/crm/today")
     assert response.status_code == 401
+
+
+
+def _sixty_action_fixture(db_session):
+    reference = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    owner = User(
+        email=f"jg028-owner-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    foreign = User(
+        email=f"jg028-foreign-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add_all([owner, foreign])
+    db_session.flush()
+
+    manual_overdue = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual overdue {index}",
+            due_at=datetime(2026, 9, 20, 8 + index, 0, tzinfo=timezone.utc),
+            priority=index % 4,
+            state="pending",
+            version=1,
+        )
+        for index in range(8)
+    ]
+    manual_today = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual today {index}",
+            due_at=datetime(2026, 9, 21, 13 + index, 0, tzinfo=timezone.utc),
+            priority=index % 4,
+            state="pending",
+            version=1,
+        )
+        for index in range(6)
+    ]
+    manual_undated = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual undated {index}",
+            due_at=None,
+            priority=index % 4,
+            state="pending",
+            version=1,
+        )
+        for index in range(5)
+    ]
+    manual_tomorrow = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual tomorrow {index}",
+            due_at=datetime(2026, 9, 22, 12 + index, 0, tzinfo=timezone.utc),
+            priority=1,
+            state="pending",
+            version=1,
+        )
+        for index in range(3)
+    ]
+    manual_done = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual done {index}",
+            due_at=datetime(2026, 9, 20, 9 + index, 0, tzinfo=timezone.utc),
+            priority=1,
+            state="done",
+            version=1,
+            completed_at=reference,
+        )
+        for index in range(3)
+    ]
+    foreign_manual = [
+        WorkItem(
+            user_id=foreign.id,
+            description=f"Foreign manual {index}",
+            due_at=datetime(2026, 9, 21, 14 + index, 0, tzinfo=timezone.utc),
+            priority=1,
+            state="pending",
+            version=1,
+        )
+        for index in range(5)
+    ]
+    db_session.add_all(
+        manual_overdue
+        + manual_today
+        + manual_undated
+        + manual_tomorrow
+        + manual_done
+        + foreign_manual
+    )
+    db_session.flush()
+
+    followup_overdue = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/overdue/{uuid4()}",
+            company=f"Overdue {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 20, 8 + index, 30),
+        )
+        for index in range(8)
+    ]
+    followup_today = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/today/{uuid4()}",
+            company=f"Today {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 21, 13 + index, 30),
+        )
+        for index in range(6)
+    ]
+    followup_tomorrow = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/tomorrow/{uuid4()}",
+            company=f"Tomorrow {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 22, 10 + index, 30),
+        )
+        for index in range(5)
+    ]
+    terminal_statuses = ["rejected", "offer", "not_applying"]
+    followup_terminal = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/terminal/{uuid4()}",
+            company=f"Terminal {index}",
+            title="Engineer",
+            status=terminal_statuses[index % len(terminal_statuses)],
+            follow_up_at=datetime(2026, 9, 20, 6 + index, 0),
+        )
+        for index in range(6)
+    ]
+    foreign_followups = [
+        JobTrack(
+            user_id=foreign.id,
+            url=f"https://jg028.example/foreign/{uuid4()}",
+            company=f"Foreign {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 21, 14 + index, 30),
+        )
+        for index in range(5)
+    ]
+    db_session.add_all(
+        followup_overdue
+        + followup_today
+        + followup_tomorrow
+        + followup_terminal
+        + foreign_followups
+    )
+    db_session.flush()
+
+    snoozed_manual = manual_overdue[:2] + manual_today[:2]
+    snoozed_followups = followup_overdue[:2] + followup_today[:2]
+    snoozed_until = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
+    db_session.add_all(
+        [
+            WorkItemOverride(
+                user_id=owner.id,
+                action_key=manual_action_key(item.id),
+                snoozed_until=snoozed_until,
+                version=2,
+            )
+            for item in snoozed_manual
+        ]
+        + [
+            WorkItemOverride(
+                user_id=owner.id,
+                action_key=followup_action_key(track.id, track.follow_up_at),
+                snoozed_until=snoozed_until,
+                version=2,
+            )
+            for track in snoozed_followups
+        ]
+    )
+    db_session.commit()
+
+    expected_all = {
+        *(manual_action_key(item.id) for item in manual_overdue),
+        *(manual_action_key(item.id) for item in manual_today),
+        *(manual_action_key(item.id) for item in manual_undated),
+        *(followup_action_key(track.id, track.follow_up_at) for track in followup_overdue),
+        *(followup_action_key(track.id, track.follow_up_at) for track in followup_today),
+    }
+    snoozed_keys = {
+        *(manual_action_key(item.id) for item in snoozed_manual),
+        *(followup_action_key(track.id, track.follow_up_at) for track in snoozed_followups),
+    }
+    return {
+        "owner": owner,
+        "foreign": foreign,
+        "reference": reference,
+        "expected_all": expected_all,
+        "expected_visible": expected_all - snoozed_keys,
+        "snoozed_keys": snoozed_keys,
+    }
+
+
+def test_fixed_fixture_membership_and_count_parity(db_session):
+    fixture = _sixty_action_fixture(db_session)
+    owner = fixture["owner"]
+
+    assert (
+        db_session.query(WorkItem).filter(
+            WorkItem.user_id.in_([owner.id, fixture["foreign"].id])
+        ).count()
+        + db_session.query(JobTrack).filter(
+            JobTrack.user_id.in_([owner.id, fixture["foreign"].id])
+        ).count()
+    ) == 60
+
+    visible = build_today_queue(
+        db_session,
+        user_id=owner.id,
+        timezone_name=owner.timezone,
+        secret_key="jg028-fixed-fixture",
+        now=fixture["reference"],
+    )
+    assert visible["counts"] == {
+        "total": 25,
+        "overdue": 12,
+        "due_today": 8,
+        "undated": 5,
+    }
+    assert {
+        item["action_key"] for item in visible["items"]
+    } == fixture["expected_visible"]
+    assert not fixture["snoozed_keys"].intersection(
+        item["action_key"] for item in visible["items"]
+    )
+
+    including_snoozed = build_today_queue(
+        db_session,
+        user_id=owner.id,
+        timezone_name=owner.timezone,
+        secret_key="jg028-fixed-fixture",
+        include_snoozed=True,
+        now=fixture["reference"],
+    )
+    assert including_snoozed["counts"] == {
+        "total": 33,
+        "overdue": 16,
+        "due_today": 12,
+        "undated": 5,
+    }
+    assert {
+        item["action_key"] for item in including_snoozed["items"]
+    } == fixture["expected_all"]
