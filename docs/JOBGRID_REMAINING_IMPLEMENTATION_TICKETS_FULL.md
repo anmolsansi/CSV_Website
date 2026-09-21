@@ -179,7 +179,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [x] [JG-025 — Model manual actions and follow-up overrides](#jg-025)
 - [ ] [JG-026 — Build the stable daily queue and guarded mutations](#jg-026)
-- [ ] [JG-027 — Build the Today screen and accessible action controls](#jg-027)
+- [x] [JG-027 — Build the Today screen and accessible action controls](#jg-027)
 - [ ] [JG-028 — Prove the daily queue improves a real work session](#jg-028)
 
 **F2 — Applied-before warnings and company aliases**
@@ -6451,7 +6451,7 @@ Implementation PR #101 passed CI run #193 and squash-merged to `main` at `fa158b
 <a id="jg-027"></a>
 ### JG-027 — Build the Today screen and accessible action controls
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked — Today UI/navigation and accessible actions merged and CI-verified; F1 outcome validation remains owned by JG-028  
 **Priority:** Feature rank 1  
 **Type:** interface integration  
 **Execution position:** 27/64; group step 3/4
@@ -6636,13 +6636,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-027 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: today.spec.ts: overdue appears and tomorrow does not
-- [ ] Required regression passes: keyboard_snooze_persists_after_reload
-- [ ] Required regression passes: failed_complete_preserves_item
-- [ ] Required regression passes: followup_reschedule_updates_application_drawer
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-027 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: today.spec.ts: overdue appears and tomorrow does not
+- [x] Required regression passes: keyboard_snooze_persists_after_reload
+- [x] Required regression passes: failed_complete_preserves_item
+- [x] Required regression passes: followup_reschedule_updates_application_drawer
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -6660,12 +6660,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -6674,11 +6674,27 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-026` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #103, completed by implementation PR #104 and the roadmap-completion PR.
+
+#### Implementation evidence
+
+Implementation PR #104 passed CI rerun #198 and squash-merged to `main` at `33e6758ebe34261c931945dafa1cb953565ee167`.
+
+- Full PostgreSQL backend suite: **359 passed**, zero failures.
+- Full Chromium Playwright suite: **140 passed**, zero failures.
+- Backend compile check: passed.
+- Frontend production build: passed.
+- The authenticated `/today` page and navigation item are active and consume the JG-026 server queue instead of reimplementing membership.
+- Queue groups use server `as_of` plus the authenticated account timezone and expose loading, empty, retry, per-item pending, and stale-conflict states.
+- Manual create, complete, snooze, and follow-up reschedule preserve drafts/focus as applicable and refresh only after confirmed server writes.
+- Saved Views shows the exact match count and a maximum-20 confirmation before `from-view` creation; Job Links row detail and Applications expose deliberate one-item Add to Today actions.
+- Source intake found no separate application-detail drawer in the current repository. JG-027 preserves the existing architecture by using the Job Links row-detail context for row-backed items and the Applications editing surface for track-backed follow-ups instead of inventing a duplicate drawer.
+- No schema migration was added in JG-027; the JG-025/JG-026 storage and API contracts remain authoritative.
+- The build guide documents UI behavior, device-timezone input conversion, accessibility/focus behavior, failure recovery, and rollback.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-026 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** JG-027 is merged with green repository CI. The Today route/navigation, grouped queue, accessible guarded actions, refresh/retry/conflict behavior, deliberate Saved View/row/application entry points, focused browser regressions, and implementation documentation are complete. JG-028 remains the distinct group-level acceptance ticket that must prove the daily queue improves a real work session.
 
 ---
 
