@@ -257,7 +257,7 @@ Status: **PENDING repository CI**
 | 60-action membership | 25 visible: 12 overdue, 8 due today, 5 undated | `test_fixed_fixture_membership_and_count_parity` | PENDING CI |
 | Include snoozed | 33 visible: 16 overdue, 12 due today, 5 undated | same regression | PENDING CI |
 | Queue SQL bound | 12 distinct sourced manual items still build with exactly 3 SELECTs | `test_no_n_plus_one_queue_queries` | PENDING CI |
-| PostgreSQL plans | manual plan exposes owner/due index; follow-up plan exposes owner or due-time index | `test_today_postgres_query_plans_use_owner_due_indexes` | PENDING CI |
+| PostgreSQL plans | real membership plans are index-backed; owner+due probe exposes the composite WorkItem index | `test_today_postgres_query_plans_use_owner_due_indexes` | PENDING CI |
 | Source deletion | source FK detaches while manual description/action remains | `test_today_source_detachment_preserves_manual_action` | PENDING CI |
 | Account timezone change | same UTC due instant moves into the correct local-day queue after timezone change | `test_today_timezone_change_recomputes_membership` | PENDING CI |
 | Backup/restore | destination owner reconstructs 25 visible / 33 including-snoozed counts with 8 destination-scoped overrides | `test_restore_reconstructs_today_items` | PENDING CI |
