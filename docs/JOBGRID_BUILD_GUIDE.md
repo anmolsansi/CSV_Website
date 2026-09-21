@@ -244,6 +244,77 @@ npm run build
 
 The Today browser fixture freezes the API `as_of` and account timezone instead of deriving day boundaries from the test runner's wall clock. Coverage includes overdue/undated rendering, keyboard snooze persistence after reload, failed-complete preservation, persisted follow-up rescheduling in the existing Applications surface, and the saved-view exact-count/20-item cap.
 
+
+## F1 integrated Today acceptance
+
+JG-028 is the integrated acceptance step for the F1 Today group. It adds no route, table, migration, or alternate queue implementation. The acceptance suite exercises the JG-025 storage/backup contract, JG-026 queue/mutation service, and JG-027 interface as one workflow.
+
+### Deterministic 60-action fixture
+
+`backend/tests/test_today_api.py::test_fixed_fixture_membership_and_count_parity` creates exactly 60 synthetic action sources across two accounts:
+
+- 30 manual WorkItems: owned overdue, due-today, undated, tomorrow, and completed records plus five foreign-account records;
+- 30 JobTrack follow-ups: owned overdue, due-today, tomorrow, and terminal records plus five foreign-account records;
+- eight owned visible actions receive active snooze overrides.
+
+At the fixed `2026-09-21T12:00:00Z` clock in UTC, the unsnoozed queue must contain exactly 25 actions: 12 overdue, 8 due today, and 5 undated. With `include_snoozed=true`, it must contain exactly 33: 16 overdue, 12 due today, and 5 undated. Tomorrow, completed, terminal, and foreign-account records must never leak into normal membership.
+
+This fixture is intentionally larger than one page-sized work session and freezes expected membership rather than accepting approximate counts.
+
+### Bounded queue SQL and PostgreSQL plans
+
+Manual queue serialization reads optional application, CSV-row, and saved-view source metadata. Those relationships are eager-loaded in the main WorkItem query so serialization does not issue relationship SELECTs per item.
+
+`test_no_n_plus_one_queue_queries` creates 12 manual actions with 12 distinct track/row/view source triples after expunging the ORM identity map. The complete queue build is required to use exactly three SELECT statements: one eager-loaded manual query, one follow-up query, and one override query. Increasing the number of sourced actions therefore does not increase query count.
+
+Repository PostgreSQL CI also runs `test_today_postgres_query_plans_use_owner_due_indexes`. With sequential scans disabled only for the acceptance EXPLAIN, the manual membership plan must expose `ix_work_items_user_due`; the follow-up plan must use either the owner or follow-up timestamp index. This verifies index eligibility. It is not a latency benchmark and does not claim a production response-time target.
+
+### Recovery, detachment, and timezone behavior
+
+The F1 acceptance regressions verify these recovery boundaries:
+
+- deleting a Saved View source detaches `source_view_id` through `ON DELETE SET NULL`, while the manual action and its description remain in Today;
+- changing the authenticated account timezone recomputes next-local-midnight membership on the server. A cross-midnight action can be tomorrow in UTC and due today in Asia/Kolkata without changing the stored UTC instant;
+- v2 export/restore moves all owned fixture WorkItems, JobTracks, and eight snooze overrides into a different destination owner, then reconstructs the same 25 visible / 33 including-snoozed queue counts;
+- restored override keys are regenerated from destination IDs and remain destination-owner scoped.
+
+### Saved-view complete-order acceptance
+
+`test_saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions` creates 25 matching Greenhouse rows plus nonmatching rows, reads page 1 and page 2 of the shared sorted browse contract, and then adds 20 items from the Saved View. The created Today actions must match the first 20 rows from the complete filtered/sorted order, including the second browse page. Repeating the request creates zero duplicates and returns the same 20 pending actions.
+
+This protects F1 from regressing back to visible-page-only selection.
+
+### Five-action work session
+
+The browser acceptance test `frontend/tests/today.spec.ts` performs a deterministic work session that:
+
+1. opens an application-backed action in the existing Applications surface and returns to Today;
+2. completes a manual action;
+3. snoozes a second manual action;
+4. reschedules an application follow-up;
+5. attempts another completion, observes a synthetic server failure, and retries successfully.
+
+The scripted session uses eight Today control activations because snooze and reschedule each require an explicit dialog confirmation and the failure case requires a retry. Four server mutations are confirmed. After a full reload, every confirmed removal remains removed, the failed-then-retried item is not lost, and the detail-only action remains available.
+
+This is deterministic workflow evidence, not a human speed study. JG-028 does not claim that eight clicks are faster than a measured baseline. The acceptance claim is narrower: the tested work session can be completed from one queue with explicit controls, survives detail navigation/reload, and leaves no silently lost confirmed changes.
+
+### Preserved release regressions
+
+Full repository CI remains the group gate. In addition to the new F1 tests, it must keep the existing application-memory, complete filtered/sorted selection, and popup/tab-opening regressions green. In particular, `frontend/tests/release-workflows.spec.ts` continues to prove that the top-five workflow opens only successful eligible tabs, severs `window.opener`, and records no visits for blocked popups.
+
+Focused commands:
+
+```sh
+cd backend
+python -m pytest tests/test_today_api.py -q
+
+cd ../frontend
+npm run test:e2e -- tests/today.spec.ts --project=chromium
+npm run build
+```
+
+No JG-028 migration exists. Roll back the queue-loading optimization by reverting its application-code commit if necessary. Persisted JG-025 Today records, snooze overrides, and `JobTrack.follow_up_at` remain compatible. The broader F1 UI rollback is still to disable the Today route/navigation without deleting user data.
+
 ## Why v2 exists
 
 The original portable backup is lossy. A backup can contain an application record while the old restore path does not reconstruct the same application state. V2 makes all durable sections and persisted fields explicit before restore code constructs ORM objects.
