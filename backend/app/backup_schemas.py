@@ -11,11 +11,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.3.0"
+BACKUP_SCHEMA_REVISION = "2.4.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
     "job_tracks",
+    "work_items",
+    "work_item_overrides",
     "lifecycle_events",
     "saved_views",
     "sessions",
@@ -152,6 +154,56 @@ class JobTrackBackupV2(BackupRecordBase):
     updated_at: str
 
 
+class WorkItemBackupV2(BackupRecordBase):
+    track_ref: str | None
+    row_ref: str | None
+    source_view_ref: str | None
+    origin_key: str | None = Field(default=None, max_length=255)
+    description: str = Field(min_length=1, max_length=500)
+    due_at: str | None
+    priority: int = Field(ge=0, le=3)
+    state: Literal["pending", "done"]
+    version: int = Field(gt=0)
+    created_at: str
+    updated_at: str
+    completed_at: str | None
+
+    @model_validator(mode="after")
+    def validate_work_item_state(self):
+        if self.description != self.description.strip():
+            raise ValueError("Work-item description must be trimmed.")
+        if self.state == "done" and self.completed_at is None:
+            raise ValueError("completed_at is required when state is done.")
+        return self
+
+
+class WorkItemOverrideBackupV2(BackupRecordBase):
+    kind: Literal["manual", "followup"]
+    work_item_ref: str | None = None
+    track_ref: str | None = None
+    follow_up_due_at: str | None = None
+    snoozed_until: str
+    version: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_override_target(self):
+        _validate_utc_timestamp(
+            self.snoozed_until,
+            field_name="work_item_overrides.snoozed_until",
+        )
+        if self.kind == "manual":
+            if self.work_item_ref is None or self.track_ref is not None or self.follow_up_due_at is not None:
+                raise ValueError("Manual override requires exactly work_item_ref.")
+        else:
+            if self.track_ref is None or self.work_item_ref is not None or self.follow_up_due_at is None:
+                raise ValueError("Follow-up override requires track_ref and follow_up_due_at.")
+            _validate_utc_timestamp(
+                self.follow_up_due_at,
+                field_name="work_item_overrides.follow_up_due_at",
+            )
+        return self
+
+
 class JobLifecycleEventBackupV2(BackupRecordBase):
     event_key: str = Field(min_length=1, max_length=160)
     job_url: str = Field(min_length=1)
@@ -257,6 +309,8 @@ class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
     job_tracks: list[JobTrackBackupV2]
+    work_items: list[WorkItemBackupV2] = Field(default_factory=list)
+    work_item_overrides: list[WorkItemOverrideBackupV2] = Field(default_factory=list)
     lifecycle_events: list[JobLifecycleEventBackupV2] = Field(default_factory=list)
     saved_views: list[SavedViewBackupV2]
     sessions: list[SearchSessionBackupV2]
@@ -271,6 +325,8 @@ class BackupCountsV2(StrictBackupModel):
     csv_rows: int = Field(ge=0)
     url_history: int = Field(ge=0)
     job_tracks: int = Field(ge=0)
+    work_items: int = Field(default=0, ge=0)
+    work_item_overrides: int = Field(default=0, ge=0)
     lifecycle_events: int = Field(default=0, ge=0)
     saved_views: int = Field(ge=0)
     sessions: int = Field(ge=0)
@@ -387,6 +443,49 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
     "UserGoal": {
         **_entries(["user_id"], "reconstructed", "Ownership is always the authenticated destination user."),
         **_entries(["open_per_day", "apply_per_day", "followup_per_day", "applypilot_per_day"], "exported", "Durable goal preferences are portable user data."),
+    },
+
+    "WorkItem": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Destination identity/ownership is allocated from backup_ref and authenticated user.",
+        ),
+        **_entries(
+            ["track_id"],
+            "reconstructed",
+            "Application identity is represented as track_ref and remapped on restore.",
+        ),
+        **_entries(
+            ["row_id"],
+            "reconstructed",
+            "CSV-row identity is represented as row_ref and remapped on restore.",
+        ),
+        **_entries(
+            ["source_view_id"],
+            "reconstructed",
+            "Saved-view identity is represented as source_view_ref and remapped on restore.",
+        ),
+        **_entries(
+            [
+                "origin_key", "description", "due_at", "priority", "state",
+                "version", "created_at", "updated_at", "completed_at",
+            ],
+            "exported",
+            "Durable manual Today actions are portable user data.",
+        ),
+    },
+    "WorkItemOverride": {
+        **_entries(
+            ["user_id", "action_key"],
+            "reconstructed",
+            "Ownership is the authenticated user and action keys are regenerated from remapped destination IDs.",
+        ),
+        **_entries(
+            ["snoozed_until", "version"],
+            "exported",
+            "Durable per-action snooze state is portable user data.",
+        ),
     },
     "MaintenanceStatus": _entries(
         [
@@ -562,6 +661,33 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
         _require_target(refs, "csv_rows", track.csv_row_ref, source_section="job_tracks", source_ref=track.backup_ref)
         _require_target(refs, "sessions", track.session_ref, source_section="job_tracks", source_ref=track.backup_ref)
 
+
+    for item in document.sections.work_items:
+        _require_target(
+            refs, "job_tracks", item.track_ref,
+            source_section="work_items", source_ref=item.backup_ref,
+        )
+        _require_target(
+            refs, "csv_rows", item.row_ref,
+            source_section="work_items", source_ref=item.backup_ref,
+        )
+        _require_target(
+            refs, "saved_views", item.source_view_ref,
+            source_section="work_items", source_ref=item.backup_ref,
+        )
+
+    for override in document.sections.work_item_overrides:
+        if override.kind == "manual":
+            _require_target(
+                refs, "work_items", override.work_item_ref,
+                source_section="work_item_overrides", source_ref=override.backup_ref,
+            )
+        else:
+            _require_target(
+                refs, "job_tracks", override.track_ref,
+                source_section="work_item_overrides", source_ref=override.backup_ref,
+            )
+
     for event in document.sections.lifecycle_events:
         _require_target(
             refs, "csv_rows", event.csv_row_ref,
@@ -632,6 +758,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_lifecycle_section = (
         isinstance(raw_sections, Mapping) and "lifecycle_events" in raw_sections
     )
+    has_work_items_section = (
+        isinstance(raw_sections, Mapping) and "work_items" in raw_sections
+    )
+    has_work_item_overrides_section = (
+        isinstance(raw_sections, Mapping) and "work_item_overrides" in raw_sections
+    )
     has_user_profile_section = (
         isinstance(raw_sections, Mapping) and "user_profile" in raw_sections
     )
@@ -654,6 +786,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_lifecycle_section:
         # Revision 2.0.0 predates the additive lifecycle section.
         checksum_sections.pop("lifecycle_events", None)
+    if not has_work_items_section:
+        # Revisions before JG-025 predate durable manual Today actions.
+        checksum_sections.pop("work_items", None)
+    if not has_work_item_overrides_section:
+        # Revisions before JG-025 predate durable Today snooze overrides.
+        checksum_sections.pop("work_item_overrides", None)
     if not has_user_profile_section:
         # Revisions 2.0.0 and 2.1.0 predate portable account timezone.
         checksum_sections.pop("user_profile", None)
@@ -712,6 +850,8 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "csv_rows": CsvRowBackupV2,
     "url_history": UrlHistoryBackupV2,
     "job_tracks": JobTrackBackupV2,
+    "work_items": WorkItemBackupV2,
+    "work_item_overrides": WorkItemOverrideBackupV2,
     "lifecycle_events": JobLifecycleEventBackupV2,
     "saved_views": SavedViewBackupV2,
     "sessions": SearchSessionBackupV2,
