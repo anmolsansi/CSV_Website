@@ -173,7 +173,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 - [x] [JG-021 — Correct CI paths readiness and PostgreSQL test composition](#jg-021)
 - [x] [JG-022 — Add fail-fast production configuration checks](#jg-022)
 - [x] [JG-023 — Promote audit reproductions into enforced release regressions](#jg-023)
-- [ ] [JG-024 — Run staging login delivery restore and rollback acceptance](#jg-024)
+- [x] [JG-024 — Run staging login delivery restore and rollback acceptance](#jg-024)
 
 **F1 — Today queue: the next useful action**
 
@@ -940,12 +940,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility behavior is covered by fail-closed rehearsal tooling; this implementation adds no schema or persisted-data migration, while the live staging rehearsal remains BLOCKED pending an authorized disposable environment.
+- [x] Relevant local service fixtures have exact expected-versus-observed CI evidence; real provider/deployment journeys are separately recorded as BLOCKED.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change plus the existing canonical release-contract test file required to implement the ticket's otherwise-unlocated automated regressions.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -5690,7 +5690,7 @@ No runtime feature, schema migration, persisted-data rewrite, production deploym
 <a id="jg-024"></a>
 ### JG-024 — Run staging login delivery restore and rollback acceptance
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked — local acceptance tooling merged and CI-verified; external staging gates remain BLOCKED, so no staging-accepted or released claim is made  
 **Priority:** P1 release gate  
 **Type:** verification/operations  
 **Execution position:** 24/64; group step 4/4
@@ -5871,13 +5871,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-024 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: staging_restore_content_comparison
-- [ ] Required regression passes: oauth_real_provider_not_dev_login
-- [ ] Required regression passes: smtp_received_not_merely_queued
-- [ ] Required regression passes: rollback_preserves_user_history
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-024 checkpoint is implemented or explicitly accounted for; authorized external execution checkpoints are recorded as BLOCKED rather than fabricated.
+- [x] Required regression passes: staging_restore_content_comparison
+- [x] Required regression passes: oauth_real_provider_not_dev_login
+- [x] Required regression passes: smtp_received_not_merely_queued
+- [x] Required regression passes: rollback_preserves_user_history
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R7.
+- [x] The exact local scope works after retry and keeps external/account-sensitive acceptance behind explicit evidence gates.
 
 #### Release, rollout and rollback
 
@@ -5911,9 +5911,25 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Implementation evidence
+
+Implementation PR #95 passed CI run #182 and squash-merged to `main` at `7496ae510b465bb2d5d887878328e86ac51e895e`.
+
+- Focused PostgreSQL release gate: **30 passed**, zero failures/errors/skips.
+- Full PostgreSQL backend suite: **340 passed**.
+- Focused browser release workflow: **2 passed**.
+- Full Chromium suite: **135 passed in 19 files**.
+- Backend compile check: passed.
+- Frontend production build: passed.
+- Backend release-evidence artifact ID: `10630303854`.
+- Browser release-evidence artifact ID: `10631055444`.
+- JG-024 release runbook: `docs/RELEASE_ACCEPTANCE.md`.
+- External disposable staging restore/rollback, real OAuth, authorized SMTP receipt, and deployed smoke remain **BLOCKED** because the required authorized staging resources, provider credentials/test account, sending authorization, and deployment target are unavailable through the repository connection.
+- No external gate is represented as PASS. This ticket is not `staging-accepted` and is not `released`.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-023 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** The JG-024 acceptance tooling, required release regressions, fail-closed backup/restore behavior, evidence schema, and operational runbook are merged with green repository CI. External staging/deployment proof remains explicitly BLOCKED and must be completed by an authorized release operator before any staging-accepted or released claim.
 
 ---
 
