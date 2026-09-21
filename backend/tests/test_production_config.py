@@ -60,6 +60,23 @@ def _run_backend_python(code: str, **environment_overrides):
     )
 
 
+def test_app_secret_key_overrides_stale_legacy_secret_key():
+    result = _run_backend_python(
+        """
+import os
+from app.config import settings
+
+assert settings.SECRET_KEY == os.environ["APP_SECRET_KEY"]
+print("app-secret-key-precedence-ok")
+""",
+        SECRET_KEY="dev-secret-change-me",
+        APP_SECRET_KEY=SAFE_PRODUCTION_SECRET,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "app-secret-key-precedence-ok" in result.stdout
+
+
 def test_production_test_auth_rejected_before_serving():
     result = _run_backend_python("import app.main", TEST_AUTH="true")
 

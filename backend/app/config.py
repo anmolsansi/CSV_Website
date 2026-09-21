@@ -128,7 +128,15 @@ class Settings:
         "DATABASE_URL",
         "postgresql+psycopg2://postgres:postgres@localhost:5432/csvapp",
     )
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+    # APP_SECRET_KEY is the deployment-managed signing secret. Prefer it when
+    # present so a stale legacy SECRET_KEY value cannot override a newly
+    # generated production secret. SECRET_KEY remains supported for local and
+    # non-Render deployments.
+    SECRET_KEY = (
+        os.getenv("APP_SECRET_KEY")
+        or os.getenv("SECRET_KEY")
+        or "dev-secret-change-me"
+    )
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")

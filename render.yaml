@@ -14,7 +14,10 @@ services:
         value: production
       - key: TEST_AUTH
         value: "false"
-      - key: SECRET_KEY
+      # Use a fresh key name so existing services that already have a stale
+      # SECRET_KEY placeholder still receive a new Render-generated 256-bit
+      # secret on Blueprint sync.
+      - key: APP_SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
         sync: false
