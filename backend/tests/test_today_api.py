@@ -992,3 +992,204 @@ def test_today_timezone_change_recomputes_membership(db_session):
         "due_today": 1,
         "undated": 0,
     }
+
+
+
+def test_restore_reconstructs_today_items(db_session):
+    fixture = _sixty_action_fixture(db_session)
+    source = fixture["owner"]
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["counts"]["work_items"] == 25
+    assert payload["counts"]["job_tracks"] == 25
+    assert payload["counts"]["work_item_overrides"] == 8
+
+    destination = User(
+        email=f"jg028-restore-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(destination)
+    db_session.commit()
+    destination_id = destination.id
+
+    restored = restore_backup_v2(
+        db_session,
+        destination_id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert restored["counts"]["work_items"] == {
+        "created": 25,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert restored["counts"]["job_tracks"] == {
+        "created": 25,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert restored["counts"]["work_item_overrides"] == {
+        "created": 8,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+
+    db_session.expire_all()
+    queue_result = build_today_queue(
+        db_session,
+        user_id=destination_id,
+        timezone_name="UTC",
+        secret_key="jg028-restored-queue",
+        now=fixture["reference"],
+    )
+    assert queue_result["counts"] == {
+        "total": 25,
+        "overdue": 12,
+        "due_today": 8,
+        "undated": 5,
+    }
+    assert sum(item["type"] == "manual" for item in queue_result["items"]) == 15
+    assert sum(item["type"] == "followup" for item in queue_result["items"]) == 10
+
+    restored_overrides = (
+        db_session.query(WorkItemOverride)
+        .filter_by(user_id=destination_id)
+        .all()
+    )
+    assert len(restored_overrides) == 8
+    assert all(
+        row.user_id == destination_id
+        for row in restored_overrides
+    )
+
+    including_snoozed = build_today_queue(
+        db_session,
+        user_id=destination_id,
+        timezone_name="UTC",
+        secret_key="jg028-restored-queue",
+        include_snoozed=True,
+        now=fixture["reference"],
+    )
+    assert including_snoozed["counts"] == {
+        "total": 33,
+        "overdue": 16,
+        "due_today": 12,
+        "undated": 5,
+    }
+
+
+def test_saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions(
+    auth_client,
+    db_session,
+):
+    _reset(auth_client)
+    user = _test_user(db_session)
+    batch = str(uuid4())
+    matching_rows = []
+    for index in range(25):
+        row = CsvRow(
+            user_id=user.id,
+            upload_batch_id=batch,
+            url=f"https://jg028-view.example/greenhouse/{uuid4()}",
+            company_guess=f"Target {index:02}",
+            title="Platform Engineer",
+            resume_match_score=str(100 - index),
+            ats_group="greenhouse",
+        )
+        db_session.add(row)
+        matching_rows.append(row)
+    for index in range(5):
+        db_session.add(
+            CsvRow(
+                user_id=user.id,
+                upload_batch_id=batch,
+                url=f"https://jg028-view.example/lever/{uuid4()}",
+                company_guess=f"Other {index:02}",
+                title="Platform Engineer",
+                resume_match_score=str(120 - index),
+                ats_group="lever",
+            )
+        )
+    db_session.flush()
+    view = SavedView(
+        user_id=user.id,
+        name=f"JG028 full order {uuid4()}",
+        view_type="job_links",
+        filters={
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    db_session.add(view)
+    db_session.commit()
+
+    page_one = auth_client.get(
+        "/rows",
+        params={
+            "page": 1,
+            "page_size": 10,
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    page_two = auth_client.get(
+        "/rows",
+        params={
+            "page": 2,
+            "page_size": 10,
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    assert page_one.status_code == 200
+    assert page_two.status_code == 200
+    expected_first_twenty = [
+        row["id"]
+        for row in page_one.json()["rows"] + page_two.json()["rows"]
+    ]
+    assert len(expected_first_twenty) == 20
+
+    first = auth_client.post(
+        "/crm/today/from-view",
+        json={
+            "view_id": view.id,
+            "limit": 20,
+            "request_id": str(uuid4()),
+        },
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["created"] == 20
+    assert first_body["existing"] == 0
+    assert first_body["matched"] == 20
+    assert [
+        item["row_id"] for item in first_body["items"]
+    ] == expected_first_twenty
+
+    repeated = auth_client.post(
+        "/crm/today/from-view",
+        json={
+            "view_id": view.id,
+            "limit": 20,
+            "request_id": str(uuid4()),
+        },
+    )
+    assert repeated.status_code == 200
+    repeated_body = repeated.json()
+    assert repeated_body["created"] == 0
+    assert repeated_body["existing"] == 20
+    assert repeated_body["completed"] == 0
+    assert [
+        item["row_id"] for item in repeated_body["items"]
+    ] == expected_first_twenty
+    assert (
+        db_session.query(WorkItem)
+        .filter(
+            WorkItem.user_id == user.id,
+            WorkItem.source_view_id == view.id,
+        )
+        .count()
+    ) == 20
