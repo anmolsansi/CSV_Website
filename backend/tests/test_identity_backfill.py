@@ -28,15 +28,21 @@ def test_backfill_retry_is_idempotent(db_session):
         "https://jobs.example.test/role/1?utm_source=alpha",
         "https://jobs.example.test/role/2?gclid=tracking",
     ]
-    for url in urls:
-        db_session.add(
-            CsvRow(user_id=user.id, upload_batch_id="jg030", url=url)
-        )
+    rows = [
+        CsvRow(user_id=user.id, upload_batch_id="jg030", url=url)
+        for url in urls
+    ]
+    db_session.add_all(rows)
     db_session.commit()
+    checkpoint = min(row.id for row in rows) - 1
 
-    first = backfill_identity_batch(db_session, CsvRow, after_id=0)
+    first = backfill_identity_batch(
+        db_session, CsvRow, after_id=checkpoint, limit=len(rows)
+    )
     db_session.commit()
-    second = backfill_identity_batch(db_session, CsvRow, after_id=0)
+    second = backfill_identity_batch(
+        db_session, CsvRow, after_id=checkpoint, limit=len(rows)
+    )
 
     assert (first.scanned, first.updated, first.unchanged, first.invalid) == (
         2,
@@ -58,25 +64,27 @@ def test_canonical_collision_retains_two_tracks(db_session):
         "https://jobs.example.test/role/77?utm_source=one",
         "https://jobs.example.test/role/77?utm_campaign=two",
     ]
-    db_session.add_all(
-        [
-            JobTrack(
-                user_id=user.id,
-                url=original[0],
-                status="applied",
-                notes="first application",
-            ),
-            JobTrack(
-                user_id=user.id,
-                url=original[1],
-                status="interviewing",
-                notes="second application",
-            ),
-        ]
-    )
+    seeded_tracks = [
+        JobTrack(
+            user_id=user.id,
+            url=original[0],
+            status="applied",
+            notes="first application",
+        ),
+        JobTrack(
+            user_id=user.id,
+            url=original[1],
+            status="interviewing",
+            notes="second application",
+        ),
+    ]
+    db_session.add_all(seeded_tracks)
     db_session.commit()
+    checkpoint = min(track.id for track in seeded_tracks) - 1
 
-    report = backfill_identity_batch(db_session, JobTrack, after_id=0)
+    report = backfill_identity_batch(
+        db_session, JobTrack, after_id=checkpoint, limit=len(seeded_tracks)
+    )
     db_session.commit()
     tracks = (
         db_session.query(JobTrack)
@@ -225,7 +233,8 @@ def test_dry_run_writes_nothing(db_session):
     report = backfill_identity_batch(
         db_session,
         CsvRow,
-        after_id=0,
+        after_id=row.id - 1,
+        limit=1,
         dry_run=True,
     )
     db_session.flush()
