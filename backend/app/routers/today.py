@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -40,18 +40,66 @@ logger = logging.getLogger(__name__)
 
 
 class StrictTodayRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    # JSON timestamps arrive as strings, so transport parsing cannot use model-wide strict mode.
+    # Numeric concurrency/source identifiers remain StrictInt below.
+    model_config = ConfigDict(extra="forbid")
+
+
+class WorkItemCreateRequest(StrictTodayRequest):
+    description: str = Field(min_length=1, max_length=500)
+    due_at: datetime | None = None
+    priority: StrictInt = Field(default=1, ge=0, le=3)
+    track_id: StrictInt | None = Field(default=None, gt=0)
+    row_id: StrictInt | None = Field(default=None, gt=0)
+    source_view_id: StrictInt | None = Field(default=None, gt=0)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def trim_create_description(cls, value):
+        if not isinstance(value, str):
+            return value
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError(
+                "description must contain at least one non-whitespace character."
+            )
+        return trimmed
+
+    @field_validator("due_at")
+    @classmethod
+    def normalize_create_due_at(
+        cls,
+        value: datetime | None,
+    ) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("due_at must include a timezone offset.")
+        return value.astimezone(timezone.utc)
+
+
+class SnoozeRequestBody(StrictTodayRequest):
+    action_key: str = Field(min_length=1, max_length=255)
+    until: datetime
+    version: StrictInt = Field(gt=0)
+
+    @field_validator("until")
+    @classmethod
+    def normalize_snooze_until(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("until must include a timezone offset.")
+        return value.astimezone(timezone.utc)
 
 
 class WorkItemPatch(StrictTodayRequest):
-    version: int = Field(gt=0)
+    version: StrictInt = Field(gt=0)
     description: str | None = Field(
         default=None,
         min_length=1,
         max_length=500,
     )
     due_at: datetime | None = None
-    priority: int | None = Field(default=None, ge=0, le=3)
+    priority: StrictInt | None = Field(default=None, ge=0, le=3)
     state: Literal["pending", "done"] | None = None
 
     @field_validator("description", mode="before")
@@ -127,8 +175,8 @@ class FollowUpResolveRequest(StrictTodayRequest):
 
 
 class FromViewRequest(StrictTodayRequest):
-    view_id: int = Field(gt=0)
-    limit: int = Field(default=20, ge=1, le=20)
+    view_id: StrictInt = Field(gt=0)
+    limit: StrictInt = Field(default=20, ge=1, le=20)
     request_id: str = Field(min_length=36, max_length=36)
 
     @field_validator("request_id")
@@ -284,7 +332,7 @@ def get_today(
     status_code=status.HTTP_201_CREATED,
 )
 def post_work_item(
-    payload: WorkItemCreate,
+    payload: WorkItemCreateRequest,
     x_operation_id: str | None = Header(
         None,
         alias="X-Operation-ID",
@@ -305,10 +353,11 @@ def post_work_item(
     request_id = str(operation_id)
     started = perf_counter()
     try:
+        contract = WorkItemCreate.model_validate(payload.model_dump())
         item = create_work_item(
             db,
             user_id=user.id,
-            payload=payload,
+            payload=contract,
         )
         db.commit()
         db.refresh(item)
@@ -389,7 +438,7 @@ def patch_work_item(
 
 @router.post("/today/snooze")
 def post_snooze(
-    payload: SnoozeRequest,
+    payload: SnoozeRequestBody,
     x_operation_id: str | None = Header(
         None,
         alias="X-Operation-ID",
@@ -410,12 +459,13 @@ def post_snooze(
     request_id = str(operation_id)
     started = perf_counter()
     try:
+        contract = SnoozeRequest.model_validate(payload.model_dump())
         row = snooze_action(
             db,
             user_id=user.id,
-            action_key=payload.action_key,
-            until=payload.until,
-            version=payload.version,
+            action_key=contract.action_key,
+            until=contract.until,
+            version=contract.version,
         )
         db.commit()
         result = {
