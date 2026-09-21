@@ -298,3 +298,188 @@ test.describe('JG-027 Today screen', () => {
     expect(submittedLimit).toBe(20)
   })
 })
+
+
+test.describe('JG-028 Today acceptance', () => {
+  test('five-action work session preserves confirmed state through detail navigation and reload', async ({ page }) => {
+    const detail = followupItem({
+      action_key: 'followup:70:2026-09-21T13:00:00Z',
+      id: 70,
+      track_id: 70,
+      description: 'Review detail context before acting',
+      company: 'Detail Co',
+      role: 'Staff Engineer',
+      due_at: '2026-09-21T13:00:00Z',
+    })
+    const completeItem = manualItem({
+      action_key: 'manual:41',
+      id: 41,
+      description: 'Complete confirmed task',
+    })
+    const snoozeItem = manualItem({
+      action_key: 'manual:42',
+      id: 42,
+      description: 'Snooze confirmed task',
+    })
+    const rescheduleItem = followupItem({
+      action_key: 'followup:73:2026-09-21T14:00:00Z',
+      id: 73,
+      track_id: 73,
+      description: 'Reschedule confirmed follow-up',
+    })
+    const retryItem = manualItem({
+      action_key: 'manual:44',
+      id: 44,
+      description: 'Retry failed completion',
+    })
+
+    let items = [detail, completeItem, snoozeItem, rescheduleItem, retryItem]
+    let retryAttempts = 0
+    let confirmedWrites = 0
+    let controlActivations = 0
+
+    await routeTodayList(page, () => items)
+
+    await page.route('**/crm/work-items/41', async (route) => {
+      items = items.filter((item) => item.action_key !== completeItem.action_key)
+      confirmedWrites += 1
+      await fulfillJson(route, { ...completeItem, state: 'done', version: 2 })
+    })
+    await page.route('**/crm/today/snooze', async (route) => {
+      const payload = route.request().postDataJSON()
+      expect(payload.action_key).toBe(snoozeItem.action_key)
+      items = items.filter((item) => item.action_key !== snoozeItem.action_key)
+      confirmedWrites += 1
+      await fulfillJson(route, {
+        action_key: snoozeItem.action_key,
+        snoozed_until: payload.until,
+        version: 2,
+      })
+    })
+    await page.route('**/crm/today/follow-up', async (route) => {
+      const payload = route.request().postDataJSON()
+      expect(payload.action_key).toBe(rescheduleItem.action_key)
+      expect(payload.resolution).toBe('reschedule')
+      items = items.filter((item) => item.action_key !== rescheduleItem.action_key)
+      confirmedWrites += 1
+      await fulfillJson(route, {
+        track_id: 73,
+        follow_up_at: payload.follow_up_at,
+        status: 'follow_up',
+      })
+    })
+    await page.route('**/crm/work-items/44', async (route) => {
+      retryAttempts += 1
+      if (retryAttempts === 1) {
+        await fulfillJson(route, {
+          detail: { code: 'synthetic_failure', message: 'Synthetic retry case' },
+        }, 500)
+        return
+      }
+      items = items.filter((item) => item.action_key !== retryItem.action_key)
+      confirmedWrites += 1
+      await fulfillJson(route, { ...retryItem, state: 'done', version: 2 })
+    })
+    await page.route('**/crm/applications**', async (route) => {
+      const url = new URL(route.request().url())
+      if (route.request().method() !== 'GET' || url.pathname !== '/crm/applications') {
+        await route.fallback()
+        return
+      }
+      await fulfillJson(route, {
+        rows: [{
+          id: 70,
+          csv_row_id: 12,
+          company: 'Detail Co',
+          title: 'Staff Engineer',
+          status: 'follow_up',
+          ats_group: 'greenhouse',
+          search_bucket: 'target',
+          resume_match_score: 92,
+          opened_at: '2026-09-19T12:00:00Z',
+          applied_at: null,
+          follow_up_at: '2026-09-21T13:00:00Z',
+          notes: '',
+          url: 'https://example.test/detail',
+        }],
+        filter_options: {
+          ats_groups: ['greenhouse'],
+          location_groups: [],
+          decisions: [],
+          sponsorship_statuses: [],
+        },
+        page: 1,
+        page_size: 50,
+        total_count: 1,
+        has_next: false,
+      })
+    })
+
+    await page.goto('/today')
+
+    controlActivations += 1
+    await page.getByRole('row', { name: /Review detail context before acting/ })
+      .getByRole('button', { name: 'Open details' })
+      .click()
+    await expect(page.getByRole('heading', { name: 'Applications' })).toBeVisible()
+    await page.goBack()
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+    await expect(page.getByText('Complete confirmed task')).toBeVisible()
+
+    controlActivations += 1
+    await page.getByRole('row', { name: /Complete confirmed task/ })
+      .getByRole('button', { name: 'Complete' })
+      .click()
+    await expect(page.getByText('Complete confirmed task')).toHaveCount(0)
+
+    controlActivations += 1
+    await page.getByRole('row', { name: /Snooze confirmed task/ })
+      .getByRole('button', { name: 'Snooze' })
+      .click()
+    await page.getByRole('dialog', { name: 'Snooze action' })
+      .locator('input[type="datetime-local"]')
+      .fill('2026-09-22T10:00')
+    controlActivations += 1
+    await page.getByRole('dialog', { name: 'Snooze action' })
+      .getByRole('button', { name: 'Save' })
+      .click()
+    await expect(page.getByText('Snooze confirmed task')).toHaveCount(0)
+
+    controlActivations += 1
+    await page.getByRole('row', { name: /Reschedule confirmed follow-up/ })
+      .getByRole('button', { name: 'Reschedule' })
+      .click()
+    await page.getByRole('dialog', { name: 'Reschedule follow-up' })
+      .locator('input[type="datetime-local"]')
+      .fill('2026-09-23T11:30')
+    controlActivations += 1
+    await page.getByRole('dialog', { name: 'Reschedule follow-up' })
+      .getByRole('button', { name: 'Save' })
+      .click()
+    await expect(page.getByText('Reschedule confirmed follow-up')).toHaveCount(0)
+
+    controlActivations += 1
+    await page.getByRole('row', { name: /Retry failed completion/ })
+      .getByRole('button', { name: 'Complete' })
+      .click()
+    await expect(page.getByText('Retry failed completion')).toBeVisible()
+    await expect(page.locator('.toast-error')).toContainText('Synthetic retry case')
+
+    controlActivations += 1
+    await page.getByRole('row', { name: /Retry failed completion/ })
+      .getByRole('button', { name: 'Complete' })
+      .click()
+    await expect(page.getByText('Retry failed completion')).toHaveCount(0)
+
+    await page.reload()
+    await expect(page.getByText('Complete confirmed task')).toHaveCount(0)
+    await expect(page.getByText('Snooze confirmed task')).toHaveCount(0)
+    await expect(page.getByText('Reschedule confirmed follow-up')).toHaveCount(0)
+    await expect(page.getByText('Retry failed completion')).toHaveCount(0)
+    await expect(page.getByText('Review detail context before acting')).toBeVisible()
+
+    expect(confirmedWrites).toBe(4)
+    expect(retryAttempts).toBe(2)
+    expect(controlActivations).toBe(8)
+  })
+})

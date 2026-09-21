@@ -8,7 +8,7 @@ from uuid import UUID
 from itsdangerous import BadSignature, URLSafeSerializer
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..models import CsvRow, JobTrack, SavedView, WorkItem, WorkItemOverride
 from ..today_schemas import (
@@ -254,6 +254,11 @@ def build_today_queue(
 
     manual_items = (
         db.query(WorkItem)
+        .options(
+            joinedload(WorkItem.track),
+            joinedload(WorkItem.row),
+            joinedload(WorkItem.source_view),
+        )
         .filter(
             WorkItem.user_id == user_id,
             WorkItem.state == "pending",

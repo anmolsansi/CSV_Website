@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import event, text
+
+from app.backup_schemas import validate_backup_v2
 from app.config import settings
 from app.models import (
     CsvRow,
@@ -11,7 +15,9 @@ from app.models import (
     SavedView,
     User,
     WorkItem,
+    WorkItemOverride,
 )
+from app.services.backups import export_backup_v2, restore_backup_v2
 from app.services.today import build_today_queue
 from app.today_schemas import followup_action_key, manual_action_key
 
@@ -496,3 +502,851 @@ def test_from_view_preserves_query_sort_and_deduplicates(
 def test_today_requires_authentication(client):
     response = client.get("/crm/today")
     assert response.status_code == 401
+
+
+
+def _sixty_action_fixture(db_session):
+    reference = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    owner = User(
+        email=f"jg028-owner-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    foreign = User(
+        email=f"jg028-foreign-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add_all([owner, foreign])
+    db_session.flush()
+
+    manual_overdue = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual overdue {index}",
+            due_at=datetime(2026, 9, 20, 8 + index, 0, tzinfo=timezone.utc),
+            priority=index % 4,
+            state="pending",
+            version=1,
+        )
+        for index in range(8)
+    ]
+    manual_today = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual today {index}",
+            due_at=datetime(2026, 9, 21, 13 + index, 0, tzinfo=timezone.utc),
+            priority=index % 4,
+            state="pending",
+            version=1,
+        )
+        for index in range(6)
+    ]
+    manual_undated = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual undated {index}",
+            due_at=None,
+            priority=index % 4,
+            state="pending",
+            version=1,
+        )
+        for index in range(5)
+    ]
+    manual_tomorrow = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual tomorrow {index}",
+            due_at=datetime(2026, 9, 22, 12 + index, 0, tzinfo=timezone.utc),
+            priority=1,
+            state="pending",
+            version=1,
+        )
+        for index in range(3)
+    ]
+    manual_done = [
+        WorkItem(
+            user_id=owner.id,
+            description=f"Manual done {index}",
+            due_at=datetime(2026, 9, 20, 9 + index, 0, tzinfo=timezone.utc),
+            priority=1,
+            state="done",
+            version=1,
+            completed_at=reference,
+        )
+        for index in range(3)
+    ]
+    foreign_manual = [
+        WorkItem(
+            user_id=foreign.id,
+            description=f"Foreign manual {index}",
+            due_at=datetime(2026, 9, 21, 14 + index, 0, tzinfo=timezone.utc),
+            priority=1,
+            state="pending",
+            version=1,
+        )
+        for index in range(5)
+    ]
+    db_session.add_all(
+        manual_overdue
+        + manual_today
+        + manual_undated
+        + manual_tomorrow
+        + manual_done
+        + foreign_manual
+    )
+    db_session.flush()
+
+    followup_overdue = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/overdue/{uuid4()}",
+            company=f"Overdue {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 20, 8 + index, 30),
+        )
+        for index in range(8)
+    ]
+    followup_today = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/today/{uuid4()}",
+            company=f"Today {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 21, 13 + index, 30),
+        )
+        for index in range(6)
+    ]
+    followup_tomorrow = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/tomorrow/{uuid4()}",
+            company=f"Tomorrow {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 22, 10 + index, 30),
+        )
+        for index in range(5)
+    ]
+    terminal_statuses = ["rejected", "offer", "not_applying"]
+    followup_terminal = [
+        JobTrack(
+            user_id=owner.id,
+            url=f"https://jg028.example/terminal/{uuid4()}",
+            company=f"Terminal {index}",
+            title="Engineer",
+            status=terminal_statuses[index % len(terminal_statuses)],
+            follow_up_at=datetime(2026, 9, 20, 6 + index, 0),
+        )
+        for index in range(6)
+    ]
+    foreign_followups = [
+        JobTrack(
+            user_id=foreign.id,
+            url=f"https://jg028.example/foreign/{uuid4()}",
+            company=f"Foreign {index}",
+            title="Engineer",
+            status="follow_up",
+            follow_up_at=datetime(2026, 9, 21, 14 + index, 30),
+        )
+        for index in range(5)
+    ]
+    db_session.add_all(
+        followup_overdue
+        + followup_today
+        + followup_tomorrow
+        + followup_terminal
+        + foreign_followups
+    )
+    db_session.flush()
+
+    snoozed_manual = manual_overdue[:2] + manual_today[:2]
+    snoozed_followups = followup_overdue[:2] + followup_today[:2]
+    snoozed_until = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
+    db_session.add_all(
+        [
+            WorkItemOverride(
+                user_id=owner.id,
+                action_key=manual_action_key(item.id),
+                snoozed_until=snoozed_until,
+                version=2,
+            )
+            for item in snoozed_manual
+        ]
+        + [
+            WorkItemOverride(
+                user_id=owner.id,
+                action_key=followup_action_key(track.id, track.follow_up_at),
+                snoozed_until=snoozed_until,
+                version=2,
+            )
+            for track in snoozed_followups
+        ]
+    )
+    db_session.commit()
+
+    expected_all = {
+        *(manual_action_key(item.id) for item in manual_overdue),
+        *(manual_action_key(item.id) for item in manual_today),
+        *(manual_action_key(item.id) for item in manual_undated),
+        *(followup_action_key(track.id, track.follow_up_at) for track in followup_overdue),
+        *(followup_action_key(track.id, track.follow_up_at) for track in followup_today),
+    }
+    snoozed_keys = {
+        *(manual_action_key(item.id) for item in snoozed_manual),
+        *(followup_action_key(track.id, track.follow_up_at) for track in snoozed_followups),
+    }
+    return {
+        "owner": owner,
+        "foreign": foreign,
+        "reference": reference,
+        "expected_all": expected_all,
+        "expected_visible": expected_all - snoozed_keys,
+        "snoozed_keys": snoozed_keys,
+    }
+
+
+def test_fixed_fixture_membership_and_count_parity(db_session):
+    fixture = _sixty_action_fixture(db_session)
+    owner = fixture["owner"]
+
+    assert (
+        db_session.query(WorkItem).filter(
+            WorkItem.user_id.in_([owner.id, fixture["foreign"].id])
+        ).count()
+        + db_session.query(JobTrack).filter(
+            JobTrack.user_id.in_([owner.id, fixture["foreign"].id])
+        ).count()
+    ) == 60
+
+    visible = build_today_queue(
+        db_session,
+        user_id=owner.id,
+        timezone_name=owner.timezone,
+        secret_key="jg028-fixed-fixture",
+        now=fixture["reference"],
+    )
+    assert visible["counts"] == {
+        "total": 25,
+        "overdue": 12,
+        "due_today": 8,
+        "undated": 5,
+    }
+    assert {
+        item["action_key"] for item in visible["items"]
+    } == fixture["expected_visible"]
+    assert not fixture["snoozed_keys"].intersection(
+        item["action_key"] for item in visible["items"]
+    )
+
+    including_snoozed = build_today_queue(
+        db_session,
+        user_id=owner.id,
+        timezone_name=owner.timezone,
+        secret_key="jg028-fixed-fixture",
+        include_snoozed=True,
+        now=fixture["reference"],
+    )
+    assert including_snoozed["counts"] == {
+        "total": 33,
+        "overdue": 16,
+        "due_today": 12,
+        "undated": 5,
+    }
+    assert {
+        item["action_key"] for item in including_snoozed["items"]
+    } == fixture["expected_all"]
+
+
+
+def test_no_n_plus_one_queue_queries(db_session):
+    user = User(
+        email=f"jg028-query-count-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    for index in range(12):
+        row = CsvRow(
+            user_id=user.id,
+            upload_batch_id=f"jg028-query-{index}",
+            url=f"https://jg028-query.example/row/{uuid4()}",
+            title=f"Role {index}",
+            company_guess=f"Company {index}",
+        )
+        view = SavedView(
+            user_id=user.id,
+            name=f"JG028 query view {index}",
+            view_type="job_links",
+            filters={},
+        )
+        track = JobTrack(
+            user_id=user.id,
+            url=f"https://jg028-query.example/track/{uuid4()}",
+            company=f"Company {index}",
+            title=f"Role {index}",
+            status="saved",
+            follow_up_at=None,
+        )
+        db_session.add_all([row, view, track])
+        db_session.flush()
+        db_session.add(
+            WorkItem(
+                user_id=user.id,
+                track_id=track.id,
+                row_id=row.id,
+                source_view_id=view.id,
+                description=f"Sourced action {index}",
+                priority=1,
+                state="pending",
+                version=1,
+            )
+        )
+    db_session.commit()
+    user_id = user.id
+    db_session.expunge_all()
+
+    statements = []
+
+    def capture_statement(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    bind = db_session.get_bind()
+    event.listen(bind, "before_cursor_execute", capture_statement)
+    try:
+        result = build_today_queue(
+            db_session,
+            user_id=user_id,
+            timezone_name="UTC",
+            secret_key="jg028-query-count",
+            now=datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc),
+        )
+    finally:
+        event.remove(bind, "before_cursor_execute", capture_statement)
+
+    assert len(result["items"]) == 12
+    assert len(statements) == 3
+    source_query = statements[0].lower()
+    assert "join job_tracks" in source_query
+    assert "join csv_rows" in source_query
+    assert "join saved_views" in source_query
+
+
+def test_today_postgres_query_plans_use_owner_due_indexes(db_session):
+    if db_session.get_bind().dialect.name != "postgresql":
+        pytest.skip("PostgreSQL query-plan acceptance runs in repository CI.")
+
+    fixture = _sixty_action_fixture(db_session)
+    owner = fixture["owner"]
+    db_session.execute(text("SET LOCAL enable_seqscan = off"))
+
+    manual_plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN (COSTS OFF)
+                SELECT id
+                FROM work_items
+                WHERE user_id = :user_id
+                  AND state = 'pending'
+                  AND (due_at IS NULL OR due_at < :day_end)
+                """
+            ),
+            {
+                "user_id": owner.id,
+                "day_end": datetime(2026, 9, 22, 0, 0, tzinfo=timezone.utc),
+            },
+        )
+    )
+    assert "Index" in manual_plan
+    assert (
+        "ix_work_items_user_due" in manual_plan
+        or "ix_work_items_user_id" in manual_plan
+        or "ix_work_items_state" in manual_plan
+        or "ix_work_items_due_at" in manual_plan
+    )
+
+    owner_due_plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN (COSTS OFF)
+                SELECT id
+                FROM work_items
+                WHERE user_id = :user_id
+                  AND due_at < :day_end
+                """
+            ),
+            {
+                "user_id": owner.id,
+                "day_end": datetime(2026, 9, 22, 0, 0, tzinfo=timezone.utc),
+            },
+        )
+    )
+    assert "ix_work_items_user_due" in owner_due_plan
+
+    followup_plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN (COSTS OFF)
+                SELECT id
+                FROM job_tracks
+                WHERE user_id = :user_id
+                  AND follow_up_at IS NOT NULL
+                  AND follow_up_at < :day_end
+                  AND status NOT IN ('rejected', 'offer', 'not_applying')
+                """
+            ),
+            {
+                "user_id": owner.id,
+                "day_end": datetime(2026, 9, 22, 0, 0),
+            },
+        )
+    )
+    assert (
+        "ix_job_tracks_user_id" in followup_plan
+        or "ix_job_tracks_follow_up_at" in followup_plan
+    )
+
+
+def test_today_source_detachment_preserves_manual_action(db_session):
+    user = User(
+        email=f"jg028-detach-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(user)
+    db_session.flush()
+    view = SavedView(
+        user_id=user.id,
+        name=f"Detach source {uuid4()}",
+        view_type="job_links",
+        filters={},
+    )
+    db_session.add(view)
+    db_session.flush()
+    item = WorkItem(
+        user_id=user.id,
+        source_view_id=view.id,
+        description="Keep this action after source deletion",
+        due_at=None,
+        priority=1,
+        state="pending",
+        version=1,
+    )
+    db_session.add(item)
+    db_session.commit()
+    user_id = user.id
+    item_id = item.id
+
+    db_session.delete(view)
+    db_session.commit()
+    db_session.expire_all()
+
+    stored = db_session.query(WorkItem).filter_by(id=item_id).one()
+    assert stored.source_view_id is None
+    assert stored.description == "Keep this action after source deletion"
+
+    queue_result = build_today_queue(
+        db_session,
+        user_id=user_id,
+        timezone_name="UTC",
+        secret_key="jg028-detach",
+        now=datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc),
+    )
+    assert [row["description"] for row in queue_result["items"]] == [
+        "Keep this action after source deletion"
+    ]
+    assert queue_result["items"][0]["origin_label"] == "Manual"
+
+
+def test_today_timezone_change_recomputes_membership(db_session):
+    user = User(
+        email=f"jg028-timezone-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(user)
+    db_session.flush()
+    item = WorkItem(
+        user_id=user.id,
+        description="Cross-midnight action",
+        due_at=datetime(2026, 9, 22, 0, 30, tzinfo=timezone.utc),
+        priority=1,
+        state="pending",
+        version=1,
+    )
+    db_session.add(item)
+    db_session.commit()
+
+    reference = datetime(2026, 9, 21, 23, 30, tzinfo=timezone.utc)
+    utc_queue = build_today_queue(
+        db_session,
+        user_id=user.id,
+        timezone_name="UTC",
+        secret_key="jg028-timezone",
+        now=reference,
+    )
+    assert utc_queue["items"] == []
+
+    user.timezone = "Asia/Kolkata"
+    db_session.commit()
+    india_queue = build_today_queue(
+        db_session,
+        user_id=user.id,
+        timezone_name=user.timezone,
+        secret_key="jg028-timezone",
+        now=reference,
+    )
+    assert [row["action_key"] for row in india_queue["items"]] == [
+        manual_action_key(item.id)
+    ]
+    assert india_queue["counts"] == {
+        "total": 1,
+        "overdue": 0,
+        "due_today": 1,
+        "undated": 0,
+    }
+
+
+
+def test_restore_reconstructs_today_items(db_session):
+    fixture = _sixty_action_fixture(db_session)
+    source = fixture["owner"]
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["counts"]["work_items"] == 25
+    assert payload["counts"]["job_tracks"] == 25
+    assert payload["counts"]["work_item_overrides"] == 8
+
+    destination = User(
+        email=f"jg028-restore-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(destination)
+    db_session.commit()
+    destination_id = destination.id
+
+    restored = restore_backup_v2(
+        db_session,
+        destination_id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert restored["counts"]["work_items"] == {
+        "created": 25,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert restored["counts"]["job_tracks"] == {
+        "created": 25,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert restored["counts"]["work_item_overrides"] == {
+        "created": 8,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+
+    db_session.expire_all()
+    queue_result = build_today_queue(
+        db_session,
+        user_id=destination_id,
+        timezone_name="UTC",
+        secret_key="jg028-restored-queue",
+        now=fixture["reference"],
+    )
+    assert queue_result["counts"] == {
+        "total": 25,
+        "overdue": 12,
+        "due_today": 8,
+        "undated": 5,
+    }
+    assert sum(item["type"] == "manual" for item in queue_result["items"]) == 15
+    assert sum(item["type"] == "followup" for item in queue_result["items"]) == 10
+
+    restored_overrides = (
+        db_session.query(WorkItemOverride)
+        .filter_by(user_id=destination_id)
+        .all()
+    )
+    assert len(restored_overrides) == 8
+    assert all(
+        row.user_id == destination_id
+        for row in restored_overrides
+    )
+
+    including_snoozed = build_today_queue(
+        db_session,
+        user_id=destination_id,
+        timezone_name="UTC",
+        secret_key="jg028-restored-queue",
+        include_snoozed=True,
+        now=fixture["reference"],
+    )
+    assert including_snoozed["counts"] == {
+        "total": 33,
+        "overdue": 16,
+        "due_today": 12,
+        "undated": 5,
+    }
+
+
+def test_saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions(
+    auth_client,
+    db_session,
+):
+    _reset(auth_client)
+    user = _test_user(db_session)
+    batch = str(uuid4())
+    matching_rows = []
+    for index in range(25):
+        row = CsvRow(
+            user_id=user.id,
+            upload_batch_id=batch,
+            url=f"https://jg028-view.example/greenhouse/{uuid4()}",
+            company_guess=f"Target {index:02}",
+            title="Platform Engineer",
+            resume_match_score=str(100 - index),
+            ats_group="greenhouse",
+        )
+        db_session.add(row)
+        matching_rows.append(row)
+    for index in range(5):
+        db_session.add(
+            CsvRow(
+                user_id=user.id,
+                upload_batch_id=batch,
+                url=f"https://jg028-view.example/lever/{uuid4()}",
+                company_guess=f"Other {index:02}",
+                title="Platform Engineer",
+                resume_match_score=str(120 - index),
+                ats_group="lever",
+            )
+        )
+    db_session.flush()
+    view = SavedView(
+        user_id=user.id,
+        name=f"JG028 full order {uuid4()}",
+        view_type="job_links",
+        filters={
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    db_session.add(view)
+    db_session.commit()
+
+    page_one = auth_client.get(
+        "/rows",
+        params={
+            "page": 1,
+            "page_size": 10,
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    page_two = auth_client.get(
+        "/rows",
+        params={
+            "page": 2,
+            "page_size": 10,
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    assert page_one.status_code == 200
+    assert page_two.status_code == 200
+    expected_first_twenty = [
+        row["id"]
+        for row in page_one.json()["rows"] + page_two.json()["rows"]
+    ]
+    assert len(expected_first_twenty) == 20
+
+    first = auth_client.post(
+        "/crm/today/from-view",
+        json={
+            "view_id": view.id,
+            "limit": 20,
+            "request_id": str(uuid4()),
+        },
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["created"] == 20
+    assert first_body["existing"] == 0
+    assert first_body["matched"] == 20
+    assert [
+        item["row_id"] for item in first_body["items"]
+    ] == expected_first_twenty
+
+    repeated = auth_client.post(
+        "/crm/today/from-view",
+        json={
+            "view_id": view.id,
+            "limit": 20,
+            "request_id": str(uuid4()),
+        },
+    )
+    assert repeated.status_code == 200
+    repeated_body = repeated.json()
+    assert repeated_body["created"] == 0
+    assert repeated_body["existing"] == 20
+    assert repeated_body["completed"] == 0
+    assert [
+        item["row_id"] for item in repeated_body["items"]
+    ] == expected_first_twenty
+    assert (
+        db_session.query(WorkItem)
+        .filter(
+            WorkItem.user_id == user.id,
+            WorkItem.source_view_id == view.id,
+        )
+        .count()
+    ) == 20
+
+
+
+def test_five_action_workflow_no_lost_changes(auth_client, db_session):
+    _reset(auth_client)
+    user = _test_user(db_session)
+
+    row = CsvRow(
+        user_id=user.id,
+        upload_batch_id=str(uuid4()),
+        url=f"https://jg028-session.example/job/{uuid4()}",
+        company_guess="Session Co",
+        title="Platform Engineer",
+        ats_group="greenhouse",
+        resume_match_score="95",
+    )
+    view = SavedView(
+        user_id=user.id,
+        name=f"JG028 session view {uuid4()}",
+        view_type="job_links",
+        filters={
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    followup = JobTrack(
+        user_id=user.id,
+        url=f"https://jg028-session.example/followup/{uuid4()}",
+        company="Followup Co",
+        title="Backend Engineer",
+        status="follow_up",
+        applied_at=None,
+        follow_up_at=datetime.utcnow() - timedelta(days=1),
+    )
+    db_session.add_all([row, view, followup])
+    db_session.commit()
+
+    # Action 1: add a manual task.
+    first = auth_client.post(
+        "/crm/work-items",
+        json={"description": "Prepare interview notes", "priority": 2},
+    )
+    assert first.status_code == 201
+    first_item = first.json()
+
+    # Action 2: snooze it without deleting the durable action.
+    snooze_until = datetime.now(timezone.utc) + timedelta(days=2)
+    snoozed = auth_client.post(
+        "/crm/today/snooze",
+        json={
+            "action_key": first_item["action_key"],
+            "until": snooze_until.isoformat(),
+            "version": first_item["snooze_version"],
+        },
+    )
+    assert snoozed.status_code == 200
+
+    # Action 3: add and complete a second manual task.
+    second = auth_client.post(
+        "/crm/work-items",
+        json={"description": "Send thank-you note", "priority": 1},
+    )
+    assert second.status_code == 201
+    second_item = second.json()
+    completed = auth_client.patch(
+        f"/crm/work-items/{second_item['id']}",
+        json={"version": second_item["version"], "state": "done"},
+    )
+    assert completed.status_code == 200
+
+    # Action 4: reschedule the existing follow-up beyond today's boundary.
+    followup_key = followup_action_key(followup.id, followup.follow_up_at)
+    rescheduled_at = datetime.now(timezone.utc) + timedelta(days=2)
+    rescheduled = auth_client.post(
+        "/crm/today/follow-up",
+        json={
+            "action_key": followup_key,
+            "resolution": "reschedule",
+            "follow_up_at": rescheduled_at.isoformat(),
+        },
+        headers={"X-Operation-ID": str(uuid4())},
+    )
+    assert rescheduled.status_code == 200
+
+    # Action 5: add the first full-order match from a saved view.
+    from_view = auth_client.post(
+        "/crm/today/from-view",
+        json={
+            "view_id": view.id,
+            "limit": 1,
+            "request_id": str(uuid4()),
+        },
+    )
+    assert from_view.status_code == 200
+    assert from_view.json()["created"] == 1
+    view_item = from_view.json()["items"][0]
+
+    # A fresh queue read preserves every confirmed outcome.
+    queue_result = auth_client.get(
+        "/crm/today",
+        params={"include_snoozed": "true"},
+    )
+    assert queue_result.status_code == 200
+    visible_keys = {
+        item["action_key"] for item in queue_result.json()["items"]
+    }
+    assert first_item["action_key"] in visible_keys
+    assert view_item["action_key"] in visible_keys
+    assert second_item["action_key"] not in visible_keys
+    assert followup_key not in visible_keys
+
+    db_session.expire_all()
+    stored_first = db_session.query(WorkItem).filter_by(
+        id=first_item["id"], user_id=user.id
+    ).one()
+    stored_second = db_session.query(WorkItem).filter_by(
+        id=second_item["id"], user_id=user.id
+    ).one()
+    stored_followup = db_session.query(JobTrack).filter_by(
+        id=followup.id, user_id=user.id
+    ).one()
+    assert stored_first.state == "pending"
+    assert stored_second.state == "done"
+    assert stored_second.completed_at is not None
+    assert stored_followup.applied_at is None
+    assert stored_followup.follow_up_at is not None
+    assert db_session.query(WorkItemOverride).filter_by(
+        user_id=user.id,
+        action_key=first_item["action_key"],
+    ).count() == 1
