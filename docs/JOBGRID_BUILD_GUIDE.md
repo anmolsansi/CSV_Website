@@ -14,6 +14,8 @@ JG-002 activates complete v2 export and adds stable restore identity persistence
 - `backend/app/models.py` contains `BackupImportMap`.
 - Alembic revision `003` creates `backup_import_maps` and its replay-identity uniqueness index.
 
+JG-025 extends backup v2 with durable manual Today work items and snooze overrides. Portable backups remap WorkItem track/row/view references and regenerate action keys from destination IDs so source database IDs never become restore authority.
+
 JG-003 activates the backend restore contract:
 
 - `POST /crm/backup/import?mode=verify_only` validates and preflights without writing.
@@ -60,6 +62,55 @@ retry-after-import-failure with selection preserved, and a real v2 applied-job r
 that verifies company/status/date after reload. The existing application-memory regression
 remains part of the affected browser suite.
 
+## Today queue storage foundation
+
+JG-025 adds the persistence and validation foundation for the Today queue without exposing a Today API or navigation yet.
+
+### Manual work items
+
+`WorkItem` stores manual actions only. Derived application follow-ups continue to come directly from `JobTrack.follow_up_at`; they are not copied into `work_items`.
+
+A work item belongs to one user and contains:
+
+- an optional application source (`track_id`), CSV-row source (`row_id`), and saved-view source (`source_view_id`);
+- an optional per-owner `origin_key` used to deduplicate explicit source actions;
+- a trimmed description from 1 through 500 characters;
+- an optional timezone-aware due timestamp;
+- priority `0..3`;
+- state `pending` or `done`;
+- a positive optimistic-lock `version`;
+- created/updated timestamps and an optional completion timestamp.
+
+Database constraints enforce the description, priority, state, positive version, and the rule that a `done` item must have `completed_at`. Source foreign keys use `ON DELETE SET NULL`, so deleting an application, CSV row, or saved view detaches the source without deleting the user's action or description.
+
+Explicit saved-view actions use an owner-scoped origin key such as `view:{view_id}:row:{row_id}`. The unique `(user_id, origin_key)` contract makes repeated adds idempotent per account while allowing different accounts to use the same source-shaped key.
+
+### Follow-up overrides and action keys
+
+`WorkItemOverride` stores only per-user snooze state for a Today action. Its natural identity is `(user_id, action_key)`, with a timezone-aware `snoozed_until` and positive `version`.
+
+Action keys are server-generated:
+
+- manual action: `manual:{work_item_id}`
+- derived follow-up: `followup:{track_id}:{UTC due timestamp}`
+
+`backend/app/today_schemas.py` validates action ownership against the authenticated user's WorkItem or JobTrack. A follow-up key is accepted only while its timestamp still matches the track's current `follow_up_at`. Changing the follow-up date therefore creates a new action key and makes an old snooze irrelevant rather than silently applying it to a different due date. Optional work-item source IDs are also resolved through owner-scoped queries before future route code can persist them.
+
+### Migration, backup, and rollback
+
+Alembic revision `008` creates `work_items` and `work_item_overrides` after the existing revision `007_maintenance_status.py`. The roadmap's earlier reserved filename `007_today_queue.py` is not reused because Alembic must keep one linear revision ID.
+
+Backup schema revision `2.4.0` adds optional `work_items` and `work_item_overrides` sections. Older v2 files can omit both sections and their counts without changing their original checksum contract. WorkItem track/row/view links are backup-local references. Saved-view origin keys are translated to backup-local references and rebuilt with destination IDs on restore. Override records never export raw `manual:{id}` or `followup:{track_id}:...` keys; restore regenerates them from remapped destination records.
+
+Normal application rollback does not require dropping these tables. Leave the future Today routes/navigation disabled and retain both new tables plus existing `JobTrack.follow_up_at` history. A schema downgrade is appropriate only when the new Today data is intentionally disposable.
+
+Focused backend verification:
+
+```sh
+cd backend
+python -m pytest tests/test_today_models.py tests/test_backup_contract.py -q
+```
+
 ## Why v2 exists
 
 The original portable backup is lossy. A backup can contain an application record while the old restore path does not reconstruct the same application state. V2 makes all durable sections and persisted fields explicit before restore code constructs ORM objects.
@@ -73,24 +124,26 @@ A v2 document contains exactly:
 - `version`: `"2.0"`
 - `backup_id`: UUID string
 - `exported_at`: UTC ISO-8601 timestamp
-- `schema_revision`: currently `"2.2.0"`
+- `schema_revision`: currently `"2.4.0"`
 - `sections`: the eleven current v2 sections
 - `counts`: exact record count for every section
 - `checksum_sha256`: lowercase SHA-256 digest of canonical `sections` JSON
 
-The eleven current sections are:
+The thirteen current sections are:
 
 1. `csv_rows`
 2. `url_history`
 3. `job_tracks`
-4. `lifecycle_events`
-5. `saved_views`
-6. `sessions`
-7. `audit_events`
-8. `applypilot_batches`
-9. `column_preferences`
-10. `user_goal`
-11. `user_profile`
+4. `work_items`
+5. `work_item_overrides`
+6. `lifecycle_events`
+7. `saved_views`
+8. `sessions`
+9. `audit_events`
+10. `applypilot_batches`
+11. `column_preferences`
+12. `user_goal`
+13. `user_profile`
 
 Every record has a non-empty `backup_ref` unique within its section. Nullable fields remain present as keys, preserving the difference between null, empty text, `false`, and zero.
 
@@ -102,6 +155,10 @@ Relationships are translated as follows:
 
 - `CsvRow.duplicate_of_id` -> `duplicate_of_ref`
 - `JobTrack.csv_row_id` -> `csv_row_ref`
+- `WorkItem.track_id` -> `track_ref`
+- `WorkItem.row_id` -> `row_ref`
+- `WorkItem.source_view_id` -> `source_view_ref`
+- `WorkItemOverride.action_key` -> portable manual/follow-up target reference, then a destination action key on restore
 - `JobLifecycleEvent.csv_row_id` -> `csv_row_ref`
 - `JobLifecycleEvent.job_track_id` -> `job_track_ref`
 - `AuditEvent.session_id` -> `session_ref`
@@ -123,7 +180,7 @@ Isolation is:
 - PostgreSQL: `REPEATABLE READ`
 - SQLite/local tests: `SERIALIZABLE`
 
-All eleven current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
+All thirteen current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
 
 ## Canonical checksum
 
@@ -156,6 +213,12 @@ The SHA-256 lowercase hexadecimal digest is stored in `checksum_sha256`. `counts
 ### Job tracks
 
 `JobTrackBackupV2` exports every non-identity persisted field, including application status/timestamps, notes, `session_id`, open counts, and created/updated timestamps. `csv_row_id` becomes `csv_row_ref`.
+
+### Work items and Today overrides
+
+`WorkItemBackupV2` exports durable manual action fields plus backup-local application, CSV-row, and saved-view references. The description is preserved even when one of those source records is later deleted. `WorkItemOverrideBackupV2` exports snooze/version state plus a portable manual-work-item or follow-up-track target. Restore regenerates the destination action key instead of trusting a source database ID.
+
+Older v2 documents produced before JG-025 may omit both Today sections and counts. Validation treats them as empty and computes the checksum against the original document shape.
 
 ### Lifecycle events
 

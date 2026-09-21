@@ -26,7 +26,10 @@ from app.models import (
     UrlHistory,
     User,
     UserGoal,
+    WorkItem,
+    WorkItemOverride,
 )
+from app.today_schemas import manual_action_key
 
 
 def _login_and_seed(client, db, email):
@@ -109,6 +112,28 @@ def _seed_complete_fixture(db, email):
     )
     db.add(lifecycle_event)
 
+    work_item = WorkItem(
+        user_id=user.id,
+        track_id=track.id,
+        row_id=row1.id,
+        source_view_id=view.id,
+        origin_key=f"view:{view.id}:row:{row1.id}",
+        description="Review saved-view match",
+        priority=2,
+        state="pending",
+        version=1,
+    )
+    db.add(work_item)
+    db.flush()
+    db.add(
+        WorkItemOverride(
+            user_id=user.id,
+            action_key=manual_action_key(work_item.id),
+            snoozed_until=datetime(2026, 9, 17, 10, 0, 0),
+            version=1,
+        )
+    )
+
     event = AuditEvent(
         user_id=user.id,
         session_id=session.id,
@@ -178,6 +203,10 @@ def test_export_reference_graph(auth_client, db_session):
     row_records = document.sections.csv_rows
     assert row_records[1].duplicate_of_ref in refs["csv_rows"]
     assert document.sections.job_tracks[0].csv_row_ref in refs["csv_rows"]
+    assert document.sections.work_items[0].track_ref in refs["job_tracks"]
+    assert document.sections.work_items[0].row_ref in refs["csv_rows"]
+    assert document.sections.work_items[0].source_view_ref in refs["saved_views"]
+    assert document.sections.work_item_overrides[0].work_item_ref in refs["work_items"]
     assert document.sections.lifecycle_events[0].csv_row_ref in refs["csv_rows"]
     assert document.sections.lifecycle_events[0].job_track_ref in refs["job_tracks"]
     assert document.sections.audit_events[0].session_ref in refs["sessions"]

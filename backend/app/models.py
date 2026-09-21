@@ -1,12 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
     Integer,
     Index,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -111,6 +113,12 @@ class User(Base):
     )
     lifecycle_events = relationship(
         "JobLifecycleEvent", back_populates="user", cascade="all, delete-orphan"
+    )
+    work_items = relationship(
+        "WorkItem", back_populates="user", cascade="all, delete-orphan"
+    )
+    work_item_overrides = relationship(
+        "WorkItemOverride", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -396,6 +404,113 @@ class UserGoal(Base):
     apply_per_day = Column(Integer, default=10)
     followup_per_day = Column(Integer, default=5)
     applypilot_per_day = Column(Integer, default=5)
+
+
+class WorkItem(Base):
+    """Durable manual action for the Today queue.
+
+    Follow-up actions remain derived from JobTrack.follow_up_at and are never
+    copied into this table.
+    """
+
+    __tablename__ = "work_items"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    source_view_id = Column(
+        Integer, ForeignKey("saved_views.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    origin_key = Column(String(255), nullable=True)
+    description = Column(String(500), nullable=False)
+    due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    priority = Column(SmallInteger, nullable=False, default=1)
+    state = Column(String(16), nullable=False, default="pending", index=True)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="work_items")
+    track = relationship("JobTrack")
+    row = relationship("CsvRow")
+    source_view = relationship("SavedView")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "origin_key", name="uq_user_work_item_origin_key"
+        ),
+        CheckConstraint(
+            "length(trim(description)) BETWEEN 1 AND 500 "
+            "AND description = trim(description)",
+            name="ck_work_items_description_trimmed_length",
+        ),
+        CheckConstraint(
+            "priority >= 0 AND priority <= 3",
+            name="ck_work_items_priority_range",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'done')",
+            name="ck_work_items_state",
+        ),
+        CheckConstraint("version > 0", name="ck_work_items_version_positive"),
+        CheckConstraint(
+            "state != 'done' OR completed_at IS NOT NULL",
+            name="ck_work_items_done_has_completed_at",
+        ),
+        Index("ix_work_items_user_due", "user_id", "due_at"),
+    )
+
+
+class WorkItemOverride(Base):
+    """Per-user snooze state for a server-generated Today action key."""
+
+    __tablename__ = "work_item_overrides"
+
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    action_key = Column(String(255), primary_key=True)
+    snoozed_until = Column(DateTime(timezone=True), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("User", back_populates="work_item_overrides")
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(action_key) BETWEEN 1 AND 255",
+            name="ck_work_item_overrides_action_key_length",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_work_item_overrides_version_positive",
+        ),
+        Index(
+            "ix_work_item_overrides_user_snoozed",
+            "user_id", "snoozed_until",
+        ),
+    )
 
 
 class MaintenanceStatus(Base):
