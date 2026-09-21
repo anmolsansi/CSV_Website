@@ -164,6 +164,29 @@ function buildDeleteConfirmation({ currentStats, rowsToDelete, label, mode }) {
   ].join('\n')
 }
 
+function CollapsibleDashboardSection({ sectionKey, title, collapsed, onToggle, children }) {
+  const contentId = `dashboard-section-${sectionKey}`
+  return (
+    <section className={`dashboard-collapsible ${collapsed ? 'dashboard-collapsible-collapsed' : ''}`}>
+      <button
+        type="button"
+        className="dashboard-collapsible-toggle"
+        onClick={() => onToggle(sectionKey)}
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+      >
+        <span aria-hidden="true">{collapsed ? '▶' : '▼'}</span>
+        <span>{title}</span>
+      </button>
+      {!collapsed && (
+        <div id={contentId} className="dashboard-collapsible-body">
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function getDeleteModeFromUser() {
   const answer = window.prompt(
     [
@@ -208,6 +231,13 @@ export default function Dashboard() {
   const [filterOptions, setFilterOptions] = useState(EMPTY_FILTER_OPTIONS)
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [columnsCollapsed, setColumnsCollapsed] = useState(true)
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dashboardCollapsedSections') || '{}')
+    } catch {
+      return {}
+    }
+  })
   const [loading, setLoading] = useState(true)
   const [pagination, setPagination] = useState({ ...DEFAULT_PAGINATION, page: initialNavigation.page, pageSize: initialNavigation.pageSize })
   const [drawerRow, setDrawerRow] = useState(null)
@@ -238,6 +268,14 @@ export default function Dashboard() {
       expectedVisible.every((col) => actualVisible.includes(col))
     )
   }, [columns, hidden])
+
+  const toggleDashboardSection = (sectionKey) => {
+    setCollapsedSections((previous) => {
+      const next = { ...previous, [sectionKey]: !previous[sectionKey] }
+      localStorage.setItem('dashboardCollapsedSections', JSON.stringify(next))
+      return next
+    })
+  }
 
   const savePreferences = async (nextHidden, nextOrder) => {
     await api.setPreferences({
@@ -650,25 +688,52 @@ export default function Dashboard() {
   return (
     <div className="container">
         {queryError && <div className="error-msg" role="alert">{queryError} <button className="btn btn-grey btn-sm" onClick={clearNavigationError}>Clear saved-view filters</button></div>}
-        <CsvUpload onUploaded={() => loadRows()} />
+        <CollapsibleDashboardSection
+          sectionKey="upload"
+          title="CSV upload"
+          collapsed={Boolean(collapsedSections.upload)}
+          onToggle={toggleDashboardSection}
+        >
+          <CsvUpload onUploaded={() => loadRows()} />
+        </CollapsibleDashboardSection>
 
-        <div className="stats-grid">
-          <div className="stat-card">
-            <span>Total URLs counted</span>
-            <strong>{stats.totalUrls}</strong>
+        <CollapsibleDashboardSection
+          sectionKey="stats"
+          title="Dashboard stats"
+          collapsed={Boolean(collapsedSections.stats)}
+          onToggle={toggleDashboardSection}
+        >
+          <div className="stats-grid">
+            <div className="stat-card">
+              <span>Total URLs counted</span>
+              <strong>{stats.totalUrls}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Green URLs</span>
+              <strong>{stats.greenUrls}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Green today</span>
+              <strong>{stats.greenToday}</strong>
+            </div>
           </div>
-          <div className="stat-card">
-            <span>Green URLs</span>
-            <strong>{stats.greenUrls}</strong>
-          </div>
-          <div className="stat-card">
-            <span>Green today</span>
-            <strong>{stats.greenToday}</strong>
-          </div>
-        </div>
+        </CollapsibleDashboardSection>
 
-        <RetentionSettings />
+        <CollapsibleDashboardSection
+          sectionKey="retention"
+          title="Retention & maintenance"
+          collapsed={Boolean(collapsedSections.retention)}
+          onToggle={toggleDashboardSection}
+        >
+          <RetentionSettings />
+        </CollapsibleDashboardSection>
 
+        <CollapsibleDashboardSection
+          sectionKey="export"
+          title="Export & backup"
+          collapsed={Boolean(collapsedSections.export)}
+          onToggle={toggleDashboardSection}
+        >
         <div className="export-bar">
           <label>Export</label>
           <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
@@ -695,7 +760,14 @@ export default function Dashboard() {
             {density === 'comfortable' ? 'Comfortable' : density === 'compact' ? 'Compact' : 'Dense'}
           </button>
         </div>
+        </CollapsibleDashboardSection>
 
+        <CollapsibleDashboardSection
+          sectionKey="filters"
+          title="Sort & filters"
+          collapsed={Boolean(collapsedSections.filters)}
+          onToggle={toggleDashboardSection}
+        >
         <div className="table-controls">
           <div>
             <label htmlFor="sort-column">Sort by</label>
@@ -834,6 +906,7 @@ export default function Dashboard() {
             <button className="btn btn-grey btn-sm" disabled={!pagination.hasNext} onClick={() => goToPage(Math.ceil(pagination.totalCount / pagination.pageSize))}>Last</button>
           </div>
         )}
+        </CollapsibleDashboardSection>
 
         {selectedRowIds.size > 0 && (
           <div className="sticky-toolbar">
@@ -856,18 +929,25 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="delete-actions">
-          <div>
-            <strong>{selectedRowIds.size}</strong> selected
+        <CollapsibleDashboardSection
+          sectionKey="actions"
+          title="Job actions"
+          collapsed={Boolean(collapsedSections.actions)}
+          onToggle={toggleDashboardSection}
+        >
+          <div className="delete-actions">
+            <div>
+              <strong>{selectedRowIds.size}</strong> selected
+            </div>
+            <button className="btn btn-blue" onClick={openSelected} disabled={selectedRowIds.size === 0}>Open selected</button>
+            <button className="btn btn-blue" onClick={openNext5} disabled={openingBatch || loading}>{openingBatch ? 'Opening…' : 'Open top 5 unopened'}</button>
+            <button className="btn btn-blue" onClick={sendToApplications} disabled={selectedRowIds.size === 0}>Send selected to Applications</button>
+            <button className="btn btn-blue" onClick={sendNext5ToApplications}>Send next 5 to Applications</button>
+            <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size === 0}>Send 5 to ApplyPilot</button>
+            <button className="btn btn-danger" onClick={deleteSelectedRows} disabled={selectedRowIds.size === 0}>Remove selected</button>
+            <button className="btn btn-danger-outline" onClick={deleteAllShownRows} disabled={rows.length === 0}>Remove all shown rows</button>
           </div>
-          <button className="btn btn-blue" onClick={openSelected} disabled={selectedRowIds.size === 0}>Open selected</button>
-          <button className="btn btn-blue" onClick={openNext5} disabled={openingBatch || loading}>{openingBatch ? 'Opening…' : 'Open top 5 unopened'}</button>
-          <button className="btn btn-blue" onClick={sendToApplications} disabled={selectedRowIds.size === 0}>Send selected to Applications</button>
-          <button className="btn btn-blue" onClick={sendNext5ToApplications}>Send next 5 to Applications</button>
-          <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size === 0}>Send 5 to ApplyPilot</button>
-          <button className="btn btn-danger" onClick={deleteSelectedRows} disabled={selectedRowIds.size === 0}>Remove selected</button>
-          <button className="btn btn-danger-outline" onClick={deleteAllShownRows} disabled={rows.length === 0}>Remove all shown rows</button>
-        </div>
+        </CollapsibleDashboardSection>
 
         <div className="col-toggles">
           <div className="col-toggles-header">
