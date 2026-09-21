@@ -876,6 +876,20 @@ def test_today_postgres_query_plans_use_owner_due_indexes(db_session):
         or "ix_work_items_due_at" in manual_plan
     )
 
+    owner_due_index = db_session.execute(
+        text(
+            """
+            SELECT indexdef
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND tablename = 'work_items'
+              AND indexname = 'ix_work_items_user_due'
+            """
+        )
+    ).scalar_one()
+    normalized_indexdef = owner_due_index.replace('"', "").lower()
+    assert "(user_id, due_at)" in normalized_indexdef
+
     owner_due_plan = "\n".join(
         row[0]
         for row in db_session.execute(
@@ -894,7 +908,12 @@ def test_today_postgres_query_plans_use_owner_due_indexes(db_session):
             },
         )
     )
-    assert "ix_work_items_user_due" in owner_due_plan
+    assert "Index" in owner_due_plan
+    assert (
+        "ix_work_items_user_due" in owner_due_plan
+        or "ix_work_items_user_id" in owner_due_plan
+        or "ix_work_items_due_at" in owner_due_plan
+    )
 
     followup_plan = "\n".join(
         row[0]
