@@ -184,7 +184,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **F2 — Applied-before warnings and company aliases**
 
-- [ ] [JG-029 — Implement conservative URL and company identity rules](#jg-029)
+- [x] [JG-029 — Implement conservative URL and company identity rules](#jg-029)
 - [ ] [JG-030 — Persist aliases and backfill derived identity safely](#jg-030)
 - [ ] [JG-031 — Expose matching and show applied-before context](#jg-031)
 - [ ] [JG-032 — Validate duplicate warnings against false positives](#jg-032)
@@ -6932,7 +6932,7 @@ Import the same role with a utm_source variant, another requisition on the same 
 <a id="jg-029"></a>
 ### JG-029 — Implement conservative URL and company identity rules
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** Feature rank 2  
 **Type:** service/contract  
 **Execution position:** 29/64; group step 1/4
@@ -7105,14 +7105,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-029 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: utm_variants_same_canonical_key
-- [ ] Required regression passes: different_requisition_query_values_remain_distinct
-- [ ] Required regression passes: path_case_and_duplicate_query_order_preserved
-- [ ] Required regression passes: credentialed_or_invalid_url_rejected
-- [ ] Required regression passes: company_similarity_is_possible_only
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-029 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: utm_variants_same_canonical_key
+- [x] Required regression passes: different_requisition_query_values_remain_distinct
+- [x] Required regression passes: path_case_and_duplicate_query_order_preserved
+- [x] Required regression passes: credentialed_or_invalid_url_rejected
+- [x] Required regression passes: company_similarity_is_possible_only
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -7130,12 +7130,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -7148,7 +7148,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-028 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** Tracking issue #109 and implementation PR #110 implement the pure F2 identity contract without schema, route or UI activation. CI run #212 passed with 377 PostgreSQL backend tests, 141 Chromium Playwright tests, the frontend production build and backend compile check. The five required JG-029 regressions passed. Vercel preview remains externally quota-blocked and is not recorded as staging or release acceptance.
 
 ---
 
