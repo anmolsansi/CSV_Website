@@ -111,6 +111,90 @@ cd backend
 python -m pytest tests/test_today_models.py tests/test_backup_contract.py -q
 ```
 
+## Today queue API and guarded mutations
+
+JG-026 exposes the backend Today contract without adding a Today page or navigation item. The API is registered from `backend/app/routers/today.py`; queue composition and mutations live in `backend/app/services/today.py`.
+
+### Queue membership and ordering
+
+`GET /crm/today?limit=50&include_snoozed=false` returns `items`, `next_cursor`, `as_of`, the authenticated account `timezone`, and `counts`.
+
+The service uses the validated account IANA timezone to calculate the local day's UTC start and next-midnight boundary. It includes:
+
+- pending manual work items with no due date or a due date before the next local midnight;
+- derived application follow-ups due before the next local midnight;
+- no follow-up whose application status is `rejected`, `offer`, or `not_applying`;
+- no actively snoozed action unless `include_snoozed=true`.
+
+Items are ordered by due time ascending with undated items last, then priority descending, action type, and source ID. The maximum page size is 100. The opaque signed cursor carries the ordering tuple and the first page's `as_of` instant. Later pages therefore reuse the same day and snooze boundary, but the API does not claim an immutable database snapshot while records are edited.
+
+`counts` is calculated from the same visible membership used for the queue and reports `total`, `overdue`, `due_today`, and `undated`.
+
+### Manual work-item mutations
+
+Create a manual action:
+
+```http
+POST /crm/work-items
+Content-Type: application/json
+
+{"description":"Review Acme role","priority":2,"due_at":"2026-09-21T18:00:00Z"}
+```
+
+The response is `201` and includes the server-generated `manual:{id}` action key, work-item `version`, and separate `snooze_version`.
+
+Edit, complete, or explicitly reopen with optimistic locking:
+
+```http
+PATCH /crm/work-items/42
+Content-Type: application/json
+
+{"version":3,"state":"done"}
+```
+
+A successful write increments the work-item version. A stale version returns `409` with code `stale_version` and does not overwrite newer state. Completing writes `completed_at`; reopening clears it. Optional source IDs on create are resolved inside the authenticated account before the item is stored.
+
+### Snooze and follow-up resolution
+
+`POST /crm/today/snooze` accepts `action_key`, a timezone-aware future `until`, and the current `snooze_version`. Snoozes are limited to 365 days. The first snooze advances the override version from the queue's baseline 1 to 2, so a second stale tab cannot silently replace it.
+
+Derived follow-ups remain `JobTrack.follow_up_at` facts. They are never copied into `work_items`.
+
+Clear one:
+
+```http
+POST /crm/today/follow-up
+X-Operation-ID: 9f0fa584-3ac8-4fac-b589-b79a4918c250
+Content-Type: application/json
+
+{"action_key":"followup:17:2026-09-21T12:00:00Z","resolution":"clear"}
+```
+
+For `resolution:"reschedule"`, include a timezone-aware `follow_up_at`. The route validates that the action key still matches the current follow-up, rejects inaccessible or terminal sources, and calls the existing lifecycle writer. That emits `followup_changed` without setting `applied_at` or recording `first_applied`.
+
+### Add from a saved view
+
+`POST /crm/today/from-view` accepts an owned `view_id`, `limit` from 1 through 20, and a request UUID. JG-026 supports the existing `job_links` saved-view type because its durable origin contract is row-based.
+
+The service rebuilds the saved view through the shared R2 `RowQuery` filter and sort implementation. For the first matching rows it creates origin keys shaped as `view:{view_id}:row:{row_id}`. Existing pending actions are returned instead of duplicated. Completed actions stay completed and are reported in the `completed` count; this endpoint never reopens them implicitly.
+
+### Errors, ownership, and rollback
+
+Expected failures return bounded codes without record contents. Foreign work items, follow-ups, and saved views behave as not found. Invalid cursors and request shapes return validation errors. Stale work-item and snooze writes return `409`.
+
+Today operations log only a request/operation ID, safe outcome code, affected count, and elapsed time. Descriptions, URLs, notes, and action payload text are not logged.
+
+Rollback is code-only for JG-026: remove/disable the Today router registration while retaining the JG-025 tables and existing `JobTrack.follow_up_at` data. No Today frontend route is active yet; that remains JG-027 scope.
+
+Focused verification:
+
+```sh
+cd backend
+python -m pytest tests/test_today_api.py -q
+```
+
+The repository CI remains the integration gate for PostgreSQL backend tests, backend compilation, frontend production build, and Chromium regressions.
+
 ## Why v2 exists
 
 The original portable backup is lossy. A backup can contain an application record while the old restore path does not reconstruct the same application state. V2 makes all durable sections and persisted fields explicit before restore code constructs ORM objects.

@@ -21,7 +21,7 @@ from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, crm, email, rows, upload
+from .routers import auth_router, backup, crm, email, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -156,6 +156,7 @@ app.include_router(upload.router)
 app.include_router(rows.router)
 app.include_router(backup.router)
 app.include_router(crm.router)
+app.include_router(today.router)
 app.include_router(email.router)
 
 
@@ -196,7 +197,7 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus
+        from .models import JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
@@ -207,6 +208,8 @@ if settings.TEST_AUTH:
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()
         db.query(ColumnPreference).filter_by(user_id=user.id).delete()
+        db.query(WorkItemOverride).filter_by(user_id=user.id).delete()
+        db.query(WorkItem).filter_by(user_id=user.id).delete()
         db.query(SavedView).filter_by(user_id=user.id).delete()
         db.query(SearchSession).filter_by(user_id=user.id).delete()
         db.query(JobTrack).filter_by(user_id=user.id).delete()
