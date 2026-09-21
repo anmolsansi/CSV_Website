@@ -22,6 +22,8 @@ from app.backup_schemas import (
     UrlHistoryBackupV2,
     UserGoalBackupV2,
     UserProfileBackupV2,
+    WorkItemBackupV2,
+    WorkItemOverrideBackupV2,
     adapt_v1_backup,
     compute_sections_checksum,
     inventory_gaps,
@@ -43,8 +45,11 @@ from app.models import (
     UrlHistory,
     User,
     UserGoal,
+    WorkItem,
+    WorkItemOverride,
 )
 from app.services.backups import export_backup_v2, restore_backup_v2
+from app.today_schemas import followup_action_key, manual_action_key
 
 NOW = "2026-09-16T09:30:00Z"
 
@@ -123,6 +128,8 @@ def test_assert_complete_model_field_inventory():
         "AuditEvent": AuditEvent,
         "ApplyPilotBatch": ApplyPilotBatch,
         "UserGoal": UserGoal,
+        "WorkItem": WorkItem,
+        "WorkItemOverride": WorkItemOverride,
         "MaintenanceStatus": MaintenanceStatus,
     }
 
@@ -145,6 +152,8 @@ def test_frozen_section_record_allowlists_are_strict():
         "csv_rows": CsvRowBackupV2,
         "url_history": UrlHistoryBackupV2,
         "job_tracks": JobTrackBackupV2,
+        "work_items": WorkItemBackupV2,
+        "work_item_overrides": WorkItemOverrideBackupV2,
         "lifecycle_events": JobLifecycleEventBackupV2,
         "saved_views": SavedViewBackupV2,
         "sessions": SearchSessionBackupV2,
@@ -205,6 +214,22 @@ def test_v21_without_user_profile_keeps_original_checksum_contract():
     validated = validate_backup_v2(json.dumps(payload))
     assert validated.sections.user_profile == []
     assert validated.counts.user_profile == 0
+
+
+def test_pre_jg025_v2_without_today_sections_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["sections"].pop("work_items")
+    payload["sections"].pop("work_item_overrides")
+    payload["counts"].pop("work_items")
+    payload["counts"].pop("work_item_overrides")
+    payload["schema_revision"] = "2.3.0"
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    validated = validate_backup_v2(json.dumps(payload))
+    assert validated.sections.work_items == []
+    assert validated.counts.work_items == 0
+    assert validated.sections.work_item_overrides == []
+    assert validated.counts.work_item_overrides == 0
 
 
 def test_unknown_section_or_ownership_field():
@@ -593,6 +618,149 @@ def test_backup_rejects_invalid_retention_days(retention_days):
     with pytest.raises(BackupContractError) as exc:
         validate_backup_v2(payload)
     assert (exc.value.status_code, exc.value.code) == (400, "invalid_schema")
+
+
+def test_backup_round_trip_retains_snooze_and_manual_action(db_session):
+    source = User(email=f"jg025-backup-source-{uuid4()}@example.test")
+    db_session.add(source)
+    db_session.flush()
+
+    row = CsvRow(
+        user_id=source.id,
+        upload_batch_id="jg025",
+        url=f"https://today-backup.example/jobs/{uuid4()}",
+        title="Platform Engineer",
+    )
+    view = SavedView(
+        user_id=source.id,
+        name=f"Today shortlist {uuid4()}",
+        view_type="job_links",
+        filters={"decision": "SHORTLIST"},
+    )
+    track = JobTrack(
+        user_id=source.id,
+        url=row.url,
+        status="follow_up",
+        follow_up_at=datetime(2026, 9, 25, 9, 30, 0),
+    )
+    db_session.add_all([row, view, track])
+    db_session.flush()
+
+    item = WorkItem(
+        user_id=source.id,
+        track_id=track.id,
+        row_id=row.id,
+        source_view_id=view.id,
+        origin_key=f"view:{view.id}:row:{row.id}",
+        description="Send tailored portfolio",
+        due_at=datetime(2026, 9, 24, 12, 0, 0),
+        priority=3,
+        state="pending",
+        version=2,
+    )
+    db_session.add(item)
+    db_session.flush()
+
+    manual_snooze = datetime(2026, 9, 24, 15, 0, 0)
+    followup_snooze = datetime(2026, 9, 26, 9, 30, 0)
+    db_session.add_all(
+        [
+            WorkItemOverride(
+                user_id=source.id,
+                action_key=manual_action_key(item.id),
+                snoozed_until=manual_snooze,
+                version=2,
+            ),
+            WorkItemOverride(
+                user_id=source.id,
+                action_key=followup_action_key(track.id, track.follow_up_at),
+                snoozed_until=followup_snooze,
+                version=1,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["counts"]["work_items"] == 1
+    assert payload["counts"]["work_item_overrides"] == 2
+    portable_item = payload["sections"]["work_items"][0]
+    assert portable_item["track_ref"] is not None
+    assert portable_item["row_ref"] is not None
+    assert portable_item["source_view_ref"] is not None
+    assert str(source.id) not in portable_item["origin_key"]
+    assert all(
+        "action_key" not in override
+        for override in payload["sections"]["work_item_overrides"]
+    )
+
+    destination = User(email=f"jg025-backup-dest-{uuid4()}@example.test")
+    db_session.add(destination)
+    db_session.commit()
+    destination_id = destination.id
+
+    result = restore_backup_v2(
+        db_session,
+        destination_id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert result["counts"]["work_items"] == {
+        "created": 1,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert result["counts"]["work_item_overrides"] == {
+        "created": 2,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+
+    db_session.expire_all()
+    restored_item = db_session.query(WorkItem).filter_by(
+        user_id=destination_id
+    ).one()
+    restored_track = db_session.query(JobTrack).filter_by(
+        user_id=destination_id
+    ).one()
+    restored_row = db_session.query(CsvRow).filter_by(
+        user_id=destination_id
+    ).one()
+    restored_view = db_session.query(SavedView).filter_by(
+        user_id=destination_id
+    ).one()
+
+    assert restored_item.description == "Send tailored portfolio"
+    assert restored_item.track_id == restored_track.id
+    assert restored_item.row_id == restored_row.id
+    assert restored_item.source_view_id == restored_view.id
+    assert restored_item.origin_key == (
+        f"view:{restored_view.id}:row:{restored_row.id}"
+    )
+
+    overrides = {
+        override.action_key: override
+        for override in db_session.query(WorkItemOverride).filter_by(
+            user_id=destination_id
+        ).all()
+    }
+    manual_key = manual_action_key(restored_item.id)
+    followup_key = followup_action_key(
+        restored_track.id, restored_track.follow_up_at
+    )
+    assert set(overrides) == {manual_key, followup_key}
+    assert overrides[manual_key].snoozed_until == manual_snooze
+    assert overrides[manual_key].version == 2
+    assert overrides[followup_key].snoozed_until == followup_snooze
+
+    replay = restore_backup_v2(
+        db_session,
+        destination_id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert replay["counts"]["work_items"]["skipped"] == 1
+    assert replay["counts"]["work_item_overrides"]["skipped"] == 2
 
 
 def test_backup_import_invalid_json_returns_parser_400(auth_client):
