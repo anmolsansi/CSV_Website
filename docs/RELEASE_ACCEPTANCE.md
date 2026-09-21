@@ -238,3 +238,48 @@ Recommended rollback trigger: any migration/startup failure, backend health fail
 - Use synthetic/non-sensitive staging data for restore evidence.
 - Store detailed evidence in an access-controlled location and commit only non-secret summaries.
 - A missing external dependency is recorded as BLOCKED, never converted to PASS.
+
+
+---
+
+## JG-028 local F1 Today acceptance
+
+This section records **local/repository acceptance only** for the F1 Today group. It does not convert the external staging OAuth, SMTP, restore, deployment, or rollback gates above into PASS.
+
+Tracking issue: #106  
+Working branch: `jg-028-today-acceptance`  
+Status: **PENDING repository CI**
+
+### Deterministic expected-versus-observed contract
+
+| Acceptance check | Expected result | Evidence | Current status |
+|---|---|---|---|
+| 60-action membership | 25 visible: 12 overdue, 8 due today, 5 undated | `test_fixed_fixture_membership_and_count_parity` | PENDING CI |
+| Include snoozed | 33 visible: 16 overdue, 12 due today, 5 undated | same regression | PENDING CI |
+| Queue SQL bound | 12 distinct sourced manual items still build with exactly 3 SELECTs | `test_no_n_plus_one_queue_queries` | PENDING CI |
+| PostgreSQL plans | manual plan exposes owner/due index; follow-up plan exposes owner or due-time index | `test_today_postgres_query_plans_use_owner_due_indexes` | PENDING CI |
+| Source deletion | source FK detaches while manual description/action remains | `test_today_source_detachment_preserves_manual_action` | PENDING CI |
+| Account timezone change | same UTC due instant moves into the correct local-day queue after timezone change | `test_today_timezone_change_recomputes_membership` | PENDING CI |
+| Backup/restore | destination owner reconstructs 25 visible / 33 including-snoozed counts with 8 destination-scoped overrides | `test_restore_reconstructs_today_items` | PENDING CI |
+| Saved-view full order | first 20 filtered/sorted rows span browse pages 1 and 2; replay creates 0 duplicates | `test_saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions` | PENDING CI |
+| Five-action persistence | confirmed complete/snooze/reschedule/from-view outcomes survive a fresh queue read; follow-up does not become applied | `test_five_action_workflow_no_lost_changes` | PENDING CI |
+| Browser work session | detail round-trip plus complete, snooze, reschedule, failure/retry survives reload | JG-028 case in `frontend/tests/today.spec.ts` | PENDING CI |
+| Preserved tab conflict behavior | blocked popups still record no false visit and successful tabs keep `window.opener=null` | existing `release-workflows.spec.ts` / application-memory coverage | PENDING full CI |
+
+### Baseline and Today session record
+
+The pre-Today workflow remains distributed across Job Links, Saved Views, Applications, and existing follow-up controls. JG-028 does **not** have a controlled human-session timing baseline for that workflow, so no speed percentage or time saving is claimed.
+
+The deterministic Today browser session records these concrete observations:
+
+- five intended work-session outcomes are exercised: inspect detail context, complete, snooze, reschedule, and recover a failed completion;
+- eight Today control activations are required because snooze and reschedule each require explicit confirmation and the synthetic failure requires one retry;
+- four mutations receive confirmed server success in that browser fixture;
+- the synthetic failed mutation leaves its item visible until a successful retry;
+- after reload, all confirmed removals remain removed and the detail-only item remains available.
+
+The acceptance question is therefore whether actions are explicit, recoverable, and preserved across navigation/reload. It is **not** whether an unmeasured baseline was faster or slower.
+
+### Rollback
+
+JG-028 adds no migration. The only production-code change is bounded eager loading for Today manual-action source metadata. If that change must be reverted, persisted WorkItems, WorkItemOverrides, and JobTrack follow-up dates remain compatible. The existing F1 UI rollback remains disabling the Today route/navigation without deleting user data.
