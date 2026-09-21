@@ -22,11 +22,46 @@ const EMPTY_FILTER_OPTIONS = {
   sponsorshipStatuses: [],
 }
 
+const ANMOL_VIEW_COLUMNS = [
+  'ats_group',
+  'title',
+  'url',
+  'display_domain',
+  'company_guess',
+  'decision',
+  'rejection_reasons',
+  'location_status',
+  'is_usa_role',
+  'location_country',
+  'location_city',
+  'location_state',
+  'sponsorship_status',
+  'error',
+  'salary_min_extracted',
+  'salary_max_extracted',
+  'resume_match_score',
+  'resume_score',
+  'fit_category',
+  'score_confidence',
+  'seniority_level',
+  'score_reason',
+  'closed_or_unusable_reason',
+]
+
 const COLUMN_PRESETS = {
+  anmol_view: ANMOL_VIEW_COLUMNS,
   essentials: ['url', 'company_guess', 'title', 'ats_group', 'search_bucket', 'location_group', 'decision', 'sponsorship_status', 'resume_match_score', 'posted_age_days', 'error'],
   scoring: ['url', 'company_guess', 'title', 'resume_match_score', 'fit_category', 'score_confidence', 'seniority_level', 'role_family', 'required_years_min', 'core_languages_extracted', 'core_frameworks_extracted', 'matched_resume_skills', 'missing_or_weaker_skills', 'score_reason'],
   location_salary: ['url', 'company_guess', 'title', 'is_usa_role', 'location_country', 'location_city', 'location_state', 'work_model_extracted', 'salary_min_extracted', 'salary_max_extracted', 'salary_currency_extracted'],
   all: null,
+}
+
+const COLUMN_PRESET_LABELS = {
+  anmol_view: "Anmol's View",
+  essentials: 'Essentials',
+  scoring: 'Scoring',
+  location_salary: 'Location & Salary',
+  all: 'All',
 }
 
 function mergeColumnOrder(savedOrder, columns) {
@@ -193,6 +228,16 @@ export default function Dashboard() {
     () => mergeColumnOrder(columnOrder, columns),
     [columnOrder, columns]
   )
+
+  const isAnmolView = useMemo(() => {
+    if (columns.length === 0) return false
+    const expectedVisible = ANMOL_VIEW_COLUMNS.filter((col) => columns.includes(col))
+    const actualVisible = columns.filter((col) => !hidden.includes(col))
+    return (
+      expectedVisible.length === actualVisible.length &&
+      expectedVisible.every((col) => actualVisible.includes(col))
+    )
+  }, [columns, hidden])
 
   const savePreferences = async (nextHidden, nextOrder) => {
     await api.setPreferences({
@@ -453,14 +498,24 @@ export default function Dashboard() {
   const applyPreset = async (presetName) => {
     const presetColumns = COLUMN_PRESETS[presetName]
     let nextHidden
+    let nextOrder = columnOrder
     if (presetColumns === null) {
       nextHidden = []
     } else {
       nextHidden = columns.filter((col) => !presetColumns.includes(col))
+      if (presetName === 'anmol_view') {
+        const currentOrder = mergeColumnOrder(columnOrder, columns)
+        const availablePresetColumns = presetColumns.filter((col) => columns.includes(col))
+        nextOrder = [
+          ...availablePresetColumns,
+          ...currentOrder.filter((col) => !availablePresetColumns.includes(col)),
+        ]
+      }
     }
     setActivePreset(presetName)
     setHidden(nextHidden)
-    await savePreferences(nextHidden, columnOrder)
+    setColumnOrder(nextOrder)
+    await savePreferences(nextHidden, nextOrder)
   }
 
   const sendNext5ToApplications = async () => {
@@ -840,7 +895,7 @@ export default function Dashboard() {
                       className={`btn btn-sm ${activePreset === name ? 'btn-blue' : 'btn-grey'}`}
                       onClick={() => applyPreset(name)}
                     >
-                      {name === 'essentials' ? 'Essentials' : name === 'scoring' ? 'Scoring' : name === 'location_salary' ? 'Location & Salary' : 'All'}
+                      {COLUMN_PRESET_LABELS[name] || name}
                     </button>
                   ))}
                 </div>
@@ -907,6 +962,7 @@ export default function Dashboard() {
             onRowClick={(row) => setDrawerRow(row)}
             pinnedColumns={pinnedColumns}
             density={density}
+            showAppStatus={!isAnmolView}
           />
         )}
         {drawerRow && <RowDrawer row={drawerRow} onClose={() => setDrawerRow(null)} />}

@@ -44,6 +44,7 @@ export default function DataTable({
   onRowClick,
   pinnedColumns = [],
   density = 'comfortable',
+  showAppStatus = true,
 }) {
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hidden.includes(c)),
@@ -79,7 +80,7 @@ export default function DataTable({
           return <PriorityScore score={row.priority_score} triage={row.triage} />
         },
       },
-      {
+      ...(showAppStatus ? [{
         id: '_app_status',
         header: 'App Status',
         accessorFn: (row) => row.app_status,
@@ -93,9 +94,9 @@ export default function DataTable({
             </div>
           )
         },
-      },
+      }] : []),
     ],
-    [visibleColumns, onUrlClick, pinnedColumns]
+    [visibleColumns, onUrlClick, pinnedColumns, showAppStatus]
   )
 
   const table = useReactTable({
