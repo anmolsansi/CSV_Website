@@ -103,6 +103,26 @@ export default function Applications() {
     setFocusTarget(null)
   }, [focusTarget, pendingRows, fieldErrors])
 
+  const addApplicationToToday = async (app) => {
+    if (pendingMutationRef.current.has(app.id)) return
+    pendingMutationRef.current.add(app.id)
+    setPendingRow(app.id, true)
+    try {
+      await api.createWorkItem({
+        description: `Review ${app.company || 'company'} — ${app.title || 'role'}`,
+        track_id: app.id,
+        ...(app.csv_row_id ? { row_id: app.csv_row_id } : {}),
+        priority: 1,
+      })
+      toast('Added to Today.', 'success')
+    } catch (error) {
+      toast(formatApiError(error, 'Could not add this application to Today.').message, 'error')
+    } finally {
+      pendingMutationRef.current.delete(app.id)
+      setPendingRow(app.id, false)
+    }
+  }
+
   const updateFilter = (key, value) => {
     const nextFilters = { ...filters, [key]: value }
     setFilters(nextFilters)
@@ -575,6 +595,9 @@ export default function Applications() {
                   <td>
                     <button className="btn btn-green" disabled={pendingRows.has(app.id)} onClick={() => markApplied(app)}>
                       {pendingRows.has(app.id) ? 'Saving...' : 'Mark applied'}
+                    </button>
+                    <button className="btn btn-grey" style={{ marginLeft: 6 }} disabled={pendingRows.has(app.id)} onClick={() => addApplicationToToday(app)}>
+                      Add to Today
                     </button>
                     {fieldErrors[app.id]?.non_field && <p className="error-msg" role="alert">{fieldErrors[app.id].non_field}</p>}
                   </td>
