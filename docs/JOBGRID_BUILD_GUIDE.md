@@ -1822,3 +1822,42 @@ A ticket can be marked completed in the implementation roadmap when its own defi
 
 JG-023 is tests, CI configuration, and documentation only. If the release gate itself is incorrect, revert the JG-023 test/workflow/documentation commits together. No database downgrade, data rewrite, queue drain, or user-data recovery operation belongs to this rollback. Real OAuth, SMTP, staging restore, deployment, and production-release proof remain JG-024 responsibilities.
 
+
+
+## JG-024 release acceptance
+
+JG-024 adds operational acceptance tooling only. It does not change the database schema, public API contract, application-versus-visit semantics, or persisted user data.
+
+### Backup and restore rehearsal
+
+scripts/backup.sh supports explicit compose/service/database overrides plus a deterministic JOBGRID_BACKUP_FILE. It rejects empty backups, runs gzip integrity verification, records byte size and SHA-256, and writes a .sha256 sidecar. Set JOBGRID_BACKUP_SKIP_PRUNE=true during a disposable rehearsal so validation cannot remove unrelated backup history.
+
+scripts/restore.sh accepts --yes only for already-authorized noninteractive rehearsals, validates gzip and the expected/sidecar SHA-256 before writes, restores with psql -v ON_ERROR_STOP=1, and exits nonzero if the backend does not return healthy. Service/database names and health polling are environment-overridable for isolated staging compose projects.
+
+### Release-evidence validation
+
+scripts/smoke_jobgrid.py --self-test-release-acceptance runs deterministic regressions for:
+
+- staging_restore_content_comparison
+- oauth_real_provider_not_dev_login
+- smtp_received_not_merely_queued
+- rollback_preserves_user_history
+- deployment_smoke_and_rollback
+
+scripts/smoke_jobgrid.py --release-evidence FILE validates an operator-supplied JSON evidence file. Gates are PASS, FAIL, or BLOCKED. A blocked gate must name its owner, environment, command, expected/actual result, and exact missing dependency. Blocked gates never become staging acceptance.
+
+A restore PASS requires nonempty equal source/restored counts and matching SHA-256 content hashes. A real OAuth PASS rejects dev-login evidence and requires /auth/me success plus production cookie/logout assertions. SMTP PASS rejects status=logged and requires controlled-sandbox receipt evidence. Rollback PASS requires identical nonempty user-history count/hash before and after the old-code rehearsal. Staging acceptance also requires backend/frontend smoke plus an explicit rollback trigger.
+
+### Operational runbook
+
+See docs/RELEASE_ACCEPTANCE.md for the disposable PostgreSQL comparison flow, additive-migration/old-code rehearsal, real OAuth test, authorized SMTP sandbox receipt, deployment smoke, rollback triggers, evidence schema, and security rules.
+
+JG-024 keeps three states distinct:
+
+- **local-ready**: scripts/docs/regressions and repository CI are green for the candidate SHA.
+- **staging-accepted**: every acceptance gate is PASS for that staging candidate.
+- **released**: the accepted candidate was deployed to production and post-deploy evidence exists.
+
+The repository-connected JG-024 implementation does not have staging OAuth/SMTP/deployment credentials or sending authorization. Those external gates remain BLOCKED until an authorized operator executes the runbook. This is not represented as staging-accepted or released.
+
+Rollback of JG-024 itself is code/documentation-only: revert these script and documentation changes. Do not downgrade the database or delete restored/user history to roll back acceptance tooling.
