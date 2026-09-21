@@ -313,6 +313,8 @@ npm run test:e2e -- tests/today.spec.ts --project=chromium
 npm run build
 ```
 
+Repository CI run **#204** provides the integrated evidence for this implementation revision: 367 backend tests passed on PostgreSQL, 141 Chromium Playwright tests passed, the frontend production build passed, and backend compilation passed. The earlier run #201 caught an over-specific planner assertion; the test was corrected to record PostgreSQL's cost-based index choice without changing the runtime query contract or schema.
+
 No JG-028 migration exists. Roll back the queue-loading optimization by reverting its application-code commit if necessary. Persisted JG-025 Today records, snooze overrides, and `JobTrack.follow_up_at` remain compatible. The broader F1 UI rollback is still to disable the Today route/navigation without deleting user data.
 
 ## Why v2 exists
