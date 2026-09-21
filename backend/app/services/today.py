@@ -257,7 +257,7 @@ def build_today_queue(
         .filter(
             WorkItem.user_id == user_id,
             WorkItem.state == "pending",
-            or_(WorkItem.due_at.is_(None), WorkItem.due_at < day_end_naive),
+            or_(WorkItem.due_at.is_(None), WorkItem.due_at < day_end),
         )
         .all()
     )
