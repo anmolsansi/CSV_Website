@@ -267,7 +267,7 @@ Manual queue serialization reads optional application, CSV-row, and saved-view s
 
 `test_no_n_plus_one_queue_queries` creates 12 manual actions with 12 distinct track/row/view source triples after expunging the ORM identity map. The complete queue build is required to use exactly three SELECT statements: one eager-loaded manual query, one follow-up query, and one override query. Increasing the number of sourced actions therefore does not increase query count.
 
-Repository PostgreSQL CI also runs `test_today_postgres_query_plans_use_owner_due_indexes`. With sequential scans disabled only for the acceptance EXPLAIN, the manual membership plan must expose `ix_work_items_user_due`; the follow-up plan must use either the owner or follow-up timestamp index. This verifies index eligibility. It is not a latency benchmark and does not claim a production response-time target.
+Repository PostgreSQL CI also runs `test_today_postgres_query_plans_use_owner_due_indexes`. With sequential scans disabled only for the acceptance EXPLAIN, the real manual membership query must remain index-backed. PostgreSQL is allowed to choose the state, owner, due-time, or composite owner/due index according to fixture costs. A second owner-plus-due probe must expose `ix_work_items_user_due`, proving that the composite path is eligible. The follow-up membership plan must use either the owner or follow-up timestamp index. This records the planner's real cost-based choice instead of forcing one plan shape. It is not a latency benchmark and does not claim a production response-time target.
 
 ### Recovery, detachment, and timezone behavior
 
