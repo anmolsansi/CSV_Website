@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
+import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from uuid import uuid4
@@ -259,6 +261,43 @@ def test_blocked_jg024_gates_never_become_staging_accepted():
     assert summary["staging_accepted"] is False
     assert summary["released"] is False
     assert sorted(summary["blocked"]) == sorted(acceptance.RELEASE_GATE_NAMES)
+
+
+def test_jg024_operational_scripts_parse_and_self_test():
+    root = Path(__file__).resolve().parents[2]
+
+    for relative in ("scripts/backup.sh", "scripts/restore.sh"):
+        result = subprocess.run(
+            ["bash", "-n", str(root / relative)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"{relative} failed bash syntax validation: {result.stderr}"
+        )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "smoke_jobgrid.py"),
+            "--self-test-release-acceptance",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    for required in (
+        "staging_restore_content_comparison",
+        "oauth_real_provider_not_dev_login",
+        "smtp_received_not_merely_queued",
+        "rollback_preserves_user_history",
+    ):
+        assert f"PASS  {required}" in result.stdout
+    assert "PASS  blocked external gates remain non-accepted" in result.stdout
 
 def test_invalid_inputs_are_rejected_before_mutation(client, db_session):
     email = f"jg023-invalid-{uuid4().hex}@jobgrid.test"
