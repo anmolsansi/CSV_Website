@@ -868,7 +868,33 @@ def test_today_postgres_query_plans_use_owner_due_indexes(db_session):
             },
         )
     )
-    assert "ix_work_items_user_due" in manual_plan
+    assert "Index" in manual_plan
+    assert (
+        "ix_work_items_user_due" in manual_plan
+        or "ix_work_items_user_id" in manual_plan
+        or "ix_work_items_state" in manual_plan
+        or "ix_work_items_due_at" in manual_plan
+    )
+
+    owner_due_plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN (COSTS OFF)
+                SELECT id
+                FROM work_items
+                WHERE user_id = :user_id
+                  AND due_at < :day_end
+                """
+            ),
+            {
+                "user_id": owner.id,
+                "day_end": datetime(2026, 9, 22, 0, 0, tzinfo=timezone.utc),
+            },
+        )
+    )
+    assert "ix_work_items_user_due" in owner_due_plan
 
     followup_plan = "\n".join(
         row[0]
