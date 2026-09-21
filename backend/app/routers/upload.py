@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, CsvRow, UrlHistory, User
+from ..services.job_identity import persisted_identity_values
 from .crm import emit_event
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -123,6 +124,9 @@ async def upload_csv(
         row["url"] = url
         row["user_id"] = user.id
         row["upload_batch_id"] = batch_id
+        identity = persisted_identity_values(url)
+        row["canonical_url"] = identity["canonical_url"] if identity else None
+        row["canonical_url_hash"] = identity["canonical_url_hash"] if identity else None
         incoming_rows.append(row)
         history_records.append({"user_id": user.id, "url": url})
 
