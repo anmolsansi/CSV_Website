@@ -283,13 +283,399 @@ class SmokeTest:
         return f"size={len(r.content)} bytes"
 
 
+
+RELEASE_GATE_NAMES = (
+    "staging_restore_content_comparison",
+    "oauth_real_provider_not_dev_login",
+    "smtp_received_not_merely_queued",
+    "rollback_preserves_user_history",
+    "deployment_smoke_and_rollback",
+)
+ALLOWED_RELEASE_GATE_STATUSES = {"PASS", "FAIL", "BLOCKED"}
+
+
+def _release_require(condition: bool, message: str):
+    if not condition:
+        raise AssertionError(message)
+
+
+def _is_sha256(value) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value.lower())
+    )
+
+
+def _validate_release_gate_common(name: str, gate: dict) -> str:
+    _release_require(isinstance(gate, dict), f"{name}: gate must be an object")
+    status = str(gate.get("status", "")).upper()
+    _release_require(
+        status in ALLOWED_RELEASE_GATE_STATUSES,
+        f"{name}: status must be PASS, FAIL, or BLOCKED",
+    )
+    for field in ("owner", "environment", "command", "expected", "actual"):
+        _release_require(
+            isinstance(gate.get(field), str) and gate[field].strip(),
+            f"{name}: {field} is required",
+        )
+    if status == "BLOCKED":
+        _release_require(
+            isinstance(gate.get("blocker"), str) and gate["blocker"].strip(),
+            f"{name}: BLOCKED requires an exact blocker",
+        )
+    return status
+
+
+def staging_restore_content_comparison(gate: dict):
+    status = _validate_release_gate_common("staging_restore_content_comparison", gate)
+    if status != "PASS":
+        return status
+
+    source_count = gate.get("source_count")
+    restored_count = gate.get("restored_count")
+    _release_require(
+        isinstance(source_count, int) and source_count > 0,
+        "staging_restore_content_comparison: source_count must be nonzero",
+    )
+    _release_require(
+        restored_count == source_count,
+        "staging_restore_content_comparison: restored_count must equal source_count",
+    )
+    source_hash = gate.get("source_content_sha256")
+    restored_hash = gate.get("restored_content_sha256")
+    _release_require(
+        _is_sha256(source_hash) and _is_sha256(restored_hash),
+        "staging_restore_content_comparison: both content hashes must be SHA-256",
+    )
+    _release_require(
+        source_hash.lower() == restored_hash.lower(),
+        "staging_restore_content_comparison: restored content hash differs from source",
+    )
+    _release_require(
+        _is_sha256(gate.get("backup_sha256")),
+        "staging_restore_content_comparison: backup_sha256 must be recorded",
+    )
+    return status
+
+
+def oauth_real_provider_not_dev_login(gate: dict):
+    status = _validate_release_gate_common("oauth_real_provider_not_dev_login", gate)
+    if status != "PASS":
+        return status
+
+    provider = str(gate.get("provider", "")).strip().lower()
+    _release_require(
+        provider in {"google", "microsoft", "apple"},
+        "oauth_real_provider_not_dev_login: provider must be google, microsoft, or apple",
+    )
+    _release_require(
+        gate.get("used_dev_login") is False,
+        "oauth_real_provider_not_dev_login: dev-login evidence is not provider acceptance",
+    )
+    _release_require(
+        gate.get("auth_me_status") == 200,
+        "oauth_real_provider_not_dev_login: /auth/me must return 200 after callback",
+    )
+    _release_require(
+        gate.get("logout_status") in {302, 303},
+        "oauth_real_provider_not_dev_login: logout must redirect",
+    )
+    _release_require(
+        gate.get("logout_cleared_cookie") is True,
+        "oauth_real_provider_not_dev_login: logout must clear session_token",
+    )
+    _release_require(
+        gate.get("session_cookie_secure") is True,
+        "oauth_real_provider_not_dev_login: production session cookie must be Secure",
+    )
+    _release_require(
+        str(gate.get("session_cookie_samesite", "")).lower() == "none",
+        "oauth_real_provider_not_dev_login: production session cookie must use SameSite=None",
+    )
+    return status
+
+
+def smtp_received_not_merely_queued(gate: dict):
+    status = _validate_release_gate_common("smtp_received_not_merely_queued", gate)
+    if status != "PASS":
+        return status
+
+    _release_require(
+        str(gate.get("api_status", "")).lower() == "sent",
+        "smtp_received_not_merely_queued: logged/queued-only status is not delivery evidence",
+    )
+    _release_require(
+        gate.get("recipient_controlled") is True,
+        "smtp_received_not_merely_queued: recipient must be a controlled sandbox",
+    )
+    _release_require(
+        gate.get("received") is True,
+        "smtp_received_not_merely_queued: sandbox must confirm receipt",
+    )
+    _release_require(
+        isinstance(gate.get("received_message_id"), str)
+        and gate["received_message_id"].strip(),
+        "smtp_received_not_merely_queued: received_message_id is required",
+    )
+    _release_require(
+        _is_sha256(gate.get("received_subject_sha256")),
+        "smtp_received_not_merely_queued: received subject hash is required",
+    )
+    _release_require(
+        _is_sha256(gate.get("received_body_sha256")),
+        "smtp_received_not_merely_queued: received body hash is required",
+    )
+    return status
+
+
+def rollback_preserves_user_history(gate: dict):
+    status = _validate_release_gate_common("rollback_preserves_user_history", gate)
+    if status != "PASS":
+        return status
+
+    before_count = gate.get("before_history_count")
+    after_count = gate.get("after_history_count")
+    _release_require(
+        isinstance(before_count, int) and before_count > 0,
+        "rollback_preserves_user_history: before_history_count must be nonzero",
+    )
+    _release_require(
+        after_count == before_count,
+        "rollback_preserves_user_history: history count changed during rollback rehearsal",
+    )
+    before_hash = gate.get("before_history_sha256")
+    after_hash = gate.get("after_history_sha256")
+    _release_require(
+        _is_sha256(before_hash) and _is_sha256(after_hash),
+        "rollback_preserves_user_history: before/after hashes must be SHA-256",
+    )
+    _release_require(
+        before_hash.lower() == after_hash.lower(),
+        "rollback_preserves_user_history: user-history content changed",
+    )
+    for field in ("old_code_started", "new_columns_retained", "current_code_restored"):
+        _release_require(
+            gate.get(field) is True,
+            f"rollback_preserves_user_history: {field} must be true",
+        )
+    return status
+
+
+def deployment_smoke_and_rollback(gate: dict):
+    status = _validate_release_gate_common("deployment_smoke_and_rollback", gate)
+    if status != "PASS":
+        return status
+
+    _release_require(
+        gate.get("backend_health_status") == 200,
+        "deployment_smoke_and_rollback: backend /health must return 200",
+    )
+    _release_require(
+        gate.get("frontend_status") == 200,
+        "deployment_smoke_and_rollback: frontend root must return 200",
+    )
+    for field in ("rollback_trigger", "rollback_command"):
+        _release_require(
+            isinstance(gate.get(field), str) and gate[field].strip(),
+            f"deployment_smoke_and_rollback: {field} is required",
+        )
+    return status
+
+
+RELEASE_GATE_VALIDATORS = {
+    "staging_restore_content_comparison": staging_restore_content_comparison,
+    "oauth_real_provider_not_dev_login": oauth_real_provider_not_dev_login,
+    "smtp_received_not_merely_queued": smtp_received_not_merely_queued,
+    "rollback_preserves_user_history": rollback_preserves_user_history,
+    "deployment_smoke_and_rollback": deployment_smoke_and_rollback,
+}
+
+
+def validate_release_evidence(payload: dict) -> dict:
+    _release_require(isinstance(payload, dict), "release evidence must be a JSON object")
+    candidate = payload.get("release_candidate")
+    _release_require(
+        isinstance(candidate, dict),
+        "release_candidate object is required",
+    )
+    for field in ("source_sha", "environment", "owner"):
+        _release_require(
+            isinstance(candidate.get(field), str) and candidate[field].strip(),
+            f"release_candidate.{field} is required",
+        )
+
+    gates = payload.get("gates")
+    _release_require(isinstance(gates, dict), "gates object is required")
+
+    statuses = {}
+    for name in RELEASE_GATE_NAMES:
+        _release_require(name in gates, f"missing release gate: {name}")
+        statuses[name] = RELEASE_GATE_VALIDATORS[name](gates[name])
+
+    staging_accepted = all(status == "PASS" for status in statuses.values())
+    blocked = [name for name, status in statuses.items() if status == "BLOCKED"]
+    failed = [name for name, status in statuses.items() if status == "FAIL"]
+
+    return {
+        "source_sha": candidate["source_sha"],
+        "environment": candidate["environment"],
+        "gates": statuses,
+        "blocked": blocked,
+        "failed": failed,
+        "staging_accepted": staging_accepted,
+        "released": False,
+    }
+
+
+def load_release_evidence(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return validate_release_evidence(payload)
+
+
+def run_release_acceptance_self_tests() -> bool:
+    sha_a = "a" * 64
+    sha_b = "b" * 64
+    common = {
+        "status": "PASS",
+        "owner": "release-owner",
+        "environment": "synthetic",
+        "command": "synthetic regression",
+        "expected": "contract passes",
+        "actual": "contract passed",
+    }
+    cases = {
+        "staging_restore_content_comparison": {
+            **common,
+            "source_count": 7,
+            "restored_count": 7,
+            "source_content_sha256": sha_a,
+            "restored_content_sha256": sha_a,
+            "backup_sha256": sha_b,
+        },
+        "oauth_real_provider_not_dev_login": {
+            **common,
+            "provider": "google",
+            "used_dev_login": False,
+            "auth_me_status": 200,
+            "logout_status": 303,
+            "logout_cleared_cookie": True,
+            "session_cookie_secure": True,
+            "session_cookie_samesite": "none",
+        },
+        "smtp_received_not_merely_queued": {
+            **common,
+            "api_status": "sent",
+            "recipient_controlled": True,
+            "received": True,
+            "received_message_id": "sandbox-message-1",
+            "received_subject_sha256": sha_a,
+            "received_body_sha256": sha_b,
+        },
+        "rollback_preserves_user_history": {
+            **common,
+            "before_history_count": 5,
+            "after_history_count": 5,
+            "before_history_sha256": sha_a,
+            "after_history_sha256": sha_a,
+            "old_code_started": True,
+            "new_columns_retained": True,
+            "current_code_restored": True,
+        },
+        "deployment_smoke_and_rollback": {
+            **common,
+            "backend_health_status": 200,
+            "frontend_status": 200,
+            "rollback_trigger": "health or smoke failure",
+            "rollback_command": "deploy previous application revision",
+        },
+    }
+
+    for name, gate in cases.items():
+        RELEASE_GATE_VALIDATORS[name](gate)
+        print(f"  PASS  {name}")
+
+    bad_oauth = dict(cases["oauth_real_provider_not_dev_login"])
+    bad_oauth["used_dev_login"] = True
+    try:
+        oauth_real_provider_not_dev_login(bad_oauth)
+    except AssertionError:
+        print("  PASS  oauth regression rejects dev-login evidence")
+    else:
+        raise AssertionError("oauth regression accepted dev-login evidence")
+
+    bad_smtp = dict(cases["smtp_received_not_merely_queued"])
+    bad_smtp["api_status"] = "logged"
+    try:
+        smtp_received_not_merely_queued(bad_smtp)
+    except AssertionError:
+        print("  PASS  smtp regression rejects logged-only evidence")
+    else:
+        raise AssertionError("smtp regression accepted logged-only evidence")
+
+    blocked = {
+        name: {
+            "status": "BLOCKED",
+            "owner": "release-owner",
+            "environment": "staging",
+            "command": "not executed",
+            "expected": "authorized external acceptance",
+            "actual": "not executed",
+            "blocker": "staging credential or authorized external resource unavailable",
+        }
+        for name in RELEASE_GATE_NAMES
+    }
+    summary = validate_release_evidence(
+        {
+            "release_candidate": {
+                "source_sha": "synthetic",
+                "environment": "staging",
+                "owner": "release-owner",
+            },
+            "gates": blocked,
+        }
+    )
+    _release_require(
+        summary["staging_accepted"] is False and summary["released"] is False,
+        "blocked gates must never become staging-accepted or released",
+    )
+    print("  PASS  blocked external gates remain non-accepted")
+    return True
+
 def main():
-    parser = argparse.ArgumentParser(description="JobGrid API smoke tests")
+    parser = argparse.ArgumentParser(description="JobGrid API smoke and release-acceptance checks")
     parser.add_argument("--base-url", default="http://localhost:8000", help="Backend URL")
     parser.add_argument("--cookie", default=None, help="Auth cookie value")
     parser.add_argument("--no-dev-login", action="store_true", help="Do not call /auth/dev-login before smoke tests")
-    parser.add_argument("--email", default="test@jobgrid.dev", help="Email used with --dev-login")
+    parser.add_argument("--email", default="test@jobgrid.dev", help="Email used with dev-login smoke mode")
+    parser.add_argument(
+        "--release-evidence",
+        help="Validate a JG-024 release-acceptance evidence JSON file instead of running API smoke tests",
+    )
+    parser.add_argument(
+        "--self-test-release-acceptance",
+        action="store_true",
+        help="Run synthetic regressions for the JG-024 acceptance evidence validators",
+    )
     args = parser.parse_args()
+
+    if args.self_test_release_acceptance:
+        try:
+            success = run_release_acceptance_self_tests()
+        except Exception as exc:
+            print(f"Release acceptance self-test failed: {exc}")
+            sys.exit(1)
+        sys.exit(0 if success else 1)
+
+    if args.release_evidence:
+        try:
+            summary = load_release_evidence(args.release_evidence)
+        except Exception as exc:
+            print(f"Release evidence rejected: {exc}")
+            sys.exit(1)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        sys.exit(1 if summary["failed"] else 0)
 
     test = SmokeTest(args.base_url, args.cookie, dev_login=not args.no_dev_login, email=args.email)
     success = test.run()
