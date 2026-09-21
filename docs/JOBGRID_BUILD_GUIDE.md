@@ -184,7 +184,7 @@ Expected failures return bounded codes without record contents. Foreign work ite
 
 Today operations log only a request/operation ID, safe outcome code, affected count, and elapsed time. Descriptions, URLs, notes, and action payload text are not logged.
 
-Rollback is code-only for JG-026: remove/disable the Today router registration while retaining the JG-025 tables and existing `JobTrack.follow_up_at` data. No Today frontend route is active yet; that remains JG-027 scope.
+JG-026 backend rollback remains code-only: remove/disable the Today router registration while retaining the JG-025 tables and existing `JobTrack.follow_up_at` data. JG-027 separately owns the active frontend route/navigation and can be disabled without deleting persisted Today data.
 
 Focused verification:
 
@@ -194,6 +194,55 @@ python -m pytest tests/test_today_api.py -q
 ```
 
 The repository CI remains the integration gate for PostgreSQL backend tests, backend compilation, frontend production build, and Chromium regressions.
+
+## Today screen and accessible action controls
+
+JG-027 activates the Today experience at `/today` and adds **Today** to the authenticated main navigation. The page consumes the JG-026 API contract instead of reimplementing queue membership in the browser. Server `as_of` and account `timezone` values are used to label the already-visible queue as **Overdue**, **Due today**, and **Undated**.
+
+### User flow and UI states
+
+The page has explicit initial loading, valid empty, loaded, recoverable network-error, per-item pending, and stale-conflict states. A failed mutation never removes an item optimistically. Successful mutations reload the persisted queue, and returning focus to the browser window refreshes the queue again.
+
+Each action shows its description, company/role when available, origin label, and due time in the account timezone. The primary action is **Complete**. Manual completion patches the work item with its current optimistic version. Follow-up completion explicitly clears the underlying `JobTrack.follow_up_at`; it does not mark the application applied.
+
+The current repository has a job-row `RowDrawer`, but it does not have a separate application-detail drawer. To preserve existing architecture, row-backed Today items navigate to the existing Job Links detail context and track-backed follow-ups navigate to the Applications surface. JG-027 does not introduce a second drawer or a parallel application editor.
+
+### Manual actions, snooze, and reschedule
+
+The inline manual-action form sends `POST /crm/work-items`. Description is required and limited to 500 characters. Due time is optional. The `datetime-local` input is interpreted in the browser/device timezone and converted to an explicit UTC timestamp before submission; queue membership and display grouping remain authoritative to the account timezone returned by the server.
+
+Create, snooze, complete, and reschedule controls are disabled while their own request is in flight. Failed create/reschedule requests keep the user's draft. A `409` optimistic-lock conflict stays visible beside the affected action with an explicit refresh control.
+
+Snooze and reschedule use native modal dialogs. Keyboard activation works with the normal button semantics, Escape/Cancel closes the dialog, and focus returns to the control that opened it.
+
+### Deliberate Add to Today entry points
+
+Saved Views exposes **Add to Today** only for `job_links` views. Before any mutation, the UI runs the saved view through the same dashboard query serializer and displays:
+
+- the saved-view origin name;
+- the exact matching row count;
+- the exact number that will be submitted;
+- the hard maximum of 20 actions.
+
+Confirmation calls `POST /crm/today/from-view`; its response reports `created`, `existing`, and `completed`, so repeated entry remains visible rather than implying every row was newly created.
+
+The existing Job Links row drawer and Applications table each expose a one-item **Add to Today** action. They create a manual work item with the owner-validated row/application source. These controls do not alter application status.
+
+### Failure, accessibility, and rollback
+
+Expected server validation text is surfaced without record contents. Stale writes retain the action and require refresh instead of overwriting newer state. The page never derives an application from opening a detail link or from completing a manual task.
+
+To roll the UI back, remove/disable the `/today` route and Today navigation entry. Keep the JG-025 tables, JG-026 API, manual work items, snooze overrides, and existing follow-up dates intact. Original Applications follow-up editing remains available.
+
+Focused frontend verification:
+
+```sh
+cd frontend
+npm run test:e2e -- tests/today.spec.ts --project=chromium
+npm run build
+```
+
+The Today browser fixture freezes the API `as_of` and account timezone instead of deriving day boundaries from the test runner's wall clock. Coverage includes overdue/undated rendering, keyboard snooze persistence after reload, failed-complete preservation, persisted follow-up rescheduling in the existing Applications surface, and the saved-view exact-count/20-item cap.
 
 ## Why v2 exists
 
