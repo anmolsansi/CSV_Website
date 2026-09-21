@@ -69,6 +69,17 @@ export function apiFieldErrors(error, fallback) {
   }, {})
 }
 
+function createOperationId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16)
+    const nibble = char === 'x' ? value : (value & 0x3) | 0x8
+    return nibble.toString(16)
+  })
+}
+
 function todayWindowParams() {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
@@ -148,6 +159,33 @@ export const api = {
     client.patch('/crm/profile/retention', { archive_after_days: archiveAfterDays }).then((r) => r.data),
   getGoals: () => client.get('/crm/goals').then((r) => r.data),
   updateGoals: (goals) => client.put(`/crm/goals?open_per_day=${goals.open_per_day}&apply_per_day=${goals.apply_per_day}&followup_per_day=${goals.followup_per_day}&applypilot_per_day=${goals.applypilot_per_day}`).then((r) => r.data),
+
+
+  // CRM - Today
+  getToday: (params = {}) =>
+    client.get('/crm/today', { params }).then((r) => r.data),
+  createWorkItem: (payload) =>
+    client.post('/crm/work-items', payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  updateWorkItem: (itemId, payload) =>
+    client.patch(`/crm/work-items/${itemId}`, payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  snoozeTodayAction: (payload) =>
+    client.post('/crm/today/snooze', payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  resolveTodayFollowUp: (payload) =>
+    client.post('/crm/today/follow-up', payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  addViewToToday: (viewId, limit = 20) =>
+    client.post('/crm/today/from-view', {
+      view_id: viewId,
+      limit,
+      request_id: createOperationId(),
+    }).then((r) => r.data),
 
   // CRM - Saved Views
   getViews: (viewType) =>
