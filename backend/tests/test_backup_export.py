@@ -18,6 +18,7 @@ from app.models import (
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
+    CompanyAlias,
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
@@ -95,7 +96,13 @@ def _seed_complete_fixture(db, email):
         status="downloaded",
         job_count=1,
     )
-    db.add_all([track, view, history, preference, goal, batch])
+    alias = CompanyAlias(
+        user_id=user.id,
+        alias_key="example co",
+        display_name="Example Co",
+        company_key=str(uuid4()),
+    )
+    db.add_all([track, view, history, preference, goal, batch, alias])
     db.flush()
 
     lifecycle_event = JobLifecycleEvent(
@@ -162,6 +169,7 @@ def test_export_every_section(auth_client, db_session):
     }
     assert payload["checksum_sha256"] == compute_sections_checksum(payload["sections"])
     assert payload["version"] == "2.0"
+    assert payload["identity_rule_version"] == "ccr-identity-1"
     assert document.schema_revision == BACKUP_SCHEMA_REVISION
     assert "user_id" not in json.dumps(payload)
 
