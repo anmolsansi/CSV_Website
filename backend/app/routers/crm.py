@@ -21,6 +21,7 @@ from ..scoring import _parse_score, priority_score as scoring_priority_score, im
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
+from ..services.job_identity import apply_persisted_job_identity
 from ..services.lifecycle import (
     LifecycleEventError,
     apply_job_track_changes,
@@ -259,6 +260,7 @@ def _apply_track_patch(
         now=now,
         **lifecycle_kwargs,
     )
+    apply_persisted_job_identity(item)
 
 
 def num_expr(col):
@@ -272,8 +274,10 @@ def to_out(item):
 
 
 def upsert_from_row(db, user_id, row, now):
+    apply_persisted_job_identity(row)
     item = db.query(JobTrack).filter_by(user_id=user_id, url=row.url).first()
     if item:
+        apply_persisted_job_identity(item)
         item.csv_row_id = row.id
         item.open_count = (item.open_count or 0) + 1
         item.last_opened_at = now
@@ -285,6 +289,7 @@ def upsert_from_row(db, user_id, row, now):
         item.resume_match_score = item.resume_match_score or row.resume_match_score
         return item
     item = JobTrack(user_id=user_id, csv_row_id=row.id, url=row.url, company=row.company_guess, title=row.title, ats_group=row.ats_group, search_bucket=row.search_bucket, resume_match_score=row.resume_match_score, status="opened", opened_at=now, last_opened_at=now, open_count=1)
+    apply_persisted_job_identity(item)
     db.add(item)
     return item
 
@@ -618,6 +623,7 @@ def bulk_create_from_rows(
         created = 0
         items = []
         for row in ordered_rows:
+            apply_persisted_job_identity(row)
             item = existing_tracks.get(row.url)
             if item is None:
                 item = JobTrack(
@@ -628,10 +634,13 @@ def bulk_create_from_rows(
                     last_opened_at=row.clicked_at,
                     open_count=1 if row.clicked else 0,
                 )
+                apply_persisted_job_identity(item)
                 db.add(item)
                 db.flush()
                 existing_tracks[row.url] = item
                 created += 1
+            else:
+                apply_persisted_job_identity(item)
             item.csv_row_id = row.id
             for field, source_field in [
                 ("company", "company_guess"),
@@ -1897,6 +1906,7 @@ def import_external_applications(
         created = 0
         for record in prepared:
             if record["url"] in existing_by_url:
+                apply_persisted_job_identity(existing_by_url[record["url"]])
                 continue
 
             now = datetime.utcnow()
@@ -1909,6 +1919,7 @@ def import_external_applications(
                 notes=record["notes"],
                 opened_at=now,
             )
+            apply_persisted_job_identity(track)
             db.add(track)
             db.flush()
             existing_by_url[record["url"]] = track
