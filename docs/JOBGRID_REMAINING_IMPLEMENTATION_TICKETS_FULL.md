@@ -180,7 +180,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 - [x] [JG-025 — Model manual actions and follow-up overrides](#jg-025)
 - [ ] [JG-026 — Build the stable daily queue and guarded mutations](#jg-026)
 - [ ] [JG-027 — Build the Today screen and accessible action controls](#jg-027)
-- [ ] [JG-028 — Prove the daily queue improves a real work session](#jg-028)
+- [x] [JG-028 — Prove the daily queue improves a real work session](#jg-028)
 
 **F2 — Applied-before warnings and company aliases**
 
@@ -6685,7 +6685,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-028"></a>
 ### JG-028 — Prove the daily queue improves a real work session
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** Feature rank 1  
 **Type:** verification/operations  
 **Execution position:** 28/64; group step 4/4
@@ -6861,14 +6861,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-028 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: fixed_fixture_membership_and_count_parity
-- [ ] Required regression passes: no_n_plus_one_queue_queries
-- [ ] Required regression passes: restore_reconstructs_today_items
-- [ ] Required regression passes: five_action_workflow_no_lost_changes
-- [ ] Required regression passes: saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-028 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: fixed_fixture_membership_and_count_parity
+- [x] Required regression passes: no_n_plus_one_queue_queries
+- [x] Required regression passes: restore_reconstructs_today_items
+- [x] Required regression passes: five_action_workflow_no_lost_changes
+- [x] Required regression passes: saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -6886,12 +6886,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -6904,7 +6904,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-027 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** Tracking issue #106 and implementation PR #107 completed the F1 acceptance boundary. The implementation merged as `9550fdf983fef41f32a2ae1181a3ff637bcd3f8b`. CI run #206 passed with 367 PostgreSQL backend tests, 141 Chromium Playwright tests, the frontend production build, and backend compile check. The five required JG-028 regressions passed. The Vercel preview later hit the external free-tier daily deployment quota; that is not recorded as staging or release acceptance.
 
 ---
 
