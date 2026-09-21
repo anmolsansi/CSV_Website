@@ -8,6 +8,7 @@ future refactor cannot quietly drop one of the repaired failure modes.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -48,6 +49,10 @@ RELEASE_CONTRACTS = frozenset(
         "primary_runtime_numeric_sort",
         "cross_user_isolation",
         "company_history_preservation",
+        "staging_restore_content_comparison",
+        "oauth_real_provider_not_dev_login",
+        "smtp_received_not_merely_queued",
+        "rollback_preserves_user_history",
     }
 )
 
@@ -123,6 +128,137 @@ def test_no_manual_skip_counts_as_pass():
     with pytest.raises(AssertionError, match="nonzero"):
         _assert_junit_clean(empty)
 
+
+
+def _load_jg024_acceptance_module():
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / "smoke_jobgrid.py"
+    spec = importlib.util.spec_from_file_location("jg024_smoke_jobgrid", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _jg024_common_gate() -> dict:
+    return {
+        "status": "PASS",
+        "owner": "release-owner",
+        "environment": "synthetic",
+        "command": "synthetic regression",
+        "expected": "contract passes",
+        "actual": "contract passed",
+    }
+
+
+def test_staging_restore_content_comparison():
+    acceptance = _load_jg024_acceptance_module()
+    sha_a = "a" * 64
+    sha_b = "b" * 64
+    gate = {
+        **_jg024_common_gate(),
+        "source_count": 7,
+        "restored_count": 7,
+        "source_content_sha256": sha_a,
+        "restored_content_sha256": sha_a,
+        "backup_sha256": sha_b,
+    }
+
+    assert acceptance.staging_restore_content_comparison(gate) == "PASS"
+
+    gate["restored_content_sha256"] = sha_b
+    with pytest.raises(AssertionError, match="differs from source"):
+        acceptance.staging_restore_content_comparison(gate)
+
+
+def test_oauth_real_provider_not_dev_login():
+    acceptance = _load_jg024_acceptance_module()
+    gate = {
+        **_jg024_common_gate(),
+        "provider": "google",
+        "used_dev_login": False,
+        "auth_me_status": 200,
+        "logout_status": 303,
+        "logout_cleared_cookie": True,
+        "session_cookie_secure": True,
+        "session_cookie_samesite": "none",
+    }
+
+    assert acceptance.oauth_real_provider_not_dev_login(gate) == "PASS"
+
+    gate["used_dev_login"] = True
+    with pytest.raises(AssertionError, match="dev-login"):
+        acceptance.oauth_real_provider_not_dev_login(gate)
+
+
+def test_smtp_received_not_merely_queued():
+    acceptance = _load_jg024_acceptance_module()
+    gate = {
+        **_jg024_common_gate(),
+        "api_status": "sent",
+        "recipient_controlled": True,
+        "received": True,
+        "received_message_id": "sandbox-message-1",
+        "received_subject_sha256": "a" * 64,
+        "received_body_sha256": "b" * 64,
+    }
+
+    assert acceptance.smtp_received_not_merely_queued(gate) == "PASS"
+
+    gate["api_status"] = "logged"
+    with pytest.raises(AssertionError, match="logged/queued-only"):
+        acceptance.smtp_received_not_merely_queued(gate)
+
+
+def test_rollback_preserves_user_history():
+    acceptance = _load_jg024_acceptance_module()
+    sha = "a" * 64
+    gate = {
+        **_jg024_common_gate(),
+        "before_history_count": 5,
+        "after_history_count": 5,
+        "before_history_sha256": sha,
+        "after_history_sha256": sha,
+        "old_code_started": True,
+        "new_columns_retained": True,
+        "current_code_restored": True,
+    }
+
+    assert acceptance.rollback_preserves_user_history(gate) == "PASS"
+
+    gate["after_history_count"] = 4
+    with pytest.raises(AssertionError, match="count changed"):
+        acceptance.rollback_preserves_user_history(gate)
+
+
+def test_blocked_jg024_gates_never_become_staging_accepted():
+    acceptance = _load_jg024_acceptance_module()
+    gates = {
+        name: {
+            "status": "BLOCKED",
+            "owner": "release-owner",
+            "environment": "staging",
+            "command": "not executed",
+            "expected": "authorized external acceptance",
+            "actual": "not executed",
+            "blocker": "credential or authorized staging resource unavailable",
+        }
+        for name in acceptance.RELEASE_GATE_NAMES
+    }
+
+    summary = acceptance.validate_release_evidence(
+        {
+            "release_candidate": {
+                "source_sha": "synthetic",
+                "environment": "staging",
+                "owner": "release-owner",
+            },
+            "gates": gates,
+        }
+    )
+
+    assert summary["staging_accepted"] is False
+    assert summary["released"] is False
+    assert sorted(summary["blocked"]) == sorted(acceptance.RELEASE_GATE_NAMES)
 
 def test_invalid_inputs_are_rejected_before_mutation(client, db_session):
     email = f"jg023-invalid-{uuid4().hex}@jobgrid.test"
