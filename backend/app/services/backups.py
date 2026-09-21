@@ -640,9 +640,7 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             counts["saved_views"]["skipped"] += 1
             continue
         existing = session.query(SavedView).filter_by(
-            user_id=user_id,
-            name=record.name,
-            view_type=record.view_type,
+            user_id=user_id, name=record.name, view_type=record.view_type
         ).first()
         if existing is None:
             counts["saved_views"]["created"] += 1
@@ -675,16 +673,8 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             counts["user_goal"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
     for record in document.sections.user_profile:
-        mapping = _lookup_import_map(
-            session, user_id, backup_id, "user_profile", record.backup_ref
-        )
-        if mapping:
-            counts["user_profile"]["skipped"] += 1
-            continue
-        # A first restore creates the portable profile mapping even when the
-        # destination already has the same default timezone. Replays are skipped
-        # through BackupImportMap, matching every other portable section.
-        counts["user_profile"]["created"] += 1
+        mapping = _lookup_import_map(session, user_id, backup_id, "user_profile", record.backup_ref)
+        counts["user_profile"]["skipped" if mapping else "created"] += 1
 
     for record in document.sections.job_tracks:
         mapping = _lookup_import_map(session, user_id, backup_id, "job_tracks", record.backup_ref)
@@ -703,16 +693,12 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             counts["job_tracks"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
     for record in document.sections.work_items:
-        mapping = _lookup_import_map(
-            session, user_id, backup_id, "work_items", record.backup_ref
-        )
+        mapping = _lookup_import_map(session, user_id, backup_id, "work_items", record.backup_ref)
         if mapping:
             counts["work_items"]["skipped"] += 1
             continue
         existing = None
         if record.origin_key is not None:
-            # Portable view-origin keys contain backup refs, so only a replay
-            # with mapped source refs can resolve the destination natural key.
             if record.origin_key.startswith("view:"):
                 view_id = _mapped_ref_target(
                     session, user_id, backup_id, "saved_views", record.source_view_ref
@@ -746,14 +732,10 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             if target_id is None:
                 action_key = None
             else:
-                due_at = datetime.fromisoformat(
-                    record.follow_up_due_at.replace("Z", "+00:00")
-                )
+                due_at = datetime.fromisoformat(record.follow_up_due_at.replace("Z", "+00:00"))
                 action_key = followup_action_key(target_id, due_at)
         existing = (
-            session.query(WorkItemOverride).filter_by(
-                user_id=user_id, action_key=action_key
-            ).first()
+            session.query(WorkItemOverride).filter_by(user_id=user_id, action_key=action_key).first()
             if action_key is not None
             else None
         )
@@ -766,118 +748,8 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             )
             counts["work_item_overrides"][_classify_existing(equal)] += 1
 
-    for record in document.sections.work_items:
-        mapped = _mapped_target(
-            session, user_id, backup_id, "work_items", record.backup_ref, WorkItem
-        )
-        if mapped is not None:
-            refs["work_items"][record.backup_ref] = mapped.id
-            counts["work_items"]["skipped"] += 1
-            continue
-
-        origin_key = _restored_origin_key(record, refs)
-        track_id = _target_id(
-            refs, "job_tracks", record.track_ref, "work_items", record.backup_ref
-        )
-        row_id = _target_id(
-            refs, "csv_rows", record.row_ref, "work_items", record.backup_ref
-        )
-        source_view_id = _target_id(
-            refs, "saved_views", record.source_view_ref, "work_items", record.backup_ref
-        )
-        existing = (
-            session.query(WorkItem).filter_by(
-                user_id=user_id, origin_key=origin_key
-            ).first()
-            if origin_key is not None
-            else None
-        )
-        if existing is not None:
-            fields = (
-                "description", "due_at", "priority", "state", "version",
-                "created_at", "updated_at", "completed_at",
-            )
-            equal = (
-                _record_equal(existing, record, fields)
-                and existing.track_id == track_id
-                and existing.row_id == row_id
-                and existing.source_view_id == source_view_id
-            )
-            outcome = _classify_existing(equal)
-            refs["work_items"][record.backup_ref] = existing.id
-            _persist_import_map(
-                session, user_id, backup_id,
-                "work_items", record.backup_ref, existing.id,
-            )
-            counts["work_items"][outcome] += 1
-            if outcome == "conflicts":
-                warnings.append(_restore_warning(
-                    "destination_record_preserved",
-                    section="work_items",
-                    backup_ref=record.backup_ref,
-                ))
-            continue
-
-        item = WorkItem(
-            user_id=user_id,
-            track_id=track_id,
-            row_id=row_id,
-            source_view_id=source_view_id,
-            origin_key=origin_key,
-            description=record.description,
-            due_at=datetime.fromisoformat(record.due_at.replace("Z", "+00:00"))
-            if record.due_at is not None else None,
-            priority=record.priority,
-            state=record.state,
-            version=record.version,
-            created_at=datetime.fromisoformat(record.created_at.replace("Z", "+00:00")),
-            updated_at=datetime.fromisoformat(record.updated_at.replace("Z", "+00:00")),
-            completed_at=datetime.fromisoformat(record.completed_at.replace("Z", "+00:00"))
-            if record.completed_at is not None else None,
-        )
-        session.add(item)
-        session.flush()
-        refs["work_items"][record.backup_ref] = item.id
-        _persist_import_map(
-            session, user_id, backup_id,
-            "work_items", record.backup_ref, item.id,
-        )
-        counts["work_items"]["created"] += 1
-
-    for record in document.sections.work_item_overrides:
-        action_key = _override_action_key_from_refs(record, refs)
-        existing = session.query(WorkItemOverride).filter_by(
-            user_id=user_id, action_key=action_key
-        ).first()
-        if existing is not None:
-            equal = (
-                _portable_equal(existing.snoozed_until, record.snoozed_until)
-                and existing.version == record.version
-            )
-            outcome = _classify_existing(equal)
-            counts["work_item_overrides"][outcome] += 1
-            if outcome == "conflicts":
-                warnings.append(_restore_warning(
-                    "destination_record_preserved",
-                    section="work_item_overrides",
-                    backup_ref=record.backup_ref,
-                ))
-            continue
-        session.add(WorkItemOverride(
-            user_id=user_id,
-            action_key=action_key,
-            snoozed_until=datetime.fromisoformat(
-                record.snoozed_until.replace("Z", "+00:00")
-            ),
-            version=record.version,
-        ))
-        session.flush()
-        counts["work_item_overrides"]["created"] += 1
-
     for record in document.sections.lifecycle_events:
-        mapping = _lookup_import_map(
-            session, user_id, backup_id, "lifecycle_events", record.backup_ref
-        )
+        mapping = _lookup_import_map(session, user_id, backup_id, "lifecycle_events", record.backup_ref)
         if mapping:
             counts["lifecycle_events"]["skipped"] += 1
             continue
@@ -1179,6 +1051,108 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         counts["job_tracks"]["created"] += 1
         if record.session_ref is not None:
             warnings.append(_restore_warning("job_track_session_ref_detached", section="job_tracks", backup_ref=record.backup_ref))
+
+    for record in document.sections.work_items:
+        mapped = _mapped_target(
+            session, user_id, backup_id, "work_items", record.backup_ref, WorkItem
+        )
+        if mapped is not None:
+            refs["work_items"][record.backup_ref] = mapped.id
+            counts["work_items"]["skipped"] += 1
+            continue
+
+        origin_key = _restored_origin_key(record, refs)
+        track_id = _target_id(
+            refs, "job_tracks", record.track_ref, "work_items", record.backup_ref
+        )
+        row_id = _target_id(
+            refs, "csv_rows", record.row_ref, "work_items", record.backup_ref
+        )
+        source_view_id = _target_id(
+            refs, "saved_views", record.source_view_ref, "work_items", record.backup_ref
+        )
+        existing = (
+            session.query(WorkItem).filter_by(user_id=user_id, origin_key=origin_key).first()
+            if origin_key is not None
+            else None
+        )
+        if existing is not None:
+            fields = (
+                "description", "due_at", "priority", "state", "version",
+                "created_at", "updated_at", "completed_at",
+            )
+            equal = (
+                _record_equal(existing, record, fields)
+                and existing.track_id == track_id
+                and existing.row_id == row_id
+                and existing.source_view_id == source_view_id
+            )
+            outcome = _classify_existing(equal)
+            refs["work_items"][record.backup_ref] = existing.id
+            _persist_import_map(
+                session, user_id, backup_id, "work_items", record.backup_ref, existing.id
+            )
+            counts["work_items"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="work_items",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+
+        item = WorkItem(
+            user_id=user_id,
+            track_id=track_id,
+            row_id=row_id,
+            source_view_id=source_view_id,
+            origin_key=origin_key,
+            description=record.description,
+            due_at=datetime.fromisoformat(record.due_at.replace("Z", "+00:00"))
+            if record.due_at is not None else None,
+            priority=record.priority,
+            state=record.state,
+            version=record.version,
+            created_at=datetime.fromisoformat(record.created_at.replace("Z", "+00:00")),
+            updated_at=datetime.fromisoformat(record.updated_at.replace("Z", "+00:00")),
+            completed_at=datetime.fromisoformat(record.completed_at.replace("Z", "+00:00"))
+            if record.completed_at is not None else None,
+        )
+        session.add(item)
+        session.flush()
+        refs["work_items"][record.backup_ref] = item.id
+        _persist_import_map(
+            session, user_id, backup_id, "work_items", record.backup_ref, item.id
+        )
+        counts["work_items"]["created"] += 1
+
+    for record in document.sections.work_item_overrides:
+        action_key = _override_action_key_from_refs(record, refs)
+        existing = session.query(WorkItemOverride).filter_by(
+            user_id=user_id, action_key=action_key
+        ).first()
+        if existing is not None:
+            equal = (
+                _portable_equal(existing.snoozed_until, record.snoozed_until)
+                and existing.version == record.version
+            )
+            outcome = _classify_existing(equal)
+            counts["work_item_overrides"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="work_item_overrides",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+        session.add(WorkItemOverride(
+            user_id=user_id,
+            action_key=action_key,
+            snoozed_until=datetime.fromisoformat(record.snoozed_until.replace("Z", "+00:00")),
+            version=record.version,
+        ))
+        session.flush()
+        counts["work_item_overrides"]["created"] += 1
 
     for record in document.sections.lifecycle_events:
         mapped = _mapped_target(
