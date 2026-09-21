@@ -5,11 +5,14 @@ mutating persisted URLs or deciding that similar jobs are the same record.
 Persistence and backfill are owned by JG-030.
 """
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from ipaddress import ip_address
 import re
-from typing import Literal
+from typing import Any, Literal
+
+from sqlalchemy import and_, func, or_
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 
@@ -183,3 +186,157 @@ def classify_identity_match(
         return IdentityMatch(confidence="possible", reason="company_title_only")
 
     return IdentityMatch(confidence=None, reason="no_identity_match")
+
+
+@dataclass(frozen=True)
+class IdentityBackfillReport:
+    entity: str
+    dry_run: bool
+    after_id: int
+    last_id: int | None
+    scanned: int
+    updated: int
+    unchanged: int
+    invalid: int
+    collision_groups: int
+    collision_records: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def persisted_identity_values(url: str) -> dict[str, str] | None:
+    """Return derived storage values, or None for a legacy URL that cannot canonicalize.
+
+    This helper deliberately does not make URL validation stricter for existing
+    import paths. Callers that already reject malformed URLs keep doing so, while
+    legacy/imported rows can remain usable with nullable derived identity fields.
+    """
+
+    try:
+        identity = canonicalize_job_url(url)
+    except JobIdentityError:
+        return None
+    return {
+        "canonical_url": identity.canonical_url,
+        "canonical_url_hash": identity.canonical_url_hash,
+    }
+
+
+def apply_persisted_job_identity(record: Any, *, url: str | None = None) -> bool:
+    """Populate nullable derived identity fields without changing the original URL.
+
+    Returns True when canonical identity could be derived. Invalid legacy URLs
+    are left with null derived fields and are reported by the backfill instead
+    of being deleted or rewritten.
+    """
+
+    original_url = url if url is not None else getattr(record, "url", None)
+    values = persisted_identity_values(original_url)
+    if values is None:
+        record.canonical_url = None
+        record.canonical_url_hash = None
+        return False
+
+    record.canonical_url = values["canonical_url"]
+    record.canonical_url_hash = values["canonical_url_hash"]
+    return True
+
+
+def backfill_identity_batch(
+    session: Any,
+    model: Any,
+    *,
+    after_id: int = 0,
+    limit: int = 500,
+    dry_run: bool = False,
+) -> IdentityBackfillReport:
+    """Derive identity for one bounded, resumable ORM batch.
+
+    The function never commits. The operational CLI owns commit/rollback so a
+    500-record batch is one transaction. Collision reporting is count-only and
+    never merges, deletes, or rewrites records.
+    """
+
+    if after_id < 0:
+        raise ValueError("after_id must be non-negative")
+    if limit < 1 or limit > 500:
+        raise ValueError("limit must be between 1 and 500")
+
+    records = (
+        session.query(model)
+        .filter(model.id > after_id)
+        .order_by(model.id.asc())
+        .limit(limit)
+        .all()
+    )
+
+    updated = 0
+    unchanged = 0
+    invalid = 0
+    derived: list[tuple[int, str]] = []
+
+    for record in records:
+        values = persisted_identity_values(record.url)
+        if values is None:
+            invalid += 1
+            continue
+
+        derived.append((record.user_id, values["canonical_url_hash"]))
+        changed = (
+            record.canonical_url != values["canonical_url"]
+            or record.canonical_url_hash != values["canonical_url_hash"]
+        )
+        if changed:
+            updated += 1
+            if not dry_run:
+                record.canonical_url = values["canonical_url"]
+                record.canonical_url_hash = values["canonical_url_hash"]
+        else:
+            unchanged += 1
+
+    # Count collisions inside the bounded candidate set. On write runs, include
+    # already-derived rows outside the current batch after flushing the updates.
+    pair_counts = Counter(derived)
+    if not dry_run and derived:
+        session.flush()
+        candidate_pairs = sorted(set(derived))
+        persisted = (
+            session.query(
+                model.user_id,
+                model.canonical_url_hash,
+                func.count(model.id),
+            )
+            .filter(
+                or_(
+                    *[
+                        and_(
+                            model.user_id == user_id,
+                            model.canonical_url_hash == canonical_hash,
+                        )
+                        for user_id, canonical_hash in candidate_pairs
+                    ]
+                )
+            )
+            .group_by(model.user_id, model.canonical_url_hash)
+            .all()
+        )
+        pair_counts = Counter({
+            (user_id, canonical_hash): count
+            for user_id, canonical_hash, count in persisted
+            if canonical_hash is not None
+        })
+
+    collision_counts = [count for count in pair_counts.values() if count > 1]
+    return IdentityBackfillReport(
+        entity=getattr(model, "__tablename__", model.__name__),
+        dry_run=dry_run,
+        after_id=after_id,
+        last_id=records[-1].id if records else None,
+        scanned=len(records),
+        updated=updated,
+        unchanged=unchanged,
+        invalid=invalid,
+        collision_groups=len(collision_counts),
+        collision_records=sum(collision_counts),
+    )

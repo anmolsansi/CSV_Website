@@ -13,6 +13,7 @@ from app.backup_schemas import (
     AuditEventBackupV2,
     BackupContractError,
     ColumnPreferenceBackupV2,
+    CompanyAliasBackupV2,
     CsvRowBackupV2,
     JobTrackBackupV2,
     JobLifecycleEventBackupV2,
@@ -35,6 +36,7 @@ from app.models import (
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
+    CompanyAlias,
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
@@ -121,6 +123,7 @@ def test_assert_complete_model_field_inventory():
         "UrlHistory": UrlHistory,
         "CsvRow": CsvRow,
         "JobTrack": JobTrack,
+        "CompanyAlias": CompanyAlias,
         "JobLifecycleEvent": JobLifecycleEvent,
         "SavedView": SavedView,
         "SearchSession": SearchSession,
@@ -152,6 +155,7 @@ def test_frozen_section_record_allowlists_are_strict():
         "csv_rows": CsvRowBackupV2,
         "url_history": UrlHistoryBackupV2,
         "job_tracks": JobTrackBackupV2,
+        "company_aliases": CompanyAliasBackupV2,
         "work_items": WorkItemBackupV2,
         "work_item_overrides": WorkItemOverrideBackupV2,
         "lifecycle_events": JobLifecycleEventBackupV2,
@@ -214,6 +218,18 @@ def test_v21_without_user_profile_keeps_original_checksum_contract():
     validated = validate_backup_v2(json.dumps(payload))
     assert validated.sections.user_profile == []
     assert validated.counts.user_profile == 0
+
+
+def test_pre_jg030_v2_without_company_aliases_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["sections"].pop("company_aliases")
+    payload["counts"].pop("company_aliases")
+    payload["schema_revision"] = "2.4.0"
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    validated = validate_backup_v2(json.dumps(payload))
+    assert validated.sections.company_aliases == []
+    assert validated.counts.company_aliases == 0
 
 
 def test_pre_jg025_v2_without_today_sections_keeps_original_checksum_contract():

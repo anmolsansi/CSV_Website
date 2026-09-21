@@ -330,26 +330,28 @@ A v2 document contains exactly:
 - `version`: `"2.0"`
 - `backup_id`: UUID string
 - `exported_at`: UTC ISO-8601 timestamp
-- `schema_revision`: currently `"2.4.0"`
-- `sections`: the eleven current v2 sections
+- `schema_revision`: currently `"2.5.0"`
+- `identity_rule_version`: canonical-identity rule used for derived URL rebuilds, currently `"ccr-identity-1"`
+- `sections`: the fourteen current v2 sections
 - `counts`: exact record count for every section
 - `checksum_sha256`: lowercase SHA-256 digest of canonical `sections` JSON
 
-The thirteen current sections are:
+The fourteen current sections are:
 
 1. `csv_rows`
 2. `url_history`
 3. `job_tracks`
-4. `work_items`
-5. `work_item_overrides`
-6. `lifecycle_events`
-7. `saved_views`
-8. `sessions`
-9. `audit_events`
-10. `applypilot_batches`
-11. `column_preferences`
-12. `user_goal`
-13. `user_profile`
+4. `company_aliases`
+5. `work_items`
+6. `work_item_overrides`
+7. `lifecycle_events`
+8. `saved_views`
+9. `sessions`
+10. `audit_events`
+11. `applypilot_batches`
+12. `column_preferences`
+13. `user_goal`
+14. `user_profile`
 
 Every record has a non-empty `backup_ref` unique within its section. Nullable fields remain present as keys, preserving the difference between null, empty text, `false`, and zero.
 
@@ -386,7 +388,7 @@ Isolation is:
 - PostgreSQL: `REPEATABLE READ`
 - SQLite/local tests: `SERIALIZABLE`
 
-All thirteen current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
+All fourteen current sections are read within one transaction. The service fully builds and validates the document before the route serializes the response, so transaction resources close even if serialization fails.
 
 ## Canonical checksum
 
@@ -419,6 +421,14 @@ The SHA-256 lowercase hexadecimal digest is stored in `checksum_sha256`. `counts
 ### Job tracks
 
 `JobTrackBackupV2` exports every non-identity persisted field, including application status/timestamps, notes, `session_id`, open counts, and created/updated timestamps. `csv_row_id` becomes `csv_row_ref`.
+
+### Company aliases
+
+`CompanyAliasBackupV2` exports the normalized owner-local `alias_key`, preserved `display_name`, stable UUID `company_key`, and creation timestamp. Source IDs and source account ownership are reconstructed from `backup_ref` and the authenticated destination user. Two accounts may use the same alias key without sharing a company identity.
+
+Backups created before JG-030 may omit `company_aliases` and its count. Their checksum is validated against the older section shape. New backups record `identity_rule_version`; restore rejects an unknown recorded rule before mutation.
+
+Derived `canonical_url` and `canonical_url_hash` values are intentionally not authoritative backup fields. Restore preserves each original `url` and rebuilds the derived values with the recorded supported rule.
 
 ### Work items and Today overrides
 
@@ -2196,3 +2206,86 @@ python -m pytest tests/test_job_identity.py -q
 ```
 
 Repository CI remains the full PostgreSQL/backend/frontend/Chromium integration gate.
+
+
+## JG-030 persisted identity, aliases, and safe backfill
+
+JG-030 adds the storage and operational layer for the conservative identity rules introduced by JG-029. It does not activate application-match APIs, alias-management routes, duplicate warning UI, or automatic merges.
+
+### Storage contract
+
+Alembic revision `009_job_identity.py` follows the existing `008_today_queue.py` revision. It adds nullable `canonical_url` and `canonical_url_hash` columns to both `csv_rows` and `job_tracks`.
+
+Each table has a non-unique `(user_id, canonical_url_hash)` index. Non-unique is intentional. Two original URLs that reduce to the same conservative canonical URL remain two separate records with their original URL, application status, notes, timestamps, and history unchanged.
+
+`company_aliases` stores explicit owner-local company groupings:
+
+- `id`
+- `user_id`
+- normalized `alias_key`
+- preserved `display_name`
+- stable UUID `company_key`
+- `created_at`
+
+`(user_id, alias_key)` is unique. `(user_id, company_key)` is indexed for grouping. No cross-account company directory, alias chains, or fuzzy auto-merge exists in JG-030.
+
+### Writer behavior
+
+`backend/app/services/job_identity.py` owns `apply_persisted_job_identity()`. CSV upload and application creation/edit paths call that shared helper.
+
+The original `url` column is never rewritten. A URL that is valid under `ccr-identity-1` gets derived canonical URL/hash values. A malformed legacy/import URL keeps its original value and nullable derived fields instead of being deleted or silently rewritten.
+
+### Backfill
+
+Run from `backend/`:
+
+```sh
+# Inspect one bounded batch from both tables without writes.
+python scripts/backfill_job_identity.py --dry-run
+
+# Backfill one table, at most 500 records.
+python scripts/backfill_job_identity.py --entity csv_rows
+
+# Resume strictly after an already completed primary-key checkpoint.
+python scripts/backfill_job_identity.py --entity job_tracks --after-id 500
+
+# Smaller bounded batches are allowed.
+python scripts/backfill_job_identity.py --entity job_tracks --after-id 500 --limit 100
+```
+
+The hard batch maximum is 500 records per table. The service is idempotent, so replaying an already processed range reports unchanged records rather than changing the original URL or creating a duplicate. Dry-run computes the same derivation without assigning canonical fields.
+
+Operational output contains entity names, counts, collision counts, and checkpoint IDs only. It never prints source or canonical job URLs.
+
+A canonical collision is evidence for later matching, not permission to merge. The backfill does not change `status`, `notes`, original URLs, lifecycle events, duplicate flags, or application ownership.
+
+### Backup and restore
+
+Backup schema revision `2.5.0` adds optional `company_aliases` plus top-level `identity_rule_version`.
+
+New exports:
+
+- preserve original CSV/application URLs;
+- export explicit owner-scoped aliases and stable company grouping keys;
+- do not export derived canonical URL/hash fields as authoritative data; and
+- record `ccr-identity-1` so restore can rebuild derived identity deterministically.
+
+Restore validates the recorded rule before mutation. Supported backups rebuild derived identity from the preserved original URL. Older v2 backups without aliases or a rule version remain compatible and rebuild with the current rule because they predate persisted derived identity.
+
+### Verification
+
+Focused checks:
+
+```sh
+cd backend
+python -m pytest tests/test_job_identity.py tests/test_identity_backfill.py tests/test_backup_contract.py tests/test_backup_export.py -q
+python -m compileall app scripts
+```
+
+The required JG-030 regressions prove idempotent retry, collision preservation, account-scoped aliases, backup alias grouping, and dry-run no-write behavior. Repository CI remains the full PostgreSQL migration/backend/frontend/Chromium gate.
+
+### Rollback
+
+Revision 009 is additive. Normal application rollback can leave the nullable canonical columns and `company_aliases` table in place while older code ignores them.
+
+Stop any backfill before rolling application code back. Do not resolve rollback by deleting canonical-collision records, original URLs, aliases, application status/notes, or lifecycle history. A schema downgrade is appropriate only when the new alias/derived data is intentionally disposable and the deployment has confirmed no newer code is using it.

@@ -26,6 +26,7 @@ from ..models import (
     AuditEvent,
     BackupImportMap,
     ColumnPreference,
+    CompanyAlias,
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
@@ -38,6 +39,7 @@ from ..models import (
     WorkItemOverride,
 )
 from ..today_schemas import followup_action_key, manual_action_key
+from .job_identity import CANONICALIZATION_VERSION, apply_persisted_job_identity
 
 
 def _utc_iso(value: datetime | None) -> str | None:
@@ -81,6 +83,7 @@ def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
         "csv_rows": session.query(CsvRow).filter(CsvRow.user_id == user_id).order_by(CsvRow.id.asc()).all(),
         "url_history": session.query(UrlHistory).filter(UrlHistory.user_id == user_id).order_by(UrlHistory.id.asc()).all(),
         "job_tracks": session.query(JobTrack).filter(JobTrack.user_id == user_id).order_by(JobTrack.id.asc()).all(),
+        "company_aliases": session.query(CompanyAlias).filter(CompanyAlias.user_id == user_id).order_by(CompanyAlias.id.asc()).all(),
         "work_items": session.query(WorkItem).filter(WorkItem.user_id == user_id).order_by(WorkItem.id.asc()).all(),
         "work_item_overrides": session.query(WorkItemOverride).filter(WorkItemOverride.user_id == user_id).order_by(WorkItemOverride.action_key.asc()).all(),
         "lifecycle_events": session.query(JobLifecycleEvent).filter(JobLifecycleEvent.user_id == user_id).order_by(JobLifecycleEvent.id.asc()).all(),
@@ -234,6 +237,15 @@ def _serialize_sections(
             "updated_at": _utc_iso(item.updated_at),
         })
 
+    for item in snapshot["company_aliases"]:
+        sections["company_aliases"].append({
+            "backup_ref": refs["company_aliases"][item.id],
+            "alias_key": item.alias_key,
+            "display_name": item.display_name,
+            "company_key": item.company_key,
+            "created_at": _utc_iso(item.created_at),
+        })
+
     for item in snapshot["work_items"]:
         backup_ref = refs["work_items"][item.id]
         sections["work_items"].append({
@@ -385,6 +397,7 @@ def _build_backup_v2(session: Session, user_id: int) -> dict[str, Any]:
         "backup_id": str(backup_id),
         "exported_at": _utc_iso(datetime.now(timezone.utc)),
         "schema_revision": BACKUP_SCHEMA_REVISION,
+        "identity_rule_version": CANONICALIZATION_VERSION,
         "sections": sections,
         "counts": {name: len(sections[name]) for name in BACKUP_V2_SECTIONS},
         "checksum_sha256": compute_sections_checksum(sections),
@@ -604,6 +617,15 @@ def _override_action_key_from_refs(
 
 
 def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) -> dict[str, dict[str, int]]:
+    if (
+        document.identity_rule_version is not None
+        and document.identity_rule_version != CANONICALIZATION_VERSION
+    ):
+        raise BackupContractError(
+            "unsupported_identity_rule_version",
+            409,
+            "Backup identity rule version is not supported by this release.",
+        )
     counts = _empty_restore_counts()
     backup_id = document.backup_id
 
@@ -691,6 +713,24 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
                 "open_count", "last_opened_at", "created_at", "updated_at",
             )
             counts["job_tracks"][_classify_existing(_record_equal(existing, record, fields))] += 1
+
+    for record in document.sections.company_aliases:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "company_aliases", record.backup_ref
+        )
+        if mapping:
+            counts["company_aliases"]["skipped"] += 1
+            continue
+        existing = session.query(CompanyAlias).filter_by(
+            user_id=user_id, alias_key=record.alias_key
+        ).first()
+        if existing is None:
+            counts["company_aliases"]["created"] += 1
+        else:
+            fields = ("alias_key", "display_name", "company_key", "created_at")
+            counts["company_aliases"][
+                _classify_existing(_record_equal(existing, record, fields))
+            ] += 1
 
     for record in document.sections.work_items:
         mapping = _lookup_import_map(session, user_id, backup_id, "work_items", record.backup_ref)
@@ -800,6 +840,15 @@ def _target_id(
 
 
 def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocumentV2) -> dict[str, Any]:
+    if (
+        document.identity_rule_version is not None
+        and document.identity_rule_version != CANONICALIZATION_VERSION
+    ):
+        raise BackupContractError(
+            "unsupported_identity_rule_version",
+            409,
+            "Backup identity rule version is not supported by this release.",
+        )
     counts = _empty_restore_counts()
     warnings: list[dict[str, str]] = []
     refs: dict[str, dict[str, int]] = {section: {} for section in BACKUP_V2_SECTIONS}
@@ -830,11 +879,13 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
     for record in document.sections.csv_rows:
         mapped = _mapped_target(session, user_id, backup_id, "csv_rows", record.backup_ref, CsvRow)
         if mapped is not None:
+            apply_persisted_job_identity(mapped)
             refs["csv_rows"][record.backup_ref] = mapped.id
             counts["csv_rows"]["skipped"] += 1
             continue
         existing = session.query(CsvRow).filter_by(user_id=user_id, url=record.url).first()
         if existing is not None:
+            apply_persisted_job_identity(existing)
             fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
             outcome = _classify_existing(_record_equal(existing, record, fields))
             refs["csv_rows"][record.backup_ref] = existing.id
@@ -856,6 +907,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             duplicate_of_id=None,
             **values,
         )
+        apply_persisted_job_identity(item)
         session.add(item)
         session.flush()
         created_rows[record.backup_ref] = item
@@ -1007,11 +1059,13 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
     for record in document.sections.job_tracks:
         mapped = _mapped_target(session, user_id, backup_id, "job_tracks", record.backup_ref, JobTrack)
         if mapped is not None:
+            apply_persisted_job_identity(mapped)
             refs["job_tracks"][record.backup_ref] = mapped.id
             counts["job_tracks"]["skipped"] += 1
             continue
         existing = session.query(JobTrack).filter_by(user_id=user_id, url=record.url).first()
         if existing is not None:
+            apply_persisted_job_identity(existing)
             fields = (
                 "url", "company", "title", "ats_group", "search_bucket", "resume_match_score",
                 "status", "opened_at", "applied_at", "follow_up_at", "notes", "session_id",
@@ -1044,6 +1098,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             created_at=_parse_backup_datetime(record.created_at),
             updated_at=_parse_backup_datetime(record.updated_at),
         )
+        apply_persisted_job_identity(item)
         session.add(item)
         session.flush()
         refs["job_tracks"][record.backup_ref] = item.id
@@ -1051,6 +1106,64 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         counts["job_tracks"]["created"] += 1
         if record.session_ref is not None:
             warnings.append(_restore_warning("job_track_session_ref_detached", section="job_tracks", backup_ref=record.backup_ref))
+
+    for record in document.sections.company_aliases:
+        mapped = _mapped_target(
+            session,
+            user_id,
+            backup_id,
+            "company_aliases",
+            record.backup_ref,
+            CompanyAlias,
+        )
+        if mapped is not None:
+            refs["company_aliases"][record.backup_ref] = mapped.id
+            counts["company_aliases"]["skipped"] += 1
+            continue
+
+        existing = session.query(CompanyAlias).filter_by(
+            user_id=user_id, alias_key=record.alias_key
+        ).first()
+        if existing is not None:
+            fields = ("alias_key", "display_name", "company_key", "created_at")
+            outcome = _classify_existing(_record_equal(existing, record, fields))
+            refs["company_aliases"][record.backup_ref] = existing.id
+            _persist_import_map(
+                session,
+                user_id,
+                backup_id,
+                "company_aliases",
+                record.backup_ref,
+                existing.id,
+            )
+            counts["company_aliases"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="company_aliases",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+
+        item = CompanyAlias(
+            user_id=user_id,
+            alias_key=record.alias_key,
+            display_name=record.display_name,
+            company_key=record.company_key,
+            created_at=_parse_backup_datetime(record.created_at),
+        )
+        session.add(item)
+        session.flush()
+        refs["company_aliases"][record.backup_ref] = item.id
+        _persist_import_map(
+            session,
+            user_id,
+            backup_id,
+            "company_aliases",
+            record.backup_ref,
+            item.id,
+        )
+        counts["company_aliases"]["created"] += 1
 
     for record in document.sections.work_items:
         mapped = _mapped_target(
@@ -1405,6 +1518,7 @@ def restore_backup_v1(db: Session, user_id: int, payload: dict[str, Any], mode: 
                         created_at=_parse_backup_datetime(data.get("created_at")),
                         **values,
                     )
+                    apply_persisted_job_identity(item)
                     restore_session.add(item)
                     restore_session.flush()
                     refs["csv_rows"][ref] = item.id
@@ -1453,6 +1567,7 @@ def restore_backup_v1(db: Session, user_id: int, payload: dict[str, Any], mode: 
                         created_at=created_at,
                         updated_at=created_at,
                     )
+                    apply_persisted_job_identity(item)
                     restore_session.add(item)
                     restore_session.flush()
                     _persist_import_map(restore_session, user_id, backup_id, "job_tracks", ref, item.id)

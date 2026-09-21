@@ -938,6 +938,7 @@ def test_today_postgres_query_plans_use_owner_due_indexes(db_session):
     assert (
         "ix_job_tracks_user_id" in followup_plan
         or "ix_job_tracks_follow_up_at" in followup_plan
+        or "ix_job_tracks_user_canonical_hash" in followup_plan
     )
 
 

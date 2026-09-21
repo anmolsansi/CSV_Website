@@ -11,11 +11,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.4.0"
+BACKUP_SCHEMA_REVISION = "2.5.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
     "job_tracks",
+    "company_aliases",
     "work_items",
     "work_item_overrides",
     "lifecycle_events",
@@ -152,6 +153,21 @@ class JobTrackBackupV2(BackupRecordBase):
     last_opened_at: str | None
     created_at: str
     updated_at: str
+
+
+class CompanyAliasBackupV2(BackupRecordBase):
+    alias_key: str = Field(min_length=1, max_length=320)
+    display_name: str = Field(min_length=1, max_length=320)
+    company_key: str = Field(min_length=36, max_length=36)
+    created_at: str
+
+    @model_validator(mode="after")
+    def validate_company_key(self):
+        try:
+            UUID(self.company_key)
+        except ValueError as exc:
+            raise ValueError("company_key must be a UUID.") from exc
+        return self
 
 
 class WorkItemBackupV2(BackupRecordBase):
@@ -309,6 +325,7 @@ class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
     job_tracks: list[JobTrackBackupV2]
+    company_aliases: list[CompanyAliasBackupV2] = Field(default_factory=list)
     work_items: list[WorkItemBackupV2] = Field(default_factory=list)
     work_item_overrides: list[WorkItemOverrideBackupV2] = Field(default_factory=list)
     lifecycle_events: list[JobLifecycleEventBackupV2] = Field(default_factory=list)
@@ -325,6 +342,7 @@ class BackupCountsV2(StrictBackupModel):
     csv_rows: int = Field(ge=0)
     url_history: int = Field(ge=0)
     job_tracks: int = Field(ge=0)
+    company_aliases: int = Field(default=0, ge=0)
     work_items: int = Field(default=0, ge=0)
     work_item_overrides: int = Field(default=0, ge=0)
     lifecycle_events: int = Field(default=0, ge=0)
@@ -342,6 +360,7 @@ class BackupDocumentV2(StrictBackupModel):
     backup_id: str
     exported_at: str
     schema_revision: str = Field(min_length=1)
+    identity_rule_version: str | None = None
     sections: BackupSectionsV2
     counts: BackupCountsV2
     checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -391,11 +410,21 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
     "CsvRow": {
         **_entries(["id", "user_id"], "reconstructed", "Source database identity/ownership is replaced by backup_ref and authenticated user."),
         **_entries(["duplicate_of_id"], "reconstructed", "Cross-row identity is represented as duplicate_of_ref and remapped on restore."),
+        **_entries(
+            ["canonical_url", "canonical_url_hash"],
+            "reconstructed",
+            "Derived identity is rebuilt from the preserved original URL using the recorded identity rule version.",
+        ),
         **_entries(list(CSV_ROW_EXPORTED_COLUMNS), "exported", "Persisted CSV record data required for a lossless v2 record."),
     },
     "JobTrack": {
         **_entries(["id", "user_id"], "reconstructed", "Source database identity/ownership is replaced by backup_ref and authenticated user."),
         **_entries(["csv_row_id"], "reconstructed", "CsvRow relationship is represented as csv_row_ref and remapped on restore."),
+        **_entries(
+            ["canonical_url", "canonical_url_hash"],
+            "reconstructed",
+            "Derived identity is rebuilt from the preserved original URL using the recorded identity rule version.",
+        ),
         **_entries(
             [
                 "url", "company", "title", "ats_group", "search_bucket",
@@ -405,6 +434,18 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             ],
             "exported",
             "Persisted application-memory data required for a lossless v2 record; session_id remains a scalar Text value.",
+        ),
+    },
+    "CompanyAlias": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Destination identity/ownership is allocated from backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            ["alias_key", "display_name", "company_key", "created_at"],
+            "exported",
+            "Explicit owner-local alias grouping is durable portable user data.",
         ),
     },
     "JobLifecycleEvent": {
@@ -758,6 +799,9 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_lifecycle_section = (
         isinstance(raw_sections, Mapping) and "lifecycle_events" in raw_sections
     )
+    has_company_aliases_section = (
+        isinstance(raw_sections, Mapping) and "company_aliases" in raw_sections
+    )
     has_work_items_section = (
         isinstance(raw_sections, Mapping) and "work_items" in raw_sections
     )
@@ -786,6 +830,9 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_lifecycle_section:
         # Revision 2.0.0 predates the additive lifecycle section.
         checksum_sections.pop("lifecycle_events", None)
+    if not has_company_aliases_section:
+        # Revisions before JG-030 predate owner-local company aliases.
+        checksum_sections.pop("company_aliases", None)
     if not has_work_items_section:
         # Revisions before JG-025 predate durable manual Today actions.
         checksum_sections.pop("work_items", None)
@@ -850,6 +897,7 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "csv_rows": CsvRowBackupV2,
     "url_history": UrlHistoryBackupV2,
     "job_tracks": JobTrackBackupV2,
+    "company_aliases": CompanyAliasBackupV2,
     "work_items": WorkItemBackupV2,
     "work_item_overrides": WorkItemOverrideBackupV2,
     "lifecycle_events": JobLifecycleEventBackupV2,
