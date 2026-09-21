@@ -17,6 +17,7 @@ from app.models import (
     BackupImportMap,
     Base,
     CSV_COLUMNS,
+    CompanyAlias,
     CsvRow,
     JobLifecycleEvent,
     MaintenanceStatus,
@@ -43,6 +44,7 @@ def test_models_are_bound_to_metadata():
     assert MaintenanceStatus.__tablename__ in Base.metadata.tables
     assert WorkItem.__tablename__ in Base.metadata.tables
     assert WorkItemOverride.__tablename__ in Base.metadata.tables
+    assert CompanyAlias.__tablename__ in Base.metadata.tables
 
 
 def test_csv_columns_are_covered_by_migrations():
@@ -59,7 +61,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["008"]
+    assert script.get_heads() == ["009"]
 
 
 def test_legacy_schema_patch_module_removed():
