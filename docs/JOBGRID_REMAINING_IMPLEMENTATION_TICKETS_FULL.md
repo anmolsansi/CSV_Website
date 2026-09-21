@@ -177,7 +177,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **F1 — Today queue: the next useful action**
 
-- [ ] [JG-025 — Model manual actions and follow-up overrides](#jg-025)
+- [x] [JG-025 — Model manual actions and follow-up overrides](#jg-025)
 - [ ] [JG-026 — Build the stable daily queue and guarded mutations](#jg-026)
 - [ ] [JG-027 — Build the Today screen and accessible action controls](#jg-027)
 - [ ] [JG-028 — Prove the daily queue improves a real work session](#jg-028)
@@ -5958,7 +5958,7 @@ Create one overdue and one tomorrow follow-up, one undated manual task and one f
 <a id="jg-025"></a>
 ### JG-025 — Model manual actions and follow-up overrides
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked — schema/contract foundation merged and CI-verified; Today API/navigation remains owned by JG-026–JG-028  
 **Priority:** Feature rank 1  
 **Type:** schema/contract  
 **Execution position:** 25/64; group step 1/4
@@ -6137,13 +6137,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-025 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: owned_action_key_rejects_foreign_track
-- [ ] Required regression passes: migration_preserves_existing_followups
-- [ ] Required regression passes: done_timestamp_constraint
-- [ ] Required regression passes: backup_round_trip_retains_snooze_and_manual_action
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-025 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: owned_action_key_rejects_foreign_track
+- [x] Required regression passes: migration_preserves_existing_followups
+- [x] Required regression passes: done_timestamp_constraint
+- [x] Required regression passes: backup_round_trip_retains_snooze_and_manual_action
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -6161,12 +6161,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -6175,11 +6175,28 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-024` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #97, completed with implementation PR #98 and the roadmap-completion PR.
+
+#### Implementation evidence
+
+Implementation PR #98 passed CI run #187 and squash-merged to `main` at `481a7cd07d1d1feb2fc5aff871aac51c0f8235d4`.
+
+- Full PostgreSQL backend suite: **351 passed**, zero failures.
+- Full Chromium Playwright suite: **135 passed in 19 files**.
+- Backend compile check: passed.
+- Frontend production build: passed.
+- Alembic migrated successfully to revision `008`.
+- Required ownership, migration-preservation, done-timestamp, and Today backup round-trip regressions are included in the green backend suite.
+- `WorkItem` stores manual actions only; existing follow-ups remain derived from `JobTrack.follow_up_at`.
+- `WorkItemOverride` keeps per-user snooze state using server-generated action keys.
+- Source `track_id`, `row_id`, and `source_view_id` references detach with `SET NULL`, preserving the manual description.
+- Backup schema revision `2.4.0` adds portable `work_items` and `work_item_overrides`, remaps source references, regenerates destination action keys, and keeps older v2 checksums valid when the new sections are absent.
+- The roadmap-reserved `007_today_queue.py` was not reused because `007_maintenance_status.py` was already the real Alembic head; the additive Today migration is correctly revision `008` with `down_revision = "007"`.
+- No Today route, navigation entry, or user-facing queue was activated by JG-025; those remain JG-026–JG-028 scope.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-024 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** The JG-025 schema/contract foundation is merged with green repository CI. Durable manual actions, owner-safe action/source validation, additive migration revision `008`, portable Today backup/restore support, and focused regressions are complete. The Today API and UI remain intentionally unexposed until the later F1 tickets.
 
 ---
 
