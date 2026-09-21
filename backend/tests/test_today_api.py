@@ -1193,3 +1193,134 @@ def test_saved_view_page_two_uses_full_filtered_order_and_no_duplicate_actions(
         )
         .count()
     ) == 20
+
+
+
+def test_five_action_workflow_no_lost_changes(auth_client, db_session):
+    _reset(auth_client)
+    user = _test_user(db_session)
+
+    row = CsvRow(
+        user_id=user.id,
+        upload_batch_id=str(uuid4()),
+        url=f"https://jg028-session.example/job/{uuid4()}",
+        company_guess="Session Co",
+        title="Platform Engineer",
+        ats_group="greenhouse",
+        resume_match_score="95",
+    )
+    view = SavedView(
+        user_id=user.id,
+        name=f"JG028 session view {uuid4()}",
+        view_type="job_links",
+        filters={
+            "ats_group": "greenhouse",
+            "sort_by": "resume_match_score",
+            "sort_dir": "desc",
+        },
+    )
+    followup = JobTrack(
+        user_id=user.id,
+        url=f"https://jg028-session.example/followup/{uuid4()}",
+        company="Followup Co",
+        title="Backend Engineer",
+        status="follow_up",
+        applied_at=None,
+        follow_up_at=datetime.utcnow() - timedelta(days=1),
+    )
+    db_session.add_all([row, view, followup])
+    db_session.commit()
+
+    # Action 1: add a manual task.
+    first = auth_client.post(
+        "/crm/work-items",
+        json={"description": "Prepare interview notes", "priority": 2},
+    )
+    assert first.status_code == 201
+    first_item = first.json()
+
+    # Action 2: snooze it without deleting the durable action.
+    snooze_until = datetime.now(timezone.utc) + timedelta(days=2)
+    snoozed = auth_client.post(
+        "/crm/today/snooze",
+        json={
+            "action_key": first_item["action_key"],
+            "until": snooze_until.isoformat(),
+            "version": first_item["snooze_version"],
+        },
+    )
+    assert snoozed.status_code == 200
+
+    # Action 3: add and complete a second manual task.
+    second = auth_client.post(
+        "/crm/work-items",
+        json={"description": "Send thank-you note", "priority": 1},
+    )
+    assert second.status_code == 201
+    second_item = second.json()
+    completed = auth_client.patch(
+        f"/crm/work-items/{second_item['id']}",
+        json={"version": second_item["version"], "state": "done"},
+    )
+    assert completed.status_code == 200
+
+    # Action 4: reschedule the existing follow-up beyond today's boundary.
+    followup_key = followup_action_key(followup.id, followup.follow_up_at)
+    rescheduled_at = datetime.now(timezone.utc) + timedelta(days=2)
+    rescheduled = auth_client.post(
+        "/crm/today/follow-up",
+        json={
+            "action_key": followup_key,
+            "resolution": "reschedule",
+            "follow_up_at": rescheduled_at.isoformat(),
+        },
+        headers={"X-Operation-ID": str(uuid4())},
+    )
+    assert rescheduled.status_code == 200
+
+    # Action 5: add the first full-order match from a saved view.
+    from_view = auth_client.post(
+        "/crm/today/from-view",
+        json={
+            "view_id": view.id,
+            "limit": 1,
+            "request_id": str(uuid4()),
+        },
+    )
+    assert from_view.status_code == 200
+    assert from_view.json()["created"] == 1
+    view_item = from_view.json()["items"][0]
+
+    # A fresh queue read preserves every confirmed outcome.
+    queue_result = auth_client.get(
+        "/crm/today",
+        params={"include_snoozed": "true"},
+    )
+    assert queue_result.status_code == 200
+    visible_keys = {
+        item["action_key"] for item in queue_result.json()["items"]
+    }
+    assert first_item["action_key"] in visible_keys
+    assert view_item["action_key"] in visible_keys
+    assert second_item["action_key"] not in visible_keys
+    assert followup_key not in visible_keys
+
+    db_session.expire_all()
+    stored_first = db_session.query(WorkItem).filter_by(
+        id=first_item["id"], user_id=user.id
+    ).one()
+    stored_second = db_session.query(WorkItem).filter_by(
+        id=second_item["id"], user_id=user.id
+    ).one()
+    stored_followup = db_session.query(JobTrack).filter_by(
+        id=followup.id, user_id=user.id
+    ).one()
+    assert stored_first.state == "pending"
+    assert stored_second.state == "done"
+    assert stored_second.completed_at is not None
+    assert stored_followup.applied_at is None
+    assert stored_followup.follow_up_at is not None
+    assert db_session.query(WorkItemOverride).filter_by(
+        user_id=user.id,
+        action_key=first_item["action_key"],
+    ).count() == 1
