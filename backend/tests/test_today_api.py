@@ -756,3 +756,237 @@ def test_fixed_fixture_membership_and_count_parity(db_session):
     assert {
         item["action_key"] for item in including_snoozed["items"]
     } == fixture["expected_all"]
+
+
+
+def test_no_n_plus_one_queue_queries(db_session):
+    user = User(
+        email=f"jg028-query-count-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    for index in range(12):
+        row = CsvRow(
+            user_id=user.id,
+            upload_batch_id=f"jg028-query-{index}",
+            url=f"https://jg028-query.example/row/{uuid4()}",
+            title=f"Role {index}",
+            company_guess=f"Company {index}",
+        )
+        view = SavedView(
+            user_id=user.id,
+            name=f"JG028 query view {index}",
+            view_type="job_links",
+            filters={},
+        )
+        track = JobTrack(
+            user_id=user.id,
+            url=f"https://jg028-query.example/track/{uuid4()}",
+            company=f"Company {index}",
+            title=f"Role {index}",
+            status="saved",
+            follow_up_at=None,
+        )
+        db_session.add_all([row, view, track])
+        db_session.flush()
+        db_session.add(
+            WorkItem(
+                user_id=user.id,
+                track_id=track.id,
+                row_id=row.id,
+                source_view_id=view.id,
+                description=f"Sourced action {index}",
+                priority=1,
+                state="pending",
+                version=1,
+            )
+        )
+    db_session.commit()
+    user_id = user.id
+    db_session.expunge_all()
+
+    statements = []
+
+    def capture_statement(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    bind = db_session.get_bind()
+    event.listen(bind, "before_cursor_execute", capture_statement)
+    try:
+        result = build_today_queue(
+            db_session,
+            user_id=user_id,
+            timezone_name="UTC",
+            secret_key="jg028-query-count",
+            now=datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc),
+        )
+    finally:
+        event.remove(bind, "before_cursor_execute", capture_statement)
+
+    assert len(result["items"]) == 12
+    assert len(statements) == 3
+    source_query = statements[0].lower()
+    assert "join job_tracks" in source_query
+    assert "join csv_rows" in source_query
+    assert "join saved_views" in source_query
+
+
+def test_today_postgres_query_plans_use_owner_due_indexes(db_session):
+    if db_session.get_bind().dialect.name != "postgresql":
+        pytest.skip("PostgreSQL query-plan acceptance runs in repository CI.")
+
+    fixture = _sixty_action_fixture(db_session)
+    owner = fixture["owner"]
+    db_session.execute(text("SET LOCAL enable_seqscan = off"))
+
+    manual_plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN (COSTS OFF)
+                SELECT id
+                FROM work_items
+                WHERE user_id = :user_id
+                  AND state = 'pending'
+                  AND (due_at IS NULL OR due_at < :day_end)
+                """
+            ),
+            {
+                "user_id": owner.id,
+                "day_end": datetime(2026, 9, 22, 0, 0, tzinfo=timezone.utc),
+            },
+        )
+    )
+    assert "ix_work_items_user_due" in manual_plan
+
+    followup_plan = "\n".join(
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                EXPLAIN (COSTS OFF)
+                SELECT id
+                FROM job_tracks
+                WHERE user_id = :user_id
+                  AND follow_up_at IS NOT NULL
+                  AND follow_up_at < :day_end
+                  AND status NOT IN ('rejected', 'offer', 'not_applying')
+                """
+            ),
+            {
+                "user_id": owner.id,
+                "day_end": datetime(2026, 9, 22, 0, 0),
+            },
+        )
+    )
+    assert (
+        "ix_job_tracks_user_id" in followup_plan
+        or "ix_job_tracks_follow_up_at" in followup_plan
+    )
+
+
+def test_today_source_detachment_preserves_manual_action(db_session):
+    user = User(
+        email=f"jg028-detach-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    view = SavedView(
+        user=user,
+        name=f"Detach source {uuid4()}",
+        view_type="job_links",
+        filters={},
+    )
+    db_session.add_all([user, view])
+    db_session.flush()
+    item = WorkItem(
+        user_id=user.id,
+        source_view_id=view.id,
+        description="Keep this action after source deletion",
+        due_at=None,
+        priority=1,
+        state="pending",
+        version=1,
+    )
+    db_session.add(item)
+    db_session.commit()
+    user_id = user.id
+    item_id = item.id
+
+    db_session.delete(view)
+    db_session.commit()
+    db_session.expire_all()
+
+    stored = db_session.query(WorkItem).filter_by(id=item_id).one()
+    assert stored.source_view_id is None
+    assert stored.description == "Keep this action after source deletion"
+
+    queue_result = build_today_queue(
+        db_session,
+        user_id=user_id,
+        timezone_name="UTC",
+        secret_key="jg028-detach",
+        now=datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc),
+    )
+    assert [row["description"] for row in queue_result["items"]] == [
+        "Keep this action after source deletion"
+    ]
+    assert queue_result["items"][0]["origin_label"] == "Manual"
+
+
+def test_today_timezone_change_recomputes_membership(db_session):
+    user = User(
+        email=f"jg028-timezone-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add(user)
+    db_session.flush()
+    item = WorkItem(
+        user_id=user.id,
+        description="Cross-midnight action",
+        due_at=datetime(2026, 9, 22, 0, 30, tzinfo=timezone.utc),
+        priority=1,
+        state="pending",
+        version=1,
+    )
+    db_session.add(item)
+    db_session.commit()
+
+    reference = datetime(2026, 9, 21, 23, 30, tzinfo=timezone.utc)
+    utc_queue = build_today_queue(
+        db_session,
+        user_id=user.id,
+        timezone_name="UTC",
+        secret_key="jg028-timezone",
+        now=reference,
+    )
+    assert utc_queue["items"] == []
+
+    user.timezone = "Asia/Kolkata"
+    db_session.commit()
+    india_queue = build_today_queue(
+        db_session,
+        user_id=user.id,
+        timezone_name=user.timezone,
+        secret_key="jg028-timezone",
+        now=reference,
+    )
+    assert [row["action_key"] for row in india_queue["items"]] == [
+        manual_action_key(item.id)
+    ]
+    assert india_queue["counts"] == {
+        "total": 1,
+        "overdue": 0,
+        "due_today": 1,
+        "undated": 0,
+    }
