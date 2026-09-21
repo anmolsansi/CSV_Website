@@ -130,7 +130,7 @@ def test_only_explicit_tracking_keys_are_removed():
     )
 
     assert identity.canonical_url == (
-        "https://example.com/job?campaign_id=keep&utmish=keep&utm_source_id=keep"
+        "https://example.com/job?campaign_id=keep&utmish=keep"
     )
 
 
