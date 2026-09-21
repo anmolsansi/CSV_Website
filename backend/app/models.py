@@ -95,6 +95,9 @@ class User(Base):
     job_tracks = relationship(
         "JobTrack", back_populates="user", cascade="all, delete-orphan"
     )
+    company_aliases = relationship(
+        "CompanyAlias", back_populates="user", cascade="all, delete-orphan"
+    )
     url_history = relationship(
         "UrlHistory", back_populates="user", cascade="all, delete-orphan"
     )
@@ -179,6 +182,8 @@ class CsvRow(Base):
     title_match_status = Column(Text)
     title_reject_reason = Column(Text)
     url = Column(Text, nullable=False)
+    canonical_url = Column(Text, nullable=True)
+    canonical_url_hash = Column(String(64), nullable=True)
     display_domain = Column(Text)
     company_guess = Column(Text)
     job_id_guess = Column(Text)
@@ -257,6 +262,10 @@ class CsvRow(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_url"),
+        Index(
+            "ix_csv_rows_user_canonical_hash",
+            "user_id", "canonical_url_hash",
+        ),
     )
 
 
@@ -268,6 +277,8 @@ class JobTrack(Base):
                      nullable=False, index=True)
     csv_row_id = Column(Integer, ForeignKey("csv_rows.id"), nullable=True, index=True)
     url = Column(Text, nullable=False)
+    canonical_url = Column(Text, nullable=True)
+    canonical_url_hash = Column(String(64), nullable=True)
     company = Column(Text)
     title = Column(Text)
     ats_group = Column(Text)
@@ -290,6 +301,38 @@ class JobTrack(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
+        Index(
+            "ix_job_tracks_user_canonical_hash",
+            "user_id", "canonical_url_hash",
+        ),
+    )
+
+
+class CompanyAlias(Base):
+    __tablename__ = "company_aliases"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alias_key = Column(String(320), nullable=False)
+    display_name = Column(String(320), nullable=False)
+    company_key = Column(String(36), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="company_aliases")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alias_key", name="uq_company_alias_user_alias_key"
+        ),
+        Index(
+            "ix_company_aliases_user_company_key",
+            "user_id", "company_key",
+        ),
     )
 
 
