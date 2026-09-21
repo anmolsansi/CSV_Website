@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { api } from './api/client'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Today from './pages/Today'
 import Applications from './pages/Applications'
 import Analytics from './pages/Analytics'
 import Pipeline from './pages/Pipeline'
@@ -80,6 +81,7 @@ function AuthenticatedApp({ user, onLogout }) {
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
+                <Route path="/today" element={<Today />} />
                 <Route path="/applications" element={<Applications />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/pipeline" element={<Pipeline />} />
