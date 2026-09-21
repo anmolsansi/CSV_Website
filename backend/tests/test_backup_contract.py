@@ -1,6 +1,6 @@
 import copy
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -661,8 +661,8 @@ def test_backup_round_trip_retains_snooze_and_manual_action(db_session):
     db_session.add(item)
     db_session.flush()
 
-    manual_snooze = datetime(2026, 9, 24, 15, 0, 0)
-    followup_snooze = datetime(2026, 9, 26, 9, 30, 0)
+    manual_snooze = datetime(2026, 9, 24, 15, 0, 0, tzinfo=timezone.utc)
+    followup_snooze = datetime(2026, 9, 26, 9, 30, 0, tzinfo=timezone.utc)
     db_session.add_all(
         [
             WorkItemOverride(
