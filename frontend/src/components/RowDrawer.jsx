@@ -56,6 +56,8 @@ export default function RowDrawer({ row, onClose }) {
   const [summary, setSummary] = useState(null)
   const [checklist, setChecklist] = useState(null)
   const [loadingIntel, setLoadingIntel] = useState(false)
+  const [todayPending, setTodayPending] = useState(false)
+  const [todayMessage, setTodayMessage] = useState('')
 
   useEffect(() => {
     if (!row?.id) return
@@ -70,6 +72,27 @@ export default function RowDrawer({ row, onClose }) {
       setChecklist(check?.checklist || null)
     }).finally(() => setLoadingIntel(false))
   }, [row?.id])
+
+  const addToToday = async () => {
+    if (todayPending || !row?.id) return
+    const data = row.data || {}
+    const company = data.company_guess || 'job'
+    const role = data.title || 'role'
+    setTodayPending(true)
+    setTodayMessage('')
+    try {
+      await api.createWorkItem({
+        description: `Review ${company} — ${role}`,
+        row_id: row.id,
+        priority: 1,
+      })
+      setTodayMessage('Added to Today.')
+    } catch {
+      setTodayMessage('Could not add this job to Today. Please retry.')
+    } finally {
+      setTodayPending(false)
+    }
+  }
 
   if (!row) return null
   const data = row.data || {}
@@ -117,6 +140,10 @@ export default function RowDrawer({ row, onClose }) {
 
         <div className="drawer-section">
           <h4>Application Status</h4>
+          <button className="btn btn-green btn-sm" disabled={todayPending} onClick={addToToday}>
+            {todayPending ? 'Adding...' : 'Add to Today'}
+          </button>
+          {todayMessage && <p role="status" style={{ margin: '8px 0' }}>{todayMessage}</p>}
           {row.app_status && <span className={`app-status-badge ${row.app_status}`}>{row.app_status}</span>}
           {row.applied_at && <div className="drawer-field"><span className="drawer-field-label">Applied</span><span className="drawer-field-value">{formatDate(row.applied_at)}</span></div>}
           {row.follow_up_at && <div className="drawer-field"><span className="drawer-field-label">Follow-up</span><span className="drawer-field-value">{formatDate(row.follow_up_at)}</span></div>}

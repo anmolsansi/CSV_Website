@@ -11,6 +11,8 @@ export default function SavedViews() {
   const [filterJson, setFilterJson] = useState('{}')
   const [error, setError] = useState('')
   const [editingId, setEditingId] = useState(null)
+  const [todayPreview, setTodayPreview] = useState(null)
+  const [todayBusy, setTodayBusy] = useState(false)
   const navigate = useNavigate()
 
   const refresh = () => {
@@ -78,6 +80,38 @@ export default function SavedViews() {
     refresh()
   }
 
+  const previewAddToToday = async (view) => {
+    setError('')
+    if (view.view_type !== 'job_links') {
+      setError('Add to Today is available for Job Links saved views only.')
+      return
+    }
+    setTodayBusy(true)
+    try {
+      const result = await api.getRows({ ...(view.filters || {}), page: 1, pageSize: 1 })
+      const total = Number(result.total_count ?? (result.rows || []).length)
+      setTodayPreview({ view, total, limit: Math.min(total, 20), result: null })
+    } catch (err) {
+      setError('Could not count this saved view. Please retry.')
+    } finally {
+      setTodayBusy(false)
+    }
+  }
+
+  const confirmAddToToday = async () => {
+    if (!todayPreview || todayPreview.limit < 1 || todayBusy) return
+    setTodayBusy(true)
+    setError('')
+    try {
+      const result = await api.addViewToToday(todayPreview.view.id, todayPreview.limit)
+      setTodayPreview((prev) => ({ ...prev, result }))
+    } catch (err) {
+      setError('Could not add this saved view to Today. Please retry.')
+    } finally {
+      setTodayBusy(false)
+    }
+  }
+
   const createDefaults = async () => {
     const result = await api.createDefaultViews()
     alert(`Created ${result.created} default views`)
@@ -93,6 +127,34 @@ export default function SavedViews() {
         </div>
         <button className="btn btn-blue" onClick={createDefaults}>Create default views</button>
       </div>
+
+      {todayPreview && (
+        <div className="saved-view-form" data-testid="today-view-preview" role="region" aria-label="Add saved view to Today preview">
+          <div className="table-controls">
+            <div>
+              <strong>Origin: {todayPreview.view.name}</strong>
+              <p style={{ margin: '6px 0 0' }}>
+                Exact matches: {todayPreview.total}. {todayPreview.limit > 0
+                  ? `Add the first ${todayPreview.limit} action${todayPreview.limit === 1 ? '' : 's'} to Today (maximum 20).`
+                  : 'There are no matching rows to add.'}
+              </p>
+              {todayPreview.result && (
+                <p role="status" style={{ margin: '6px 0 0' }}>
+                  Created {todayPreview.result.created}, already pending {todayPreview.result.existing}, completed {todayPreview.result.completed}.
+                </p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!todayPreview.result && (
+                <button className="btn btn-green" disabled={todayBusy || todayPreview.limit < 1} onClick={confirmAddToToday}>
+                  {todayBusy ? 'Adding...' : `Add ${todayPreview.limit} to Today`}
+                </button>
+              )}
+              <button className="btn btn-grey" disabled={todayBusy} onClick={() => setTodayPreview(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="saved-view-form">
         <div className="table-controls">
@@ -135,6 +197,7 @@ export default function SavedViews() {
                   <td>{new Date(v.created_at).toLocaleDateString()}</td>
                   <td>
                     <button className="btn btn-blue" style={{ padding: '4px 8px', fontSize: 12, marginRight: 4 }} onClick={() => applyView(v)}>Apply</button>
+                    {v.view_type === 'job_links' && <button className="btn btn-green" style={{ padding: '4px 8px', fontSize: 12, marginRight: 4 }} disabled={todayBusy} onClick={() => previewAddToToday(v)}>Add to Today</button>}
                     <button className="btn btn-grey" style={{ padding: '4px 8px', fontSize: 12, marginRight: 4 }} onClick={() => editView(v)}>Edit</button>
                     <button className="btn btn-grey" style={{ padding: '4px 8px', fontSize: 12, marginRight: 4 }} onClick={() => duplicateView(v.id)}>Duplicate</button>
                     <button className="btn btn-grey" style={{ padding: '4px 8px', fontSize: 12, marginRight: 4 }} onClick={() => togglePin(v.id)}>{v.is_pinned ? 'Unpin' : 'Pin'}</button>
