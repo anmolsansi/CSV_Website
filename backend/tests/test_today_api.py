@@ -901,13 +901,15 @@ def test_today_source_detachment_preserves_manual_action(db_session):
         email=f"jg028-detach-{uuid4()}@example.test",
         timezone="UTC",
     )
+    db_session.add(user)
+    db_session.flush()
     view = SavedView(
-        user=user,
+        user_id=user.id,
         name=f"Detach source {uuid4()}",
         view_type="job_links",
         filters={},
     )
-    db_session.add_all([user, view])
+    db_session.add(view)
     db_session.flush()
     item = WorkItem(
         user_id=user.id,
