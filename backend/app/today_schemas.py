@@ -51,9 +51,11 @@ class WorkItemCreate(StrictTodayModel):
     row_id: int | None = Field(default=None, gt=0)
     source_view_id: int | None = Field(default=None, gt=0)
 
-    @field_validator("description")
+    @field_validator("description", mode="before")
     @classmethod
-    def trim_description(cls, value: str) -> str:
+    def trim_description(cls, value):
+        if not isinstance(value, str):
+            return value
         trimmed = value.strip()
         if not trimmed:
             raise ValueError("description must contain at least one non-whitespace character.")
