@@ -2130,3 +2130,69 @@ JG-024 keeps three states distinct:
 The repository-connected JG-024 implementation does not have staging OAuth/SMTP/deployment credentials or sending authorization. Those external gates remain BLOCKED until an authorized operator executes the runbook. This is not represented as staging-accepted or released.
 
 Rollback of JG-024 itself is code/documentation-only: revert these script and documentation changes. Do not downgrade the database or delete restored/user history to roll back acceptance tooling.
+
+
+## JG-029 conservative job identity
+
+JG-029 adds pure identity helpers in `backend/app/services/job_identity.py`. It does not add database columns, aliases, routes, badges, or automatic merges. Original `CsvRow.url` and `JobTrack.url` values remain authoritative and unchanged.
+
+### Canonical URL contract
+
+The active rule version is `ccr-identity-1`.
+
+`canonicalize_job_url(url)`:
+
+- accepts only nonempty HTTP(S) URLs up to 2048 characters;
+- rejects embedded credentials, missing hosts, invalid ports, and surrounding whitespace;
+- lowercases scheme and host while applying Python's IDNA host conversion consistently;
+- removes only default ports 80/443;
+- removes fragments;
+- removes query keys beginning with `utm_` plus `gclid` and `fbclid`;
+- preserves path casing, trailing-slash distinction, every other query key, duplicate values, and their order; and
+- returns the unchanged original URL, derived canonical URL, SHA-256 canonical hash, and rule version.
+
+Examples:
+
+| Original | Canonical |
+|---|---|
+| `HTTPS://Example.COM:443/Jobs/42?req=abc&utm_source=x#apply` | `https://example.com/Jobs/42?req=abc` |
+| `https://example.com/Jobs/Role/?id=2&id=1` | `https://example.com/Jobs/Role/?id=2&id=1` |
+| `https://bücher.example:443/Jobs` | `https://xn--bcher-kva.example/Jobs` |
+
+A different requisition value, path case, trailing slash, or order of nontracking duplicate query values remains a different canonical identity.
+
+### Company identity and confidence
+
+`normalize_company_alias_key` trims, collapses whitespace, and case-folds a company name. It derives only an owner-local lookup key and does not fuzzy-merge companies.
+
+`classify_identity_match` returns a confidence and reason:
+
+- `exact / same_original_url` when original URLs are identical;
+- `canonical / same_canonical_url` when conservative canonical hashes match;
+- `possible / company_title_only` when normalized company and title text match but job URLs remain distinct; or
+- `None / no_identity_match` when there is no safe identity signal.
+
+A `possible` result is a warning signal only. It must never silently merge, hide, or block a legitimate job/application.
+
+### Changing canonical rules
+
+Do not expand the tracking-key list or add provider-specific equivalence rules ad hoc. A rule change requires:
+
+1. a new explicit rule version;
+2. fixtures proving the provider-specific equivalence and non-equivalence cases;
+3. a dry-run collision report against existing derived identities;
+4. review of collisions without changing original URLs, application status, notes, or history; and
+5. a separate backfill/rebuild plan before activation.
+
+JG-030 owns persistence and backfill. JG-029 itself is rollback-safe by removing callers of the pure helper. No data migration or destructive recovery action is needed.
+
+### Verification
+
+Focused verification:
+
+```sh
+cd backend
+python -m pytest tests/test_job_identity.py -q
+```
+
+Repository CI remains the full PostgreSQL/backend/frontend/Chromium integration gate.
