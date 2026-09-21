@@ -6203,7 +6203,7 @@ Implementation PR #98 passed CI run #187 and squash-merged to `main` at `481a7cd
 <a id="jg-026"></a>
 ### JG-026 — Build the stable daily queue and guarded mutations
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked — backend Today API/service merged and CI-verified; Today UI/navigation remains owned by JG-027–JG-028  
 **Priority:** Feature rank 1  
 **Type:** API/service  
 **Execution position:** 26/64; group step 2/4
@@ -6385,14 +6385,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-026 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: queue_local_midnight_and_dst
-- [ ] Required regression passes: pagination_no_duplicates_for_fixed_fixture
-- [ ] Required regression passes: stale_version_returns409_without_write
-- [ ] Required regression passes: followup_completion_does_not_increment_applied
-- [ ] Required regression passes: foreign_action_returns404
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-026 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: queue_local_midnight_and_dst
+- [x] Required regression passes: pagination_no_duplicates_for_fixed_fixture
+- [x] Required regression passes: stale_version_returns409_without_write
+- [x] Required regression passes: followup_completion_does_not_increment_applied
+- [x] Required regression passes: foreign_action_returns404
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -6410,12 +6410,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -6424,11 +6424,27 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-025` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #100, completed with implementation PR #101 and the roadmap-completion PR.
+
+#### Implementation evidence
+
+Implementation PR #101 passed CI run #193 and squash-merged to `main` at `fa158b2094148e1a097ff11e2c78d65758ab8921`.
+
+- Full PostgreSQL backend suite: **359 passed**, zero failures.
+- Full Chromium Playwright suite: **passed**.
+- Backend compile check: passed.
+- Frontend production build: passed.
+- No new schema migration was added; Alembic revision `008` remains the Today storage foundation from JG-025.
+- Queue membership uses the authenticated account timezone, DST-safe local-day bounds, a fixed per-cursor `as_of`, deterministic ordering, signed pagination cursors and counts derived from the same visible membership.
+- Manual work-item and snooze writes use optimistic versions; stale writes return `409` without overwriting newer state.
+- Follow-up clear/reschedule uses the existing lifecycle writer, records `followup_changed`, and does not create `first_applied` or infer an application.
+- Foreign action IDs remain owner-scoped and return not-found behavior.
+- Saved-view entry reuses the R2 row filter/sort contract, caps creation at 20, deduplicates pending origins and does not reopen completed actions.
+- No Today frontend route or navigation item was activated; that remains JG-027 scope.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-025 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** The JG-026 backend Today queue and guarded-mutation contract is merged with green repository CI. Stable account-timezone queue membership, pagination, optimistic concurrency, snooze handling, lifecycle-safe follow-up resolution, owner isolation and bounded saved-view creation are complete. The Today page and navigation remain intentionally unexposed until JG-027.
 
 ---
 
