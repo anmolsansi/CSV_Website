@@ -2974,9 +2974,9 @@ Complete document recovery uses the authenticated ZIP routes:
 - `GET /crm/backup/export/bundle`
 - `POST /crm/backup/import/bundle?mode=merge_missing|verify_only`
 
-A bundle contains exactly `backup.json`, `manifest.json`, and one `documents/{backup_ref}` member for every ready document. The manifest binds the bundle to `backup.json` with SHA-256 and repeats each ready document's portable reference, member path, byte size, and SHA-256. Private `storage_key` values never leave the server.
+A bundle contains exactly `backup.json`, `manifest.json`, and one `documents/{document_uuid}` member for every ready document. The manifest binds the bundle to `backup.json` with SHA-256 and repeats each ready document's portable reference, member path, byte size, and SHA-256. Private `storage_key` values never leave the server.
 
-Import rejects absolute/traversal paths, backslash paths, duplicate members, directories, symlinks, encrypted members, unexpected members, missing ready-document members, manifest/metadata mismatches, checksum mismatches, more than 20,002 members, and more than 150 MiB expanded content. Every document is streamed into isolated private staging and verified before restore writes begin. Ready destination rows use new private storage keys. Existing matching family/version records are reused only when metadata and bytes match exactly. Application links are rebuilt through portable backup references. Failed document publication removes newly published files, and staged files are reclaimed in all outcomes.
+Import rejects absolute/traversal paths, backslash paths, duplicate members, directories, symlinks, encrypted members, unexpected members, missing ready-document members, manifest/metadata mismatches, checksum mismatches, more than 20,002 members, and more than 150 MiB expanded content. Every document is streamed into isolated private staging and verified before restore writes begin. Ready destination rows use new private storage keys. Existing matching family/version records are reused only when metadata and bytes match exactly. Application links are rebuilt through portable backup references. Core backup metadata, document rows, and application links commit in one database transaction. Failed publication or commit rolls that logical restore back, removes newly published files, and reclaims staged files.
 
 The account's ordinary JSON backup remains useful for metadata-only portability. Use the ZIP bundle whenever recoverable resume or cover-letter bytes are required.
 
@@ -3052,7 +3052,7 @@ The capture transaction locks the owner row before exact-URL lookup/creation. Th
 
 ### Identity warnings and lifecycle semantics
 
-Capture derives the same conservative canonical identity fields used by F2. Applied `JobTrack` records can be returned as `exact`, `canonical`, or `possible` warnings. Warnings do not merge records and do not mark anything applied.
+Capture derives the same conservative canonical identity fields used by F2. Owned application `JobTrack` records can be returned as `exact`, `canonical`, or `possible` warnings. Warnings do not merge records and do not mark anything applied.
 
 Creating a capture writes only `CsvRow` plus its idempotency receipt. It keeps `clicked=false`, `clicked_at=NULL`, creates no `JobTrack`, and emits no visit/application lifecycle event. Dashboard visit metrics therefore remain unchanged until the user explicitly opens the row through the existing visit path.
 
