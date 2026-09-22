@@ -1373,7 +1373,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         occurrence_key = (
             remap_reminder_occurrence_key(record.occurrence_key, track_id=track_id)
             if track_id is not None
-            else f"restored:{record.backup_ref}"
+            else record.occurrence_key
         )
         restored_status = (
             "cancelled"
