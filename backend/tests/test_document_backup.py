@@ -270,3 +270,42 @@ def test_failed_restore_reclaims_staging(
     assert response.json()["detail"]["code"] == "bundle_document_checksum_mismatch"
     staging = private_document_storage / "staging"
     assert not staging.exists() or not list(staging.glob("*.part"))
+
+
+
+def test_failed_publish_rolls_back_core_restore(
+    auth_client, db_session, monkeypatch
+):
+    source = _source_fixture(auth_client, db_session)
+    exported = auth_client.get("/crm/backup/export/bundle")
+    assert exported.status_code == 200
+
+    destination_email = _login_destination(auth_client)
+
+    def fail_publish(*_args, **_kwargs):
+        raise OSError("synthetic disk failure")
+
+    monkeypatch.setattr(
+        backup_service,
+        "_publish_bundle_staged",
+        fail_publish,
+    )
+    response = auth_client.post(
+        "/crm/backup/import/bundle",
+        files={"file": ("backup.zip", exported.content, "application/zip")},
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"]["code"] == "restore_failed"
+
+    destination = db_session.query(User).filter_by(email=destination_email).one()
+    assert db_session.query(CsvRow).filter(
+        CsvRow.user_id == destination.id,
+        CsvRow.url.in_(source["urls"]),
+    ).count() == 0
+    assert db_session.query(JobTrack).filter(
+        JobTrack.user_id == destination.id,
+        JobTrack.url.in_(source["urls"]),
+    ).count() == 0
+    assert db_session.query(DocumentVersion).filter_by(
+        user_id=destination.id,
+    ).count() == 0
