@@ -16,6 +16,144 @@ JG-002 activates complete v2 export and adds stable restore identity persistence
 
 JG-025 extends backup v2 with durable manual Today work items and snooze overrides. Portable backups remap WorkItem track/row/view references and regenerate action keys from destination IDs so source database IDs never become restore authority.
 
+
+JG-041 extends backup schema revision **2.9.0** with immutable document metadata,
+SHA-256 checksums, and application/document references. The ordinary JSON backup
+sets `document_bytes_included=false`. It does **not** contain the private file bytes,
+so importing this JSON intentionally skips document metadata/links instead of creating
+a misleading `ready` document row without its bytes. JG-044 owns the future ZIP
+bundle and byte-level restore proof.
+
+## Private document versions (JG-041–JG-043)
+
+Document versions are private account-owned application artifacts. The implementation
+uses three persistence records in `backend/app/models.py`:
+
+- `DocumentVersion` is an immutable resume or cover-letter version with a UUID,
+  family UUID, version number, original display filename, verified media type, byte
+  count, SHA-256 digest, private storage key, and state.
+- `ApplicationDocument` records whether an exact immutable version was **Used** or
+  kept as a **Reference** for one application. A partial unique index permits at most
+  one Used version per application and document kind.
+- `DocumentCreateReceipt` keeps upload idempotency outcomes for replay protection.
+  These receipts are operational state and are excluded from portable backup data.
+
+Alembic revision `013` adds these tables after existing revision `012`. The roadmap's
+older proposed `011_documents.py` filename was not reused because revisions 011 and
+012 already exist in the applied reminder chain. Never rewrite an applied migration to
+make the filename match an old ticket draft.
+
+### Private storage configuration
+
+Set `DOCUMENT_STORAGE_DIR` to an **absolute, private, durable filesystem path** that
+is outside the repository, frontend public/build directories, and any web server static
+mount. Production configuration rejects the system temporary directory because it is
+not durable storage.
+
+The document feature returns a safe unavailable state when this path is absent or
+unsafe. Other JobGrid features can continue running. The API never exposes storage
+keys or private filesystem paths.
+
+Example local setup:
+
+```sh
+export DOCUMENT_STORAGE_DIR=/absolute/private/path/jobgrid-documents
+```
+
+The service creates private `staging/`, `documents/`, and `trash/` children.
+Do not mount any of them as static web content.
+
+### Upload and immutable version flow
+
+`POST /crm/documents` accepts multipart form data with `kind`, `label`, optional
+`document_family_id`, and `file`. Every request requires a UUID
+`Idempotency-Key`.
+
+The storage flow is:
+
+1. Stream the upload in bounded chunks and stop after **10 MiB**.
+2. Write to a random staging name. User-supplied filenames are display metadata only.
+3. Verify the actual bytes as a genuine PDF signature or strict UTF-8 text.
+4. Calculate SHA-256 while streaming.
+5. Lock the owner row, enforce the **100 MiB account quota**, allocate the next family
+   version, and persist a pending metadata/receipt record.
+6. Atomically rename the staged file into a random owner-scoped private key, fsync the
+   file/directory, then mark the row and receipt ready.
+7. A replay with the same key and identical payload returns the original version.
+   Reusing the key for different content returns a conflict.
+
+A ready document version is never overwritten in place. Upload another family version
+instead. The ORM also rejects changes to content-identity fields below the route layer.
+
+### Application links and corrections
+
+The authenticated document routes are:
+
+- `GET /crm/documents` for the owner-only library and quota summary.
+- `GET /crm/documents/{uuid}/download` for an authenticated attachment response.
+  Responses use `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`.
+- `GET /crm/documents/{uuid}/applications` for a bounded linked-application view
+  with at most 50 records per page.
+- `GET /crm/tracks/{id}/documents` for the exact versions attached to one application.
+- `POST /crm/tracks/{id}/documents` to attach a ready owner-owned version as Used
+  or Reference.
+- `DELETE /crm/tracks/{id}/documents/{uuid}` to detach only. It never deletes bytes.
+- `DELETE /crm/documents/{uuid}` to delete an unreferenced library version. Referenced
+  versions return `409 document_is_referenced` with bounded application context.
+
+Replacing an existing Used version is deliberately different from adding a Reference.
+The caller must name the current Used version as `replace_document_version_id`. A
+successful correction records an audit fact with the old and new immutable version IDs.
+The earlier version stays in the private library unless it is later detached everywhere
+and explicitly deleted.
+
+### Recovery and reconciliation
+
+`backend/app/services/documents.py` owns bounded reconciliation. After the one-hour
+grace window it can:
+
+- delete stale staging parts;
+- promote a pending row to ready only when the final file exists and its size/hash match;
+- mark an unrecoverable pending row failed;
+- count ready rows whose bytes are missing without silently substituting another version;
+- remove old untracked orphan files; and
+- purge quarantined deleted bytes after the retention window.
+
+Document logs expose action/outcome/counters only. They do not log private paths,
+filenames, hashes, recipients, or document contents.
+
+### Document UI
+
+`frontend/src/pages/Documents.jsx` provides the authenticated library, upload
+progress/cancellation, quota feedback, immutable family version creation, downloads,
+reference-aware deletion, and linked-application context. Missing bytes are shown as a
+recovery state and cannot be downloaded.
+
+`frontend/src/components/ApplicationDocuments.jsx` is embedded in the expanded
+Applications detail. It records the exact Used or Reference version and requires an
+explicit confirmation before correcting a Used version. Links back to
+`/documents?track_id=<id>` and `/applications?track_id=<id>` preserve the application
+context.
+
+### Verification
+
+Focused checks:
+
+```sh
+cd backend
+pytest tests/test_document_models.py tests/test_document_storage.py tests/test_document_api.py -q
+pytest tests/test_backup_contract.py tests/test_schema_parity.py -q
+
+cd ../frontend
+npm run build
+npx playwright test tests/document-versions.spec.ts --project=chromium
+```
+
+PostgreSQL is required for the migration-parity and serialized quota-concurrency
+acceptance tests. SQLite is not treated as proof of those PostgreSQL locking/index
+semantics.
+
+
 JG-003 activates the backend restore contract:
 
 - `POST /crm/backup/import?mode=verify_only` validates and preflights without writing.
@@ -2780,3 +2918,85 @@ Repository CI remains the complete integration gate. The controlled real-email p
 ### F4 rollback
 
 Rollback begins by disabling both reminder gates. Do not delete queued reminders and do not reset `sent` or `unknown` to `pending`. Application/frontend code can be rolled back while revision `012` remains in place. If the read-state column itself must be removed, downgrade only from `012` to `011` after confirming no deployed code reads or writes `read_at`. Preserve revision `011` reminder preference/delivery history and all manual follow-up dates.
+
+
+## F5 document versions and private application attachments
+
+JG-041 through JG-043 implement immutable resume and cover-letter versions without changing JobGrid's application-versus-visit semantics.
+
+### Persistence and migration
+
+Alembic revision `013_documents` is additive after revision `012`. It creates:
+
+- `document_versions`, owner-scoped immutable metadata for resume and cover-letter versions. UUID document IDs and family IDs are opaque. `storage_key` is private server state and is never returned by the API.
+- `application_documents`, owner-scoped links between a durable `JobTrack` and one exact document version. Links are either `used` or `reference`.
+- `document_create_receipts`, bounded upload idempotency receipts.
+
+The database enforces one `used` version per owner/application/document kind with a partial unique index. A second `used` version is accepted only through the deliberate correction path, which identifies the exact currently recorded document. Existing immutable bytes/metadata are never overwritten to create a new version.
+
+### Private storage and limits
+
+`DOCUMENT_STORAGE_DIR` must be an absolute private path outside the repository and served frontend directories. Production rejects temporary-directory storage. If the path is absent or unavailable, document upload/download operations return a safe storage-unavailable error instead of falling back to public or ephemeral storage.
+
+Uploads are streamed in bounded chunks with a 10 MiB per-file limit. The server checks actual bytes: PDFs must begin with the PDF signature and plain text must decode as UTF-8. Display filenames are sanitized for presentation only and are never used as filesystem paths. Final storage keys are random server-generated values.
+
+The account document quota is 100 MiB across `pending` and `ready` versions. Quota reservation and family version allocation happen while holding the owner row lock so concurrent uploads cannot both reserve the same remaining capacity.
+
+The publish sequence is staging file -> SHA-256 -> fsync -> database pending row/receipt -> atomic rename -> fsync -> ready state. Reconciliation handles stale staging files, old pending rows, orphaned private files, missing ready bytes, and retained trash with bounded work. Logs use safe operation IDs/outcome codes and do not log private paths or document contents.
+
+### Authenticated document API
+
+All document routes are authenticated and owner-scoped:
+
+- `GET /crm/documents` lists metadata, version numbers, availability, and quota.
+- `POST /crm/documents` uploads one immutable version. `Idempotency-Key` is required. Retrying the same request returns the existing version rather than consuming quota or allocating another version.
+- `GET /crm/documents/{document_id}/download` returns only the exact owned version, with attachment disposition, `private, no-store`, and `nosniff`. A foreign UUID returns 404.
+- `GET /crm/documents/{document_id}/applications` returns a bounded owner-scoped list of referencing applications and their existing outcome status.
+- `DELETE /crm/documents/{document_id}` returns 409 while any application references that version. An unreferenced delete moves bytes into private retention storage and marks the metadata deleted.
+- `GET /crm/tracks/{track_id}/documents`, `POST /crm/tracks/{track_id}/documents`, and `DELETE /crm/tracks/{track_id}/documents/{document_id}` manage per-application attachments. Detach removes only the application link, not the library version.
+
+A ready metadata row whose bytes are missing reports a recovery-required state. JobGrid never substitutes the latest family version for a missing historical version.
+
+### Document library and application UI
+
+The **Documents** navigation tab opens the private library. It shows kind, label, immutable version, uploaded time, size, shortened checksum, availability, and quota. Upload has progress, cancellation, validation feedback, and a **New version** flow that creates another version in the same family.
+
+Applications expose an **Application documents** region inside the expanded History & evidence row. The picker distinguishes **Used** from **Reference**. Correcting an already-recorded Used version requires an explicit confirmation checkbox and sends the exact previous version ID to the server. The older version remains immutable in the library.
+
+Delete conflicts explain detach versus delete and link to the applications still referencing that version. Opening the document library from an application carries `track_id`, and the library provides a return link to the same application.
+
+### Backup boundary before JG-044
+
+Portable JSON backup schema revision `2.9.0` includes document metadata, SHA-256 checksums, and application/document references and explicitly sets `document_bytes_included=false`. Private storage keys and file bytes are excluded. JSON restore therefore does not publish ready document rows or links from metadata alone and emits the safe `document_bytes_excluded` warning when document sections are present.
+
+JG-044 owns the byte-bundle backup/restore format and end-to-end hash restoration. Until that ticket passes, JSON metadata coverage must not be described as a complete document-file backup.
+
+### Verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest \
+  tests/test_document_models.py \
+  tests/test_document_storage.py \
+  tests/test_document_api.py \
+  tests/test_backup_contract.py \
+  tests/test_schema_parity.py -q
+python -m compileall app
+python -m alembic upgrade head
+```
+
+Focused frontend checks:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/document-versions.spec.ts --project=chromium
+```
+
+Repository CI remains the full PostgreSQL migration, backend, production-build, and Chromium integration gate.
+
+### Rollback
+
+Disable new uploads/link creation first. Preserve document metadata and private bytes. Do not rewrite historical application links to a newer file. Older application code may ignore the additive revision 013 tables. If the schema itself must be downgraded, do so only after dependent code is disabled and document data has been preserved. Never use public or ephemeral storage as a rollback fallback.

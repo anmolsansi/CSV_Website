@@ -20,11 +20,13 @@ from .evidence_schemas import (
 from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.8.0"
+BACKUP_SCHEMA_REVISION = "2.9.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
     "job_tracks",
+    "document_versions",
+    "application_documents",
     "application_evidence",
     "evidence_recovery",
     "company_aliases",
@@ -166,6 +168,27 @@ class JobTrackBackupV2(BackupRecordBase):
     last_opened_at: str | None
     created_at: str
     updated_at: str
+
+
+class DocumentVersionBackupV2(BackupRecordBase):
+    document_family_id: str = Field(min_length=36, max_length=36)
+    kind: Literal["resume", "cover_letter"]
+    label: str = Field(min_length=1, max_length=150)
+    original_filename: str = Field(min_length=1, max_length=255)
+    media_type: Literal["application/pdf", "text/plain"]
+    size_bytes: int = Field(ge=0, le=10 * 1024 * 1024)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    version_number: int = Field(gt=0)
+    created_at: str
+    state: Literal["pending", "ready", "failed", "deleted"]
+
+
+class ApplicationDocumentBackupV2(BackupRecordBase):
+    track_ref: str
+    document_ref: str
+    kind: Literal["resume", "cover_letter"]
+    usage: Literal["used", "reference"]
+    attached_at: str
 
 
 class ApplicationEvidenceBackupV2(BackupRecordBase):
@@ -467,6 +490,8 @@ class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
     job_tracks: list[JobTrackBackupV2]
+    document_versions: list[DocumentVersionBackupV2] = Field(default_factory=list)
+    application_documents: list[ApplicationDocumentBackupV2] = Field(default_factory=list)
     application_evidence: list[ApplicationEvidenceBackupV2] = Field(default_factory=list)
     evidence_recovery: list[EvidenceRecoveryBackupV2] = Field(default_factory=list)
     company_aliases: list[CompanyAliasBackupV2] = Field(default_factory=list)
@@ -488,6 +513,8 @@ class BackupCountsV2(StrictBackupModel):
     csv_rows: int = Field(ge=0)
     url_history: int = Field(ge=0)
     job_tracks: int = Field(ge=0)
+    document_versions: int = Field(default=0, ge=0)
+    application_documents: int = Field(default=0, ge=0)
     application_evidence: int = Field(default=0, ge=0)
     evidence_recovery: int = Field(default=0, ge=0)
     company_aliases: int = Field(default=0, ge=0)
@@ -511,6 +538,7 @@ class BackupDocumentV2(StrictBackupModel):
     exported_at: str
     schema_revision: str = Field(min_length=1)
     identity_rule_version: str | None = None
+    document_bytes_included: Literal[False] = False
     sections: BackupSectionsV2
     counts: BackupCountsV2
     checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -586,6 +614,49 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             "Persisted application-memory data required for a lossless v2 record; session_id remains a scalar Text value.",
         ),
     },
+    "DocumentVersion": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Document database identity/ownership is represented by backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            [
+                "document_family_id", "kind", "label", "original_filename",
+                "media_type", "size_bytes", "sha256", "version_number",
+                "created_at", "state",
+            ],
+            "exported",
+            "Immutable document metadata and checksum are portable; file bytes remain excluded until JG-044.",
+        ),
+        **_entries(
+            ["storage_key"],
+            "excluded",
+            "Private storage keys are environment-local implementation details and never portable user data.",
+        ),
+    },
+    "ApplicationDocument": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Association identity/ownership is represented by backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            ["track_id", "document_version_id"],
+            "reconstructed",
+            "Application and document identities are represented as portable references.",
+        ),
+        **_entries(
+            ["kind", "usage", "attached_at"],
+            "exported",
+            "Used/reference attachment semantics are portable metadata.",
+        ),
+    },
+    "DocumentCreateReceipt": _entries(
+        ["id", "user_id", "request_key", "payload_hash", "document_id", "status", "created_at"],
+        "excluded",
+        "Short-lived upload idempotency receipts are operational replay state, not portable user content.",
+    ),
     "ApplicationEvidence": {
         **_entries(
             ["id", "user_id"],
@@ -913,6 +984,16 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
         _require_target(refs, "sessions", track.session_ref, source_section="job_tracks", source_ref=track.backup_ref)
 
 
+    for link in document.sections.application_documents:
+        _require_target(
+            refs, "job_tracks", link.track_ref,
+            source_section="application_documents", source_ref=link.backup_ref,
+        )
+        _require_target(
+            refs, "document_versions", link.document_ref,
+            source_section="application_documents", source_ref=link.backup_ref,
+        )
+
     for evidence in document.sections.application_evidence:
         _require_target(
             refs, "job_tracks", evidence.track_ref,
@@ -1088,6 +1169,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_application_evidence_section = (
         isinstance(raw_sections, Mapping) and "application_evidence" in raw_sections
     )
+    has_document_versions_section = (
+        isinstance(raw_sections, Mapping) and "document_versions" in raw_sections
+    )
+    has_application_documents_section = (
+        isinstance(raw_sections, Mapping) and "application_documents" in raw_sections
+    )
     has_evidence_recovery_section = (
         isinstance(raw_sections, Mapping) and "evidence_recovery" in raw_sections
     )
@@ -1131,6 +1218,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_application_evidence_section:
         # Revisions before JG-033 predate application evidence.
         checksum_sections.pop("application_evidence", None)
+    if not has_document_versions_section:
+        # Revisions before JG-041 predate document metadata.
+        checksum_sections.pop("document_versions", None)
+    if not has_application_documents_section:
+        # Revisions before JG-041 predate application/document associations.
+        checksum_sections.pop("application_documents", None)
     if not has_evidence_recovery_section:
         # Revisions before JG-033 predate the explicit deleted-body recovery section.
         checksum_sections.pop("evidence_recovery", None)
@@ -1242,6 +1335,8 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "csv_rows": CsvRowBackupV2,
     "url_history": UrlHistoryBackupV2,
     "job_tracks": JobTrackBackupV2,
+    "document_versions": DocumentVersionBackupV2,
+    "application_documents": ApplicationDocumentBackupV2,
     "application_evidence": ApplicationEvidenceBackupV2,
     "evidence_recovery": EvidenceRecoveryBackupV2,
     "company_aliases": CompanyAliasBackupV2,

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
@@ -13,6 +14,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     JSON,
+    event,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -79,6 +83,10 @@ REMINDER_CHANNEL_VALUES = ["in_app", "email"]
 REMINDER_DELIVERY_STATUS_VALUES = [
     "pending", "sending", "sent", "failed", "unknown", "cancelled",
 ]
+DOCUMENT_KIND_VALUES = ["resume", "cover_letter"]
+DOCUMENT_MEDIA_TYPE_VALUES = ["application/pdf", "text/plain"]
+DOCUMENT_STATE_VALUES = ["pending", "ready", "failed", "deleted"]
+DOCUMENT_USAGE_VALUES = ["used", "reference"]
 
 
 class User(Base):
@@ -139,6 +147,15 @@ class User(Base):
     )
     reminder_deliveries = relationship(
         "ReminderDelivery", back_populates="user", cascade="all, delete-orphan"
+    )
+    document_versions = relationship(
+        "DocumentVersion", back_populates="user", cascade="all, delete-orphan"
+    )
+    application_documents = relationship(
+        "ApplicationDocument", back_populates="user", cascade="all, delete-orphan"
+    )
+    document_create_receipts = relationship(
+        "DocumentCreateReceipt", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -321,6 +338,9 @@ class JobTrack(Base):
     reminder_deliveries = relationship(
         "ReminderDelivery", back_populates="track"
     )
+    application_documents = relationship(
+        "ApplicationDocument", back_populates="track", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
@@ -329,6 +349,186 @@ class JobTrack(Base):
             "user_id", "canonical_url_hash",
         ),
     )
+
+
+class DocumentVersion(Base):
+    """Immutable, owner-scoped resume or cover-letter file version."""
+
+    __tablename__ = "document_versions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    document_family_id = Column(String(36), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)
+    label = Column(String(150), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    media_type = Column(String(32), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    storage_key = Column(String(255), nullable=False, unique=True)
+    version_number = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    state = Column(String(16), default="pending", nullable=False, index=True)
+
+    user = relationship("User", back_populates="document_versions")
+    application_documents = relationship(
+        "ApplicationDocument", back_populates="document_version"
+    )
+    create_receipts = relationship(
+        "DocumentCreateReceipt", back_populates="document_version"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "document_family_id", "version_number",
+            name="uq_document_version_user_family_version",
+        ),
+        CheckConstraint(
+            "kind IN ('resume', 'cover_letter')",
+            name="ck_document_versions_kind",
+        ),
+        CheckConstraint(
+            "media_type IN ('application/pdf', 'text/plain')",
+            name="ck_document_versions_media_type",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'ready', 'failed', 'deleted')",
+            name="ck_document_versions_state",
+        ),
+        CheckConstraint(
+            "size_bytes >= 0 AND size_bytes <= 10485760",
+            name="ck_document_versions_size",
+        ),
+        CheckConstraint(
+            "version_number > 0",
+            name="ck_document_versions_version_number",
+        ),
+        Index(
+            "ix_document_versions_user_kind_created",
+            "user_id", "kind", "created_at",
+        ),
+        Index(
+            "ix_document_versions_user_family",
+            "user_id", "document_family_id",
+        ),
+    )
+
+
+class ApplicationDocument(Base):
+    """A user's assertion that an immutable document was used or referenced."""
+
+    __tablename__ = "application_documents"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    document_version_id = Column(
+        String(36), ForeignKey("document_versions.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    kind = Column(String(20), nullable=False)
+    usage = Column(String(16), nullable=False)
+    attached_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="application_documents")
+    track = relationship("JobTrack", back_populates="application_documents")
+    document_version = relationship(
+        "DocumentVersion", back_populates="application_documents"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "track_id", "document_version_id",
+            name="uq_application_document_track_version",
+        ),
+        CheckConstraint(
+            "kind IN ('resume', 'cover_letter')",
+            name="ck_application_documents_kind",
+        ),
+        CheckConstraint(
+            "usage IN ('used', 'reference')",
+            name="ck_application_documents_usage",
+        ),
+        Index(
+            "uq_application_document_used_kind",
+            "user_id", "track_id", "kind",
+            unique=True,
+            sqlite_where=text("usage = 'used'"),
+            postgresql_where=text("usage = 'used'"),
+        ),
+    )
+
+
+class DocumentCreateReceipt(Base):
+    """Thirty-day idempotency record for document upload requests."""
+
+    __tablename__ = "document_create_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    document_id = Column(
+        String(36), ForeignKey("document_versions.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    status = Column(String(16), nullable=False, default="ready")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", back_populates="document_create_receipts")
+    document_version = relationship(
+        "DocumentVersion", back_populates="create_receipts"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "request_key",
+            name="uq_document_create_receipt_user_key",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'ready', 'failed')",
+            name="ck_document_create_receipts_status",
+        ),
+    )
+
+
+_DOCUMENT_IMMUTABLE_FIELDS = (
+    "user_id",
+    "document_family_id",
+    "kind",
+    "original_filename",
+    "media_type",
+    "size_bytes",
+    "sha256",
+    "storage_key",
+    "version_number",
+)
+
+
+@event.listens_for(DocumentVersion, "before_update")
+def _prevent_document_content_overwrite(mapper, connection, target) -> None:
+    state = inspect(target)
+    changed = [
+        field
+        for field in _DOCUMENT_IMMUTABLE_FIELDS
+        if state.attrs[field].history.has_changes()
+    ]
+    if changed:
+        raise ValueError(
+            "Document version content is immutable; upload a new version instead."
+        )
 
 
 class ReminderPreference(Base):

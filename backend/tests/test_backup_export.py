@@ -15,12 +15,14 @@ from app.backup_schemas import (
     validate_backup_v2,
 )
 from app.models import (
+    ApplicationDocument,
     ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
     CompanyAlias,
     CsvRow,
+    DocumentVersion,
     JobTrack,
     JobLifecycleEvent,
     ReminderDelivery,
@@ -108,6 +110,32 @@ def _seed_complete_fixture(db, email):
     )
     db.add_all([track, view, history, preference, goal, batch, alias])
     db.flush()
+
+    document = DocumentVersion(
+        id=str(uuid4()),
+        user_id=user.id,
+        document_family_id=str(uuid4()),
+        kind="resume",
+        label="Backup fixture resume",
+        original_filename="resume.pdf",
+        media_type="application/pdf",
+        size_bytes=128,
+        sha256="b" * 64,
+        storage_key=f"documents/{user.id}/{uuid4().hex}.bin",
+        version_number=1,
+        state="ready",
+    )
+    db.add(document)
+    db.flush()
+    db.add(
+        ApplicationDocument(
+            user_id=user.id,
+            track_id=track.id,
+            document_version_id=document.id,
+            kind="resume",
+            usage="used",
+        )
+    )
 
     reminder_preference = ReminderPreference(
         user_id=user.id,
@@ -251,6 +279,8 @@ def test_export_reference_graph(auth_client, db_session):
     row_records = document.sections.csv_rows
     assert row_records[1].duplicate_of_ref in refs["csv_rows"]
     assert document.sections.job_tracks[0].csv_row_ref in refs["csv_rows"]
+    assert document.sections.application_documents[0].track_ref in refs["job_tracks"]
+    assert document.sections.application_documents[0].document_ref in refs["document_versions"]
     assert document.sections.application_evidence[0].track_ref in refs["job_tracks"]
     assert document.sections.evidence_recovery[0].evidence_ref in refs["application_evidence"]
     assert document.sections.work_items[0].track_ref in refs["job_tracks"]

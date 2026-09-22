@@ -50,6 +50,7 @@ jobs:
       FRONTEND_URL: http://localhost:5173
       ENVIRONMENT: test
       RUN_MAINTENANCE_JOBS: "false"
+      DOCUMENT_STORAGE_DIR: /tmp/jobgrid-private-documents
     defaults:
       run:
         working-directory: frontend
@@ -250,6 +251,7 @@ jobs:
       FRONTEND_URL: http://localhost:5173
       ENVIRONMENT: test
       RUN_MAINTENANCE_JOBS: "false"
+      DOCUMENT_STORAGE_DIR: /tmp/jobgrid-private-documents
     defaults:
       run:
         working-directory: backend

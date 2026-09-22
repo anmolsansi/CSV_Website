@@ -9,6 +9,7 @@ from app.backup_schemas import (
     BACKUP_SCHEMA_REVISION,
     BACKUP_V2_SECTIONS,
     CSV_ROW_TEXT_FIELDS,
+    ApplicationDocumentBackupV2,
     ApplicationEvidenceBackupV2,
     ApplyPilotBatchBackupV2,
     AuditEventBackupV2,
@@ -16,6 +17,7 @@ from app.backup_schemas import (
     ColumnPreferenceBackupV2,
     CompanyAliasBackupV2,
     CsvRowBackupV2,
+    DocumentVersionBackupV2,
     EvidenceRecoveryBackupV2,
     JobTrackBackupV2,
     JobLifecycleEventBackupV2,
@@ -37,12 +39,15 @@ from app.backup_schemas import (
 )
 from app.models import (
     CSV_COLUMNS,
+    ApplicationDocument,
     ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
     CompanyAlias,
     CsvRow,
+    DocumentCreateReceipt,
+    DocumentVersion,
     EvidenceCreateReceipt,
     JobTrack,
     JobLifecycleEvent,
@@ -133,6 +138,9 @@ def test_assert_complete_model_field_inventory():
         "UrlHistory": UrlHistory,
         "CsvRow": CsvRow,
         "JobTrack": JobTrack,
+        "DocumentVersion": DocumentVersion,
+        "ApplicationDocument": ApplicationDocument,
+        "DocumentCreateReceipt": DocumentCreateReceipt,
         "ApplicationEvidence": ApplicationEvidence,
         "EvidenceCreateReceipt": EvidenceCreateReceipt,
         "CompanyAlias": CompanyAlias,
@@ -169,6 +177,8 @@ def test_frozen_section_record_allowlists_are_strict():
         "csv_rows": CsvRowBackupV2,
         "url_history": UrlHistoryBackupV2,
         "job_tracks": JobTrackBackupV2,
+        "document_versions": DocumentVersionBackupV2,
+        "application_documents": ApplicationDocumentBackupV2,
         "application_evidence": ApplicationEvidenceBackupV2,
         "evidence_recovery": EvidenceRecoveryBackupV2,
         "company_aliases": CompanyAliasBackupV2,
@@ -1157,3 +1167,73 @@ def test_restore_does_not_replay_sent_or_pending_email(db_session):
         ReminderDelivery.channel == "email",
         ReminderDelivery.status == "sending",
     ).count() == 0
+
+
+def test_document_backup_metadata_marks_byte_coverage_incomplete(db_session):
+    source = User(email=f"doc-backup-source-{uuid4()}@example.com")
+    destination = User(email=f"doc-backup-destination-{uuid4()}@example.com")
+    db_session.add_all([source, destination])
+    db_session.flush()
+
+    track = JobTrack(
+        user_id=source.id,
+        url=f"https://example.com/doc-backup/{uuid4()}",
+        company="Document Backup Co",
+        title="Engineer",
+        status="applied",
+    )
+    db_session.add(track)
+    db_session.flush()
+
+    version = DocumentVersion(
+        id=str(uuid4()),
+        user_id=source.id,
+        document_family_id=str(uuid4()),
+        kind="resume",
+        label="Backend resume",
+        original_filename="resume.pdf",
+        media_type="application/pdf",
+        size_bytes=321,
+        sha256="a" * 64,
+        storage_key=f"documents/{source.id}/{uuid4().hex}.bin",
+        version_number=1,
+        state="ready",
+    )
+    db_session.add(version)
+    db_session.flush()
+    db_session.add(
+        ApplicationDocument(
+            user_id=source.id,
+            track_id=track.id,
+            document_version_id=version.id,
+            kind="resume",
+            usage="used",
+        )
+    )
+    db_session.commit()
+
+    exported = export_backup_v2(db_session, source.id)
+    assert exported["schema_revision"] == "2.9.0"
+    assert exported["document_bytes_included"] is False
+    assert exported["counts"]["document_versions"] == 1
+    assert exported["counts"]["application_documents"] == 1
+    assert exported["sections"]["document_versions"][0]["sha256"] == "a" * 64
+    assert "storage_key" not in exported["sections"]["document_versions"][0]
+    assert exported["sections"]["application_documents"][0]["usage"] == "used"
+
+    validated = validate_backup_v2(exported)
+    restored = restore_backup_v2(
+        db_session, destination.id, validated, mode="merge_missing"
+    )
+    assert restored["counts"]["document_versions"]["skipped"] == 1
+    assert restored["counts"]["application_documents"]["skipped"] == 1
+    assert any(
+        warning.get("code") == "document_bytes_excluded"
+        for warning in restored["warnings"]
+    )
+    assert (
+        db_session.query(DocumentVersion)
+        .filter(DocumentVersion.user_id == destination.id)
+        .count()
+        == 0
+    )

@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Today from './pages/Today'
 import Applications from './pages/Applications'
+import Documents from './pages/Documents'
 import Analytics from './pages/Analytics'
 import Pipeline from './pages/Pipeline'
 import Sessions from './pages/Sessions'
@@ -83,6 +84,7 @@ function AuthenticatedApp({ user, onLogout }) {
                 <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
                 <Route path="/today" element={<Today />} />
                 <Route path="/applications" element={<Applications />} />
+                <Route path="/documents" element={<Documents />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/pipeline" element={<Pipeline />} />
                 <Route path="/sessions" element={<Sessions />} />
