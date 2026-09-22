@@ -25,7 +25,7 @@ def _track(db_session, user, *, due=None):
     return track
 
 
-def _delivery(db_session, user, track, *, status="pending", channel="in_app", version=1):
+def _delivery(db_session, user, track, *, status="pending", channel="in_app", version=1, local_date=date(2026, 9, 22)):
     sent_at = datetime(2026, 9, 22, 9, 0, tzinfo=timezone.utc) if status == "sent" else None
     item = ReminderDelivery(
         user_id=user.id,
@@ -33,7 +33,7 @@ def _delivery(db_session, user, track, *, status="pending", channel="in_app", ve
         occurrence_key=reminder_occurrence_key(
             track_id=track.id,
             due_at=track.follow_up_at.replace(tzinfo=timezone.utc),
-            notification_local_date=date(2026, 9, 22),
+            notification_local_date=local_date,
         ),
         channel=channel,
         status=status,
@@ -94,10 +94,8 @@ def test_opt_out_cancels_unsent_only(auth_client, db_session):
         track,
         status="sent",
         version=2,
+        local_date=date(2026, 9, 23),
     )
-    # Unique occurrence/channel requires a distinct due-derived occurrence.
-    sent.occurrence_key = sent.occurrence_key.replace("date:2026-09-22", "date:2026-09-23")
-    db_session.commit()
 
     current = auth_client.get("/crm/reminders/preferences").json()
     response = auth_client.patch(
@@ -264,12 +262,14 @@ def test_reminder_history_cursor_and_safe_fields(auth_client, db_session):
     user = _user(db_session)
     track = _track(db_session, user)
     for index in range(3):
-        delivery = _delivery(db_session, user, track, status="pending", version=1)
-        delivery.occurrence_key = delivery.occurrence_key.replace(
-            "date:2026-09-22",
-            f"date:2026-09-{22 + index:02d}",
+        _delivery(
+            db_session,
+            user,
+            track,
+            status="pending",
+            version=1,
+            local_date=date(2026, 9, 22 + index),
         )
-        db_session.commit()
 
     first = auth_client.get("/crm/reminders?limit=2")
     assert first.status_code == 200
