@@ -802,78 +802,6 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
         else:
             counts["evidence_recovery"]["created"] += 1
 
-    for record in document.sections.application_evidence:
-        mapped = _mapped_target(
-            session, user_id, backup_id,
-            "application_evidence", record.backup_ref, ApplicationEvidence,
-        )
-        if mapped is not None:
-            refs["application_evidence"][record.backup_ref] = mapped.id
-            counts["application_evidence"]["skipped"] += 1
-            continue
-
-        track_id = _target_id(
-            refs, "job_tracks", record.track_ref,
-            "application_evidence", record.backup_ref,
-        )
-        item = ApplicationEvidence(
-            user_id=user_id,
-            track_id=track_id,
-            kind=record.kind,
-            body=record.body,
-            occurred_at=_parse_backup_datetime(record.occurred_at),
-            created_at=_parse_backup_datetime(record.created_at),
-            updated_at=_parse_backup_datetime(record.updated_at),
-            version=record.version,
-            is_deleted=record.is_deleted,
-        )
-        session.add(item)
-        session.flush()
-        refs["application_evidence"][record.backup_ref] = item.id
-        _persist_import_map(
-            session, user_id, backup_id,
-            "application_evidence", record.backup_ref, item.id,
-        )
-        counts["application_evidence"]["created"] += 1
-
-    for record in document.sections.evidence_recovery:
-        mapped = _mapped_target(
-            session, user_id, backup_id,
-            "evidence_recovery", record.backup_ref, ApplicationEvidence,
-        )
-        if mapped is not None:
-            refs["evidence_recovery"][record.backup_ref] = mapped.id
-            counts["evidence_recovery"]["skipped"] += 1
-            continue
-
-        evidence_id = _target_id(
-            refs, "application_evidence", record.evidence_ref,
-            "evidence_recovery", record.backup_ref,
-        )
-        evidence = session.query(ApplicationEvidence).filter(
-            ApplicationEvidence.id == evidence_id,
-            ApplicationEvidence.user_id == user_id,
-        ).one()
-        purge_at = _parse_backup_datetime(record.body_purge_at)
-        if purge_at is not None and purge_at > datetime.utcnow():
-            if not evidence.is_deleted:
-                raise BackupContractError(
-                    "conflicting_reference_graph",
-                    409,
-                    "Recovery body may target only soft-deleted evidence.",
-                    section="evidence_recovery",
-                    backup_ref=record.backup_ref,
-                )
-            evidence.body = record.body
-            counts["evidence_recovery"]["created"] += 1
-        else:
-            counts["evidence_recovery"]["skipped"] += 1
-        refs["evidence_recovery"][record.backup_ref] = evidence.id
-        _persist_import_map(
-            session, user_id, backup_id,
-            "evidence_recovery", record.backup_ref, evidence.id,
-        )
-
     for record in document.sections.company_aliases:
         mapping = _lookup_import_map(
             session, user_id, backup_id, "company_aliases", record.backup_ref
@@ -1276,6 +1204,78 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         counts["job_tracks"]["created"] += 1
         if record.session_ref is not None:
             warnings.append(_restore_warning("job_track_session_ref_detached", section="job_tracks", backup_ref=record.backup_ref))
+
+    for record in document.sections.application_evidence:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "application_evidence", record.backup_ref, ApplicationEvidence,
+        )
+        if mapped is not None:
+            refs["application_evidence"][record.backup_ref] = mapped.id
+            counts["application_evidence"]["skipped"] += 1
+            continue
+
+        track_id = _target_id(
+            refs, "job_tracks", record.track_ref,
+            "application_evidence", record.backup_ref,
+        )
+        item = ApplicationEvidence(
+            user_id=user_id,
+            track_id=track_id,
+            kind=record.kind,
+            body=record.body,
+            occurred_at=_parse_backup_datetime(record.occurred_at),
+            created_at=_parse_backup_datetime(record.created_at),
+            updated_at=_parse_backup_datetime(record.updated_at),
+            version=record.version,
+            is_deleted=record.is_deleted,
+        )
+        session.add(item)
+        session.flush()
+        refs["application_evidence"][record.backup_ref] = item.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "application_evidence", record.backup_ref, item.id,
+        )
+        counts["application_evidence"]["created"] += 1
+
+    for record in document.sections.evidence_recovery:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "evidence_recovery", record.backup_ref, ApplicationEvidence,
+        )
+        if mapped is not None:
+            refs["evidence_recovery"][record.backup_ref] = mapped.id
+            counts["evidence_recovery"]["skipped"] += 1
+            continue
+
+        evidence_id = _target_id(
+            refs, "application_evidence", record.evidence_ref,
+            "evidence_recovery", record.backup_ref,
+        )
+        evidence = session.query(ApplicationEvidence).filter(
+            ApplicationEvidence.id == evidence_id,
+            ApplicationEvidence.user_id == user_id,
+        ).one()
+        purge_at = _parse_backup_datetime(record.body_purge_at)
+        if purge_at is not None and purge_at > datetime.utcnow():
+            if not evidence.is_deleted:
+                raise BackupContractError(
+                    "conflicting_reference_graph",
+                    409,
+                    "Recovery body may target only soft-deleted evidence.",
+                    section="evidence_recovery",
+                    backup_ref=record.backup_ref,
+                )
+            evidence.body = record.body
+            counts["evidence_recovery"]["created"] += 1
+        else:
+            counts["evidence_recovery"]["skipped"] += 1
+        refs["evidence_recovery"][record.backup_ref] = evidence.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "evidence_recovery", record.backup_ref, evidence.id,
+        )
 
     for record in document.sections.company_aliases:
         mapped = _mapped_target(
