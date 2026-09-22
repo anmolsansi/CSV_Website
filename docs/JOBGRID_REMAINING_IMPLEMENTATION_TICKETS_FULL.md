@@ -205,9 +205,9 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **F5 — Resume and cover-letter versions per application**
 
-- [ ] [JG-041 — Model immutable document versions and private storage boundaries](#jg-041)
-- [ ] [JG-042 — Implement bounded upload download and storage reconciliation](#jg-042)
-- [ ] [JG-043 — Add document library and per-application version selection](#jg-043)
+- [x] [JG-041 — Model immutable document versions and private storage boundaries](#jg-041)
+- [x] [JG-042 — Implement bounded upload download and storage reconciliation](#jg-042)
+- [x] [JG-043 — Add document library and per-application version selection](#jg-043)
 - [ ] [JG-044 — Extend recoverable backups to document bytes](#jg-044)
 
 **F6 — One-click capture for jobs outside CSVs**
