@@ -8820,7 +8820,7 @@ Using a fake clock and test mail transport, create a due follow-up and opt in. R
 <a id="jg-037"></a>
 ### JG-037 — Model reminder preferences and delivery state machine
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #132  
 **Priority:** Feature rank 4  
 **Type:** schema/contract  
 **Execution position:** 37/64; group step 1/4
@@ -8893,7 +8893,7 @@ Existing follow-up dates and email settings need durable scheduling and visible 
 | Path | Snapshot state | Intended role |
 |---|---|---|
 | `backend/app/models.py` | EXISTS | ORM fields, relationships and database constraints |
-| `backend/alembic/versions/010_reminders.py` | PROPOSED NEW | Additive schema revision; verify actual revision/head first |
+| `backend/alembic/versions/011_reminders.py` | IMPLEMENTED | Additive reminder preference/delivery schema revision after existing `010_application_evidence` |
 | `backend/app/reminder_schemas.py` | PROPOSED NEW | Strict request/record validation contract |
 | `backend/tests/test_reminder_models.py` | PROPOSED NEW | Regression fixture and assertions for this ticket |
 | `backend/app/backup_schemas.py` | PROPOSED NEW | Strict request/record validation contract |
@@ -8994,13 +8994,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-037 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: duplicate_occurrence_unique_constraint
-- [ ] Required regression passes: illegal_state_transition_rejected
-- [ ] Required regression passes: default_opt_out
-- [ ] Required regression passes: restore_does_not_replay_sent_or_pending_email
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-037 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: duplicate_occurrence_unique_constraint
+- [x] Required regression passes: illegal_state_transition_rejected
+- [x] Required regression passes: default_opt_out
+- [x] Required regression passes: restore_does_not_replay_sent_or_pending_email
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -9018,12 +9018,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -9032,11 +9032,23 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-036` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #129. Implementation PR: #132.
+
+#### Completion evidence
+
+- JG-036 was merged, validated and marked complete before JG-037 implementation began.
+- GitHub issue #129 and PR #132 track this ticket. PR #132 merged to `main` as `82031410c40d702ed7f32977f9f134c9da720dad`.
+- Final CI run #282 on head `74953e3984575821be27767227277b74765c1a56` passed every repository gate: backend compile, frontend production build, **425 PostgreSQL-backed backend tests**, and **147 Chromium E2E tests**.
+- The actual migration head was `010_application_evidence`, so the additive reminder migration is `011_reminders.py`; schema-parity coverage proves a single `011` head and a PostgreSQL `011 → 010 → 011` downgrade/upgrade cycle.
+- Reminder preferences are owner-scoped and opt-out by default. The persisted contract validates channel, HH:MM local/quiet times, IANA account timezone availability, and equal quiet start/end as no quiet period.
+- Reminder deliveries enforce one owner/occurrence/channel row, legal state transitions, positive versions, nonnegative attempts, and immutable accepted `sent_at`.
+- Backup revision `2.7.0` includes reminder preferences and delivery history while excluding worker leases. Restore disables reminder preferences, keeps pending deliveries paused with leases/retry timing cleared, quarantines restored in-flight `sending` records as `unknown`, preserves sent/failed/unknown/cancelled history, and remaps occurrence keys to destination track IDs.
+- The required regressions pass: `duplicate_occurrence_unique_constraint`, `illegal_state_transition_rejected`, `default_opt_out`, and `restore_does_not_replay_sent_or_pending_email`.
+- No reminder worker, SMTP send, arbitrary recipient API, or reminder UI was activated by this schema/contract ticket; those remain owned by later F4 tickets.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-036 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** The JG-037 reminder persistence/state-machine contract is merged and repository validation is green. JG-038 may now begin from migration head `011`. External staging delivery is not claimed by this completion marker.
 
 ---
 
