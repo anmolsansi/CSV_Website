@@ -10,12 +10,23 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
+from .evidence_schemas import (
+    MAX_CORRECTION_REASON_CHARS,
+    MAX_EVIDENCE_TEXT_CHARS,
+    MAX_EVIDENCE_URL_CHARS,
+    EvidenceContractError,
+    validate_confirmation_url,
+    validate_correction_reason,
+)
+
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.5.0"
+BACKUP_SCHEMA_REVISION = "2.6.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
     "job_tracks",
+    "application_evidence",
+    "evidence_recovery",
     "company_aliases",
     "work_items",
     "work_item_overrides",
@@ -155,6 +166,46 @@ class JobTrackBackupV2(BackupRecordBase):
     updated_at: str
 
 
+class ApplicationEvidenceBackupV2(BackupRecordBase):
+    track_ref: str
+    kind: Literal["confirmation_url", "confirmation_text", "note"]
+    body: str | None
+    occurred_at: str | None
+    created_at: str
+    updated_at: str
+    version: int = Field(gt=0)
+    is_deleted: bool
+
+    @model_validator(mode="after")
+    def validate_evidence_body(self):
+        if self.is_deleted:
+            if self.body is not None:
+                raise ValueError(
+                    "Deleted evidence body belongs only in evidence_recovery."
+                )
+            return self
+        if self.body is None or not self.body.strip():
+            raise ValueError("Active evidence requires a non-empty body.")
+        if self.kind == "confirmation_url":
+            if len(self.body) > MAX_EVIDENCE_URL_CHARS:
+                raise ValueError("Confirmation URL exceeds 2048 characters.")
+            try:
+                validate_confirmation_url(self.body)
+            except EvidenceContractError as exc:
+                raise ValueError(exc.message) from exc
+        elif len(self.body) > MAX_EVIDENCE_TEXT_CHARS:
+            raise ValueError("Evidence text exceeds 20,000 characters.")
+        return self
+
+
+class EvidenceRecoveryBackupV2(BackupRecordBase):
+    """Explicit recovery-only copy of a recently soft-deleted private body."""
+
+    evidence_ref: str
+    body: str = Field(min_length=1, max_length=MAX_EVIDENCE_TEXT_CHARS)
+    body_purge_at: str
+
+
 class CompanyAliasBackupV2(BackupRecordBase):
     alias_key: str = Field(min_length=1, max_length=320)
     display_name: str = Field(min_length=1, max_length=320)
@@ -225,12 +276,16 @@ class JobLifecycleEventBackupV2(BackupRecordBase):
     job_url: str = Field(min_length=1)
     csv_row_ref: str | None
     job_track_ref: str | None
+    evidence_ref: str | None = None
     kind: Literal[
         "first_visited",
         "first_applied",
         "status_changed",
         "applied_date_corrected",
         "followup_changed",
+        "evidence_added",
+        "evidence_edited",
+        "evidence_deleted",
     ]
     occurred_at: str
     recorded_at: str
@@ -242,12 +297,57 @@ class JobLifecycleEventBackupV2(BackupRecordBase):
         allowlists = {
             "first_visited": frozenset(),
             "first_applied": frozenset(),
-            "status_changed": frozenset({"from", "to"}),
-            "applied_date_corrected": frozenset({"from", "to"}),
+            "status_changed": frozenset({"from", "to", "correction_of", "reason"}),
+            "applied_date_corrected": frozenset({"from", "to", "reason"}),
             "followup_changed": frozenset({"from", "to"}),
+            # evidence_id is represented by portable evidence_ref in backups.
+            "evidence_added": frozenset({"evidence_kind"}),
+            "evidence_edited": frozenset({"evidence_kind", "version"}),
+            "evidence_deleted": frozenset({"evidence_kind", "version"}),
         }
         if set(self.payload) - allowlists[self.kind]:
             raise ValueError("Lifecycle payload contains fields not allowed for its kind.")
+
+        is_evidence = self.kind in {
+            "evidence_added", "evidence_edited", "evidence_deleted"
+        }
+        if is_evidence:
+            if self.evidence_ref is None:
+                raise ValueError("Evidence lifecycle events require evidence_ref.")
+            if self.payload.get("evidence_kind") not in {
+                "confirmation_url", "confirmation_text", "note"
+            }:
+                raise ValueError("Evidence lifecycle event has invalid evidence_kind.")
+            if self.kind in {"evidence_edited", "evidence_deleted"}:
+                version = self.payload.get("version")
+                if (
+                    not isinstance(version, int)
+                    or isinstance(version, bool)
+                    or version < 1
+                ):
+                    raise ValueError("Edited/deleted evidence event requires version.")
+        elif self.evidence_ref is not None:
+            raise ValueError("Only evidence lifecycle events may carry evidence_ref.")
+
+        reason = self.payload.get("reason")
+        if reason is not None:
+            try:
+                validate_correction_reason(reason)
+            except EvidenceContractError as exc:
+                raise ValueError(exc.message) from exc
+        correction_of = self.payload.get("correction_of")
+        if self.kind == "status_changed" and (
+            correction_of is not None or reason is not None
+        ):
+            if (
+                not isinstance(correction_of, int)
+                or isinstance(correction_of, bool)
+                or correction_of <= 0
+                or reason is None
+            ):
+                raise ValueError(
+                    "Status correction requires correction_of and bounded reason."
+                )
         return self
 
 
@@ -325,6 +425,8 @@ class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
     job_tracks: list[JobTrackBackupV2]
+    application_evidence: list[ApplicationEvidenceBackupV2] = Field(default_factory=list)
+    evidence_recovery: list[EvidenceRecoveryBackupV2] = Field(default_factory=list)
     company_aliases: list[CompanyAliasBackupV2] = Field(default_factory=list)
     work_items: list[WorkItemBackupV2] = Field(default_factory=list)
     work_item_overrides: list[WorkItemOverrideBackupV2] = Field(default_factory=list)
@@ -342,6 +444,8 @@ class BackupCountsV2(StrictBackupModel):
     csv_rows: int = Field(ge=0)
     url_history: int = Field(ge=0)
     job_tracks: int = Field(ge=0)
+    application_evidence: int = Field(default=0, ge=0)
+    evidence_recovery: int = Field(default=0, ge=0)
     company_aliases: int = Field(default=0, ge=0)
     work_items: int = Field(default=0, ge=0)
     work_item_overrides: int = Field(default=0, ge=0)
@@ -436,6 +540,28 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             "Persisted application-memory data required for a lossless v2 record; session_id remains a scalar Text value.",
         ),
     },
+    "ApplicationEvidence": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Destination identity/ownership is allocated from backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            ["track_id"],
+            "reconstructed",
+            "Application identity is represented as track_ref and remapped on restore.",
+        ),
+        **_entries(
+            ["kind", "body", "occurred_at", "created_at", "updated_at", "version", "is_deleted"],
+            "exported",
+            "Evidence metadata is portable; a deleted private body is redacted from the ordinary section and exported only in the bounded recovery section.",
+        ),
+    },
+    "EvidenceCreateReceipt": _entries(
+        ["id", "user_id", "request_key", "payload_hash", "evidence_id", "created_at"],
+        "excluded",
+        "Short-lived create idempotency receipts are operational replay state, not portable user content.",
+    ),
     "CompanyAlias": {
         **_entries(
             ["id", "user_id"],
@@ -703,6 +829,18 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
         _require_target(refs, "sessions", track.session_ref, source_section="job_tracks", source_ref=track.backup_ref)
 
 
+    for evidence in document.sections.application_evidence:
+        _require_target(
+            refs, "job_tracks", evidence.track_ref,
+            source_section="application_evidence", source_ref=evidence.backup_ref,
+        )
+
+    for recovery in document.sections.evidence_recovery:
+        _require_target(
+            refs, "application_evidence", recovery.evidence_ref,
+            source_section="evidence_recovery", source_ref=recovery.backup_ref,
+        )
+
     for item in document.sections.work_items:
         _require_target(
             refs, "job_tracks", item.track_ref,
@@ -736,6 +874,10 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
         )
         _require_target(
             refs, "job_tracks", event.job_track_ref,
+            source_section="lifecycle_events", source_ref=event.backup_ref,
+        )
+        _require_target(
+            refs, "application_evidence", event.evidence_ref,
             source_section="lifecycle_events", source_ref=event.backup_ref,
         )
 
@@ -799,6 +941,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_lifecycle_section = (
         isinstance(raw_sections, Mapping) and "lifecycle_events" in raw_sections
     )
+    has_application_evidence_section = (
+        isinstance(raw_sections, Mapping) and "application_evidence" in raw_sections
+    )
+    has_evidence_recovery_section = (
+        isinstance(raw_sections, Mapping) and "evidence_recovery" in raw_sections
+    )
     has_company_aliases_section = (
         isinstance(raw_sections, Mapping) and "company_aliases" in raw_sections
     )
@@ -830,6 +978,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_lifecycle_section:
         # Revision 2.0.0 predates the additive lifecycle section.
         checksum_sections.pop("lifecycle_events", None)
+    if not has_application_evidence_section:
+        # Revisions before JG-033 predate application evidence.
+        checksum_sections.pop("application_evidence", None)
+    if not has_evidence_recovery_section:
+        # Revisions before JG-033 predate the explicit deleted-body recovery section.
+        checksum_sections.pop("evidence_recovery", None)
     if not has_company_aliases_section:
         # Revisions before JG-030 predate owner-local company aliases.
         checksum_sections.pop("company_aliases", None)
@@ -858,6 +1012,19 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
             and index < len(checksum_sections.get("csv_rows", []))
         ):
             checksum_sections["csv_rows"][index].pop("archived_at", None)
+
+    raw_lifecycle = (
+        raw_sections.get("lifecycle_events", [])
+        if isinstance(raw_sections, Mapping)
+        else []
+    )
+    for index, raw_record in enumerate(raw_lifecycle):
+        if (
+            isinstance(raw_record, Mapping)
+            and "evidence_ref" not in raw_record
+            and index < len(checksum_sections.get("lifecycle_events", []))
+        ):
+            checksum_sections["lifecycle_events"][index].pop("evidence_ref", None)
 
     raw_profiles = (
         raw_sections.get("user_profile", [])
@@ -897,6 +1064,8 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "csv_rows": CsvRowBackupV2,
     "url_history": UrlHistoryBackupV2,
     "job_tracks": JobTrackBackupV2,
+    "application_evidence": ApplicationEvidenceBackupV2,
+    "evidence_recovery": EvidenceRecoveryBackupV2,
     "company_aliases": CompanyAliasBackupV2,
     "work_items": WorkItemBackupV2,
     "work_item_overrides": WorkItemOverrideBackupV2,
