@@ -81,7 +81,7 @@ test.describe('JG-031 applied-before context', () => {
     });
     expect(apps.ok()).toBeTruthy();
     const payload = await apps.json();
-    const reapplied = payload.applications.find((item: any) => item.url === variantUrl);
+    const reapplied = payload.rows.find((item: any) => item.url === variantUrl);
     expect(reapplied).toBeTruthy();
     expect(reapplied.applied_at).toBeTruthy();
   });
