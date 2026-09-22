@@ -4,6 +4,7 @@ import { applicationNavigationState, applicationStateQuery, queryValidationMessa
 import { useToast } from '../App'
 import ApplicationTimeline from '../components/ApplicationTimeline'
 import ApplicationDocuments from '../components/ApplicationDocuments'
+import JobAvailability from '../components/JobAvailability'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -639,6 +640,7 @@ export default function Applications() {
                 {expandedTrackId === app.id && (
                   <tr className="application-timeline-row">
                     <td colSpan={columns.filter(([key]) => !hiddenColumns.includes(key)).length + 2}>
+                      <JobAvailability trackId={app.id} onChanged={() => refresh()} />
                       <ApplicationDocuments application={app} />
                       <ApplicationTimeline
                         application={app}
