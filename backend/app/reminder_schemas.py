@@ -10,7 +10,9 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 HHMM_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 OCCURRENCE_RE = re.compile(
-    r"^track:(?P<track_id>[1-9][0-9]*):due:(?P<due>[^:]+T[^:]+:[^:]+Z):date:(?P<local_date>[0-9]{4}-[0-9]{2}-[0-9]{2})$"
+    r"^track:(?P<track_id>[1-9][0-9]*):due:"
+    r"(?P<due>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z):"
+    r"date:(?P<local_date>[0-9]{4}-[0-9]{2}-[0-9]{2})$"
 )
 
 REMINDER_CHANNELS = frozenset({"in_app", "email"})
