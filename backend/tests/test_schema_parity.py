@@ -119,6 +119,11 @@ def _run_alembic_upgrade(database_url: str) -> None:
         command.upgrade(_alembic_config(), "head")
 
 
+def _run_alembic_downgrade(database_url: str, revision: str) -> None:
+    with patch.dict(os.environ, {"DATABASE_URL": database_url}):
+        command.downgrade(_alembic_config(), revision)
+
+
 def _admin_engine(database_url: str):
     parsed = make_url(database_url)
     admin_url = parsed.set(database="postgres")
@@ -351,3 +356,20 @@ def test_migration_replay_is_noop(migrated_postgres_database):
     after = _schema_fingerprint(engine)
     assert _current_revision(engine) == expected_head
     assert after == before
+
+
+@pytest.mark.postgresql
+def test_evidence_migration_upgrade_and_downgrade(migrated_postgres_database):
+    database_url, engine = migrated_postgres_database
+
+    try:
+        _run_alembic_downgrade(database_url, "009")
+        inspector = inspect(engine)
+        assert _current_revision(engine) == "009"
+        assert "application_evidence" not in inspector.get_table_names()
+        assert "evidence_create_receipts" not in inspector.get_table_names()
+    finally:
+        _run_alembic_upgrade(database_url)
+
+    assert _current_revision(engine) == "010"
+    _assert_postgres_matches_metadata(engine)
