@@ -57,7 +57,7 @@ test.describe('JG-031/JG-032 applied-before context', () => {
     await search.fill('Tracking Variant JG032');
     await page.waitForTimeout(1200);
 
-    const candidate = page.locator('tbody tr').filter({ hasText: 'Canonical Candidate JG031' }).first();
+    const candidate = page.locator('tbody tr').filter({ hasText: 'Tracking Variant JG032' }).first();
     await expect(candidate).toBeVisible();
     await candidate.click();
 
@@ -77,13 +77,17 @@ test.describe('JG-031/JG-032 applied-before context', () => {
     );
 
     const apps = await request.get(`${API_URL}/crm/applications`, {
-      params: { q: 'Canonical Candidate JG031', page: 1, page_size: 20 },
+      params: { page: 1, page_size: 100 },
     });
     expect(apps.ok()).toBeTruthy();
     const payload = await apps.json();
     const reapplied = payload.rows.find((item: any) => item.url === variantUrl);
+    const retainedPrior = payload.rows.find((item: any) => item.id === priorTrack.id);
     expect(reapplied).toBeTruthy();
     expect(reapplied.applied_at).toBeTruthy();
+    expect(reapplied.id).not.toBe(priorTrack.id);
+    expect(retainedPrior).toBeTruthy();
+    expect(retainedPrior.applied_at).toBeTruthy();
   });
 
   test('slash company navigation works and focuses the linked prior role', async ({ page, request }) => {
