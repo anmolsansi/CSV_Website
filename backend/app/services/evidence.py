@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..evidence_schemas import (
@@ -83,9 +84,15 @@ def purge_expired_evidence_recovery_state(
     )
     for item in expired_evidence:
         deleted_at = item.updated_at
-        item.body = None
-        # Maintenance redaction must not rewrite the user's deletion timestamp.
-        item.updated_at = deleted_at
+        session.execute(
+            update(ApplicationEvidence)
+            .where(ApplicationEvidence.id == item.id)
+            .values(body=None, updated_at=deleted_at)
+            .execution_options(synchronize_session=False)
+        )
+        # Refresh from the explicit UPDATE so the ORM onupdate hook cannot
+        # silently move the deletion timestamp and extend recovery retention.
+        session.expire(item)
 
     receipt_cutoff = now - timedelta(days=EVIDENCE_RECEIPT_RETENTION_DAYS)
     remaining = max(0, limit - len(expired_evidence))
