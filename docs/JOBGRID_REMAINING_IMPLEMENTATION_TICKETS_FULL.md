@@ -10472,7 +10472,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-044"></a>
 ### JG-044 — Extend recoverable backups to document bytes
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #143  
 **Priority:** Feature rank 5  
 **Type:** API/service  
 **Execution position:** 44/64; group step 4/4
@@ -10652,14 +10652,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-044 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: bundle_restores_bytes_and_links
-- [ ] Required regression passes: zip_slip_symlink_and_zip_bomb_rejected
-- [ ] Required regression passes: missing_member_fails_before_ready
-- [ ] Required regression passes: json_only_reports_document_bytes_excluded
-- [ ] Required regression passes: failed_restore_reclaims_staging
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-044 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: bundle_restores_bytes_and_links
+- [x] Required regression passes: zip_slip_symlink_and_zip_bomb_rejected
+- [x] Required regression passes: missing_member_fails_before_ready
+- [x] Required regression passes: json_only_reports_document_bytes_excluded
+- [x] Required regression passes: failed_restore_reclaims_staging
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -10677,12 +10677,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -10693,9 +10693,17 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Completion evidence
+
+- Implementation PR: #143, merged to `main` as `0ed99431c68e08d3c8528041edab786e334d9e2d`.
+- Final validated candidate: `79292a28a6d2b4ef1c77a668332d14d7a48d09ba`.
+- GitHub Actions CI run #328 passed Backend Tests (478 passed), Backend Compile Check, Frontend Build, and E2E Tests (Playwright).
+- The required named regressions and the ticket-specific migration/backup compatibility coverage are included in the merged suite.
+- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by this ticket.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-043 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED; merged to `main` via PR #143 after final CI validation.** The numbered checkpoints, required regressions, documentation, compatibility checks, and rollback notes are complete for jg-044.
 
 ---
 
@@ -10725,7 +10733,7 @@ From an external synthetic job page invoke the bookmarklet, correct the title/co
 <a id="jg-045"></a>
 ### JG-045 — Add manual capture schema and replay identity
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #143  
 **Priority:** Feature rank 6  
 **Type:** schema/contract  
 **Execution position:** 45/64; group step 1/4
@@ -10904,13 +10912,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-045 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: legacy_rows_unchanged_after_migration
-- [ ] Required regression passes: capture_required_column_defaults_valid
-- [ ] Required regression passes: request_key_conflicting_payload_rejected
-- [ ] Required regression passes: capture_notes_round_trip
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-045 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: legacy_rows_unchanged_after_migration
+- [x] Required regression passes: capture_required_column_defaults_valid
+- [x] Required regression passes: request_key_conflicting_payload_rejected
+- [x] Required regression passes: capture_notes_round_trip
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -10928,12 +10936,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -10944,16 +10952,24 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Completion evidence
+
+- Implementation PR: #143, merged to `main` as `0ed99431c68e08d3c8528041edab786e334d9e2d`.
+- Final validated candidate: `79292a28a6d2b4ef1c77a668332d14d7a48d09ba`.
+- GitHub Actions CI run #328 passed Backend Tests (478 passed), Backend Compile Check, Frontend Build, and E2E Tests (Playwright).
+- The required named regressions and the ticket-specific migration/backup compatibility coverage are included in the merged suite.
+- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by this ticket.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-044 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED; merged to `main` via PR #143 after final CI validation.** The numbered checkpoints, required regressions, documentation, compatibility checks, and rollback notes are complete for jg-045.
 
 ---
 
 <a id="jg-046"></a>
 ### JG-046 — Implement capture API with identity warnings
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #143  
 **Priority:** Feature rank 6  
 **Type:** API/service  
 **Execution position:** 46/64; group step 2/4
@@ -11132,14 +11148,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-046 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: capture_not_visited_or_applied
-- [ ] Required regression passes: concurrent_repeat_creates_one_row
-- [ ] Required regression passes: same_key_different_payload409
-- [ ] Required regression passes: foreign_existing_url_not_disclosed
-- [ ] Required regression passes: existing_notes_not_overwritten
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-046 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: capture_not_visited_or_applied
+- [x] Required regression passes: concurrent_repeat_creates_one_row
+- [x] Required regression passes: same_key_different_payload409
+- [x] Required regression passes: foreign_existing_url_not_disclosed
+- [x] Required regression passes: existing_notes_not_overwritten
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -11157,12 +11173,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -11173,9 +11189,17 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Completion evidence
+
+- Implementation PR: #143, merged to `main` as `0ed99431c68e08d3c8528041edab786e334d9e2d`.
+- Final validated candidate: `79292a28a6d2b4ef1c77a668332d14d7a48d09ba`.
+- GitHub Actions CI run #328 passed Backend Tests (478 passed), Backend Compile Check, Frontend Build, and E2E Tests (Playwright).
+- The required named regressions and the ticket-specific migration/backup compatibility coverage are included in the merged suite.
+- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by this ticket.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-045 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED; merged to `main` via PR #143 after final CI validation.** The numbered checkpoints, required regressions, documentation, compatibility checks, and rollback notes are complete for jg-046.
 
 ---
 
