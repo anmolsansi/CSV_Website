@@ -312,7 +312,7 @@ def capture_job(
 
     row = CsvRow(
         user_id=user_id,
-        upload_batch_id=f"capture-{uuid4()}",
+        upload_batch_id=str(uuid4()),
         url=payload.job_url,
         title=payload.title,
         company_guess=payload.company,
