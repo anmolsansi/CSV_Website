@@ -3258,7 +3258,7 @@ This release does not invent a separate deadline-reminder lead time. Deadline ed
 
 ### Backup, restore, and rollback
 
-Portable backups continue to include `job_availability` and exclude `job_check_requests`. A restored user-confirmed closed state retains `confirmed_closed_at`, `check_reason`, deadline metadata, and optimistic version.
+Portable backup schema revision `2.12.0` continues to include `job_availability` and exclude `job_check_requests`. It also represents deadline snoozes through portable availability references so restored action keys use destination IDs. A restored user-confirmed closed state retains `confirmed_closed_at`, `check_reason`, deadline metadata, and optimistic version.
 
 For operational rollback:
 
