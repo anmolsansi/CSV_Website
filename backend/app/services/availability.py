@@ -6,7 +6,6 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..availability_schemas import (
