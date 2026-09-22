@@ -32,6 +32,8 @@ from ..models import (
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
+    ReminderDelivery,
+    ReminderPreference,
     SavedView,
     SearchSession,
     UrlHistory,
@@ -41,6 +43,7 @@ from ..models import (
     WorkItemOverride,
 )
 from ..today_schemas import followup_action_key, manual_action_key
+from ..reminder_schemas import remap_reminder_occurrence_key
 from ..evidence_schemas import (
     evidence_body_is_recoverable,
     evidence_body_purge_at,
@@ -110,6 +113,8 @@ def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
         "work_items": session.query(WorkItem).filter(WorkItem.user_id == user_id).order_by(WorkItem.id.asc()).all(),
         "work_item_overrides": session.query(WorkItemOverride).filter(WorkItemOverride.user_id == user_id).order_by(WorkItemOverride.action_key.asc()).all(),
         "lifecycle_events": session.query(JobLifecycleEvent).filter(JobLifecycleEvent.user_id == user_id).order_by(JobLifecycleEvent.id.asc()).all(),
+        "reminder_preferences": session.query(ReminderPreference).filter(ReminderPreference.user_id == user_id).all(),
+        "reminder_deliveries": session.query(ReminderDelivery).filter(ReminderDelivery.user_id == user_id).order_by(ReminderDelivery.id.asc()).all(),
         "saved_views": session.query(SavedView).filter(SavedView.user_id == user_id).order_by(SavedView.id.asc()).all(),
         "sessions": session.query(SearchSession).filter(SearchSession.user_id == user_id).order_by(SearchSession.id.asc()).all(),
         "audit_events": session.query(AuditEvent).filter(AuditEvent.user_id == user_id).order_by(AuditEvent.id.asc()).all(),
@@ -387,6 +392,35 @@ def _serialize_sections(
             "recorded_at": _utc_iso(item.recorded_at),
             "source": item.source,
             "payload": payload,
+        })
+
+    for item in snapshot["reminder_preferences"]:
+        sections["reminder_preferences"].append({
+            "backup_ref": refs["reminder_preferences"][item.user_id],
+            "enabled": item.enabled,
+            "channel": item.channel,
+            "local_time": item.local_time,
+            "quiet_start": item.quiet_start,
+            "quiet_end": item.quiet_end,
+        })
+
+    for item in snapshot["reminder_deliveries"]:
+        backup_ref = refs["reminder_deliveries"][item.id]
+        sections["reminder_deliveries"].append({
+            "backup_ref": backup_ref,
+            "track_ref": _required_ref(
+                refs["job_tracks"], item.track_id,
+                section="reminder_deliveries", backup_ref=backup_ref,
+            ),
+            "occurrence_key": item.occurrence_key,
+            "channel": item.channel,
+            "status": item.status,
+            "scheduled_at": _utc_iso(item.scheduled_at),
+            "attempt_count": item.attempt_count,
+            "next_attempt_at": _utc_iso(item.next_attempt_at),
+            "sent_at": _utc_iso(item.sent_at),
+            "last_error_code": item.last_error_code,
+            "version": item.version,
         })
 
     for item in snapshot["saved_views"]:
@@ -784,6 +818,27 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
         mapping = _lookup_import_map(session, user_id, backup_id, "user_profile", record.backup_ref)
         counts["user_profile"]["skipped" if mapping else "created"] += 1
 
+    for record in document.sections.reminder_preferences:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id,
+            "reminder_preferences", record.backup_ref,
+        )
+        if mapping:
+            counts["reminder_preferences"]["skipped"] += 1
+            continue
+        existing = session.query(ReminderPreference).filter_by(user_id=user_id).first()
+        if existing is None:
+            counts["reminder_preferences"]["created"] += 1
+        else:
+            equal = (
+                existing.enabled is False
+                and existing.channel == record.channel
+                and existing.local_time == record.local_time
+                and existing.quiet_start == record.quiet_start
+                and existing.quiet_end == record.quiet_end
+            )
+            counts["reminder_preferences"][_classify_existing(equal)] += 1
+
     for record in document.sections.job_tracks:
         mapping = _lookup_import_map(session, user_id, backup_id, "job_tracks", record.backup_ref)
         if mapping:
@@ -892,6 +947,13 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
                 and existing.version == record.version
             )
             counts["work_item_overrides"][_classify_existing(equal)] += 1
+
+    for record in document.sections.reminder_deliveries:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id,
+            "reminder_deliveries", record.backup_ref,
+        )
+        counts["reminder_deliveries"]["skipped" if mapping else "created"] += 1
 
     for record in document.sections.lifecycle_events:
         mapping = _lookup_import_map(session, user_id, backup_id, "lifecycle_events", record.backup_ref)
@@ -1178,6 +1240,71 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         )
         counts["user_profile"]["created"] += 1
 
+    for record in document.sections.reminder_preferences:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id,
+            "reminder_preferences", record.backup_ref,
+        )
+        if mapping is not None:
+            if mapping.target_id != user_id:
+                raise BackupContractError(
+                    "restore_mapping_conflict",
+                    409,
+                    "Reminder preference maps to a different account.",
+                    section="reminder_preferences",
+                    backup_ref=record.backup_ref,
+                )
+            refs["reminder_preferences"][record.backup_ref] = user_id
+            counts["reminder_preferences"]["skipped"] += 1
+            continue
+
+        existing = session.query(ReminderPreference).filter_by(user_id=user_id).first()
+        if existing is not None:
+            equal = (
+                existing.enabled is False
+                and existing.channel == record.channel
+                and existing.local_time == record.local_time
+                and existing.quiet_start == record.quiet_start
+                and existing.quiet_end == record.quiet_end
+            )
+            outcome = _classify_existing(equal)
+            refs["reminder_preferences"][record.backup_ref] = user_id
+            _persist_import_map(
+                session, user_id, backup_id,
+                "reminder_preferences", record.backup_ref, user_id,
+            )
+            counts["reminder_preferences"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="reminder_preferences",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+
+        item = ReminderPreference(
+            user_id=user_id,
+            enabled=False,
+            channel=record.channel,
+            local_time=record.local_time,
+            quiet_start=record.quiet_start,
+            quiet_end=record.quiet_end,
+        )
+        session.add(item)
+        session.flush()
+        refs["reminder_preferences"][record.backup_ref] = user_id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "reminder_preferences", record.backup_ref, user_id,
+        )
+        counts["reminder_preferences"]["created"] += 1
+        if record.enabled:
+            warnings.append(_restore_warning(
+                "reminder_preference_restored_disabled",
+                section="reminder_preferences",
+                backup_ref=record.backup_ref,
+            ))
+
     for record in document.sections.job_tracks:
         mapped = _mapped_target(session, user_id, backup_id, "job_tracks", record.backup_ref, JobTrack)
         if mapped is not None:
@@ -1228,6 +1355,96 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         counts["job_tracks"]["created"] += 1
         if record.session_ref is not None:
             warnings.append(_restore_warning("job_track_session_ref_detached", section="job_tracks", backup_ref=record.backup_ref))
+
+    for record in document.sections.reminder_deliveries:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "reminder_deliveries", record.backup_ref, ReminderDelivery,
+        )
+        if mapped is not None:
+            refs["reminder_deliveries"][record.backup_ref] = mapped.id
+            counts["reminder_deliveries"]["skipped"] += 1
+            continue
+
+        track_id = _target_id(
+            refs, "job_tracks", record.track_ref,
+            "reminder_deliveries", record.backup_ref,
+        )
+        occurrence_key = (
+            remap_reminder_occurrence_key(record.occurrence_key, track_id=track_id)
+            if track_id is not None
+            else f"restored:{record.backup_ref}"
+        )
+        restored_status = (
+            "cancelled"
+            if record.status in {"pending", "sending"}
+            else record.status
+        )
+        restored_error = (
+            "restored_paused"
+            if record.status in {"pending", "sending"}
+            else record.last_error_code
+        )
+        existing = session.query(ReminderDelivery).filter_by(
+            user_id=user_id,
+            occurrence_key=occurrence_key,
+            channel=record.channel,
+        ).first()
+        if existing is not None:
+            equal = (
+                existing.track_id == track_id
+                and existing.status == restored_status
+                and _portable_equal(existing.scheduled_at, record.scheduled_at)
+                and existing.attempt_count == record.attempt_count
+                and existing.next_attempt_at is None
+                and _portable_equal(existing.sent_at, record.sent_at)
+                and existing.last_error_code == restored_error
+                and existing.version == record.version
+                and existing.lease_until is None
+            )
+            outcome = _classify_existing(equal)
+            refs["reminder_deliveries"][record.backup_ref] = existing.id
+            _persist_import_map(
+                session, user_id, backup_id,
+                "reminder_deliveries", record.backup_ref, existing.id,
+            )
+            counts["reminder_deliveries"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="reminder_deliveries",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+
+        item = ReminderDelivery(
+            user_id=user_id,
+            track_id=track_id,
+            occurrence_key=occurrence_key,
+            channel=record.channel,
+            status=restored_status,
+            scheduled_at=_parse_backup_datetime(record.scheduled_at),
+            lease_until=None,
+            attempt_count=record.attempt_count,
+            next_attempt_at=None,
+            sent_at=_parse_backup_datetime(record.sent_at),
+            last_error_code=restored_error,
+            version=record.version,
+        )
+        session.add(item)
+        session.flush()
+        refs["reminder_deliveries"][record.backup_ref] = item.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "reminder_deliveries", record.backup_ref, item.id,
+        )
+        counts["reminder_deliveries"]["created"] += 1
+        if record.status in {"pending", "sending"}:
+            warnings.append(_restore_warning(
+                "reminder_delivery_restored_paused",
+                section="reminder_deliveries",
+                backup_ref=record.backup_ref,
+            ))
 
     for record in document.sections.application_evidence:
         mapped = _mapped_target(
