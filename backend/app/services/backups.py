@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from uuid import UUID, uuid4, uuid5
 
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from ..backup_schemas import (
     BACKUP_SCHEMA_REVISION,
     BACKUP_V2_SECTIONS,
     CSV_ROW_TEXT_FIELDS,
+    MAX_BACKUP_JSON_BYTES,
     BackupContractError,
     BackupDocumentV2,
     adapt_v1_backup,
