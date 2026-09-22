@@ -88,12 +88,15 @@ def purge_expired_evidence_recovery_state(
         item.updated_at = deleted_at
 
     receipt_cutoff = now - timedelta(days=EVIDENCE_RECEIPT_RETENTION_DAYS)
+    remaining = max(0, limit - len(expired_evidence))
     expired_receipts = (
         session.query(EvidenceCreateReceipt)
         .filter(EvidenceCreateReceipt.created_at <= receipt_cutoff)
         .order_by(EvidenceCreateReceipt.created_at.asc(), EvidenceCreateReceipt.id.asc())
-        .limit(limit)
+        .limit(remaining)
         .all()
+        if remaining
+        else []
     )
     for receipt in expired_receipts:
         session.delete(receipt)
