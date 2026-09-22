@@ -339,6 +339,7 @@ def _serialize_sections(
         backup_ref = refs["lifecycle_events"][item.id]
         payload = dict(item.payload or {})
         evidence_ref = None
+        correction_of_ref = None
         if item.kind in {"evidence_added", "evidence_edited", "evidence_deleted"}:
             evidence_id = payload.pop("evidence_id", None)
             evidence_ref = _required_ref(
@@ -350,6 +351,20 @@ def _serialize_sections(
                     "conflicting_reference_graph",
                     409,
                     "Evidence lifecycle event is missing its evidence reference.",
+                    section="lifecycle_events",
+                    backup_ref=backup_ref,
+                )
+        if item.kind == "status_changed" and "correction_of" in payload:
+            correction_of = payload.pop("correction_of")
+            correction_of_ref = _required_ref(
+                refs["lifecycle_events"], correction_of,
+                section="lifecycle_events", backup_ref=backup_ref,
+            )
+            if correction_of_ref is None:
+                raise BackupContractError(
+                    "conflicting_reference_graph",
+                    409,
+                    "Status correction is missing its original lifecycle reference.",
                     section="lifecycle_events",
                     backup_ref=backup_ref,
                 )
@@ -366,6 +381,7 @@ def _serialize_sections(
                 section="lifecycle_events", backup_ref=backup_ref,
             ),
             "evidence_ref": evidence_ref,
+            "correction_of_ref": correction_of_ref,
             "kind": item.kind,
             "occurred_at": _utc_iso(item.occurred_at),
             "recorded_at": _utc_iso(item.recorded_at),
@@ -896,6 +912,13 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
                 )
                 if evidence_id is not None:
                     expected_payload["evidence_id"] = evidence_id
+            if record.correction_of_ref is not None:
+                correction_id = _mapped_ref_target(
+                    session, user_id, backup_id,
+                    "lifecycle_events", record.correction_of_ref,
+                )
+                if correction_id is not None:
+                    expected_payload["correction_of"] = correction_id
             fields = (
                 "event_key", "job_url", "kind", "occurred_at",
                 "recorded_at", "source",
@@ -1468,6 +1491,11 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         if record.evidence_ref is not None:
             payload["evidence_id"] = _target_id(
                 refs, "application_evidence", record.evidence_ref,
+                "lifecycle_events", record.backup_ref,
+            )
+        if record.correction_of_ref is not None:
+            payload["correction_of"] = _target_id(
+                refs, "lifecycle_events", record.correction_of_ref,
                 "lifecycle_events", record.backup_ref,
             )
         existing = session.query(JobLifecycleEvent).filter_by(
