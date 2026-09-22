@@ -20,11 +20,12 @@ from .evidence_schemas import (
 from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.10.0"
+BACKUP_SCHEMA_REVISION = "2.11.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
     "job_tracks",
+    "job_availability",
     "document_versions",
     "application_documents",
     "application_evidence",
@@ -172,6 +173,27 @@ class JobTrackBackupV2(BackupRecordBase):
     last_opened_at: str | None
     created_at: str
     updated_at: str
+
+
+class JobAvailabilityBackupV2(BackupRecordBase):
+    job_url: str = Field(min_length=1, max_length=2048)
+    deadline_at: str | None = None
+    deadline_source: Literal["user", "import"] | None = None
+    state: Literal["unknown", "available", "unavailable", "closed"] = "unknown"
+    last_checked_at: str | None = None
+    check_reason: str | None = Field(default=None, max_length=64)
+    confirmed_closed_at: str | None = None
+    version: int = Field(default=1, gt=0)
+
+    @model_validator(mode="after")
+    def validate_closed_confirmation(self):
+        if self.state == "closed" and self.confirmed_closed_at is None:
+            raise ValueError("Closed availability requires confirmed_closed_at.")
+        if self.state != "closed" and self.confirmed_closed_at is not None:
+            raise ValueError("Only user-confirmed closed availability may carry confirmed_closed_at.")
+        if self.deadline_at is None and self.deadline_source is not None:
+            raise ValueError("deadline_source requires deadline_at.")
+        return self
 
 
 class DocumentVersionBackupV2(BackupRecordBase):
@@ -494,6 +516,7 @@ class BackupSectionsV2(StrictBackupModel):
     csv_rows: list[CsvRowBackupV2]
     url_history: list[UrlHistoryBackupV2]
     job_tracks: list[JobTrackBackupV2]
+    job_availability: list[JobAvailabilityBackupV2] = Field(default_factory=list)
     document_versions: list[DocumentVersionBackupV2] = Field(default_factory=list)
     application_documents: list[ApplicationDocumentBackupV2] = Field(default_factory=list)
     application_evidence: list[ApplicationEvidenceBackupV2] = Field(default_factory=list)
@@ -517,6 +540,7 @@ class BackupCountsV2(StrictBackupModel):
     csv_rows: int = Field(ge=0)
     url_history: int = Field(ge=0)
     job_tracks: int = Field(ge=0)
+    job_availability: int = Field(default=0, ge=0)
     document_versions: int = Field(default=0, ge=0)
     application_documents: int = Field(default=0, ge=0)
     application_evidence: int = Field(default=0, ge=0)
@@ -624,6 +648,30 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             "Persisted application-memory data required for a lossless v2 record; session_id remains a scalar Text value.",
         ),
     },
+
+    "JobAvailability": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Destination identity/ownership is allocated from backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            [
+                "job_url", "deadline_at", "deadline_source", "state",
+                "last_checked_at", "check_reason", "confirmed_closed_at", "version",
+            ],
+            "exported",
+            "URL-scoped deadline and availability evidence is durable portable user data independent of CSV source rows.",
+        ),
+    },
+    "JobCheckRequest": _entries(
+        [
+            "id", "user_id", "availability_id", "requested_at", "status",
+            "lease_until", "completed_at", "error_code",
+        ],
+        "excluded",
+        "Seven-day check request, lease, and rate metadata is transient operational state and is intentionally excluded from portable backups.",
+    ),
     "DocumentVersion": {
         **_entries(
             ["id", "user_id"],
