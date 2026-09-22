@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { api, apiFieldErrors, formatApiError } from '../api/client'
 import { applicationNavigationState, applicationStateQuery, queryValidationMessage, serializeApplicationQuery } from '../api/queryParams'
-import { useToast } from '../App'\nimport ApplicationTimeline from '../components/ApplicationTimeline'
+import { useToast } from '../App'
+import ApplicationTimeline from '../components/ApplicationTimeline'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
