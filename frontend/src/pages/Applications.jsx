@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { api, apiFieldErrors, formatApiError } from '../api/client'
 import { applicationNavigationState, applicationStateQuery, queryValidationMessage, serializeApplicationQuery } from '../api/queryParams'
-import { useToast } from '../App'
+import { useToast } from '../App'\nimport ApplicationTimeline from '../components/ApplicationTimeline'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -69,6 +69,11 @@ export default function Applications() {
   const [fieldErrors, setFieldErrors] = useState({})
   const [focusTarget, setFocusTarget] = useState(null)
   const [pendingRows, setPendingRows] = useState(new Set())
+  const [expandedTrackId, setExpandedTrackId] = useState(() => {
+    const raw = new URLSearchParams(window.location.search).get('track_id')
+    const parsed = raw ? Number(raw) : null
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+  })
   const [bulkPending, setBulkPending] = useState(false)
   const pendingMutationRef = useRef(new Set())
   const fieldRefs = useRef({})
@@ -455,7 +460,8 @@ export default function Applications() {
               {columns.filter(([key]) => !hiddenColumns.includes(key)).map(([key, label]) => <th key={key}><button className="table-header-button" onClick={() => updateSort(key)}>{label}{sort.field === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}<th>Actions</th></tr></thead>
             <tbody>
               {applications.map((app) => (
-                <tr key={app.id} className={selectedIds.has(app.id) ? 'selected-row' : ''}>
+                <Fragment key={app.id}>
+                <tr className={selectedIds.has(app.id) ? 'selected-row' : ''}>
                   <td className="row-select-cell">
                     <input
                       type="checkbox"
@@ -512,30 +518,40 @@ export default function Applications() {
                   {!hiddenColumns.includes('opened_at') && <td>{formatDateTime(app.opened_at)}</td>}
                   {!hiddenColumns.includes('applied_at') && (
                     <td>
-                      <input
-                        type="datetime-local"
-                        ref={(node) => { fieldRefs.current[draftKey(app.id, 'applied_at')] = node }}
-                        value={draftValue(app, 'applied_at', localInputValue(app.applied_at))}
-                        aria-invalid={Boolean(fieldErrors[app.id]?.applied_at)}
-                        aria-describedby={fieldErrors[app.id]?.applied_at ? `app-${app.id}-applied-error` : undefined}
-                        disabled={pendingRows.has(app.id)}
-                        onChange={(e) => setDraftValue(app.id, 'applied_at', e.target.value)}
-                        onBlur={(e) => {
-                          const value = e.target.value
-                          if (value !== localInputValue(app.applied_at)) {
-                            updateApp(app.id, { applied_at: inputToIso(value), status: value ? 'applied' : app.status }, { draftFields: ['applied_at'] })
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            const value = e.currentTarget.value
-                            if (value !== localInputValue(app.applied_at)) {
-                              updateApp(app.id, { applied_at: inputToIso(value), status: value ? 'applied' : app.status }, { draftFields: ['applied_at'] })
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <input
+                          type="datetime-local"
+                          ref={(node) => { fieldRefs.current[draftKey(app.id, 'applied_at')] = node }}
+                          value={draftValue(app, 'applied_at', localInputValue(app.applied_at))}
+                          aria-invalid={Boolean(fieldErrors[app.id]?.applied_at)}
+                          aria-describedby={fieldErrors[app.id]?.applied_at ? `app-${app.id}-applied-error` : undefined}
+                          disabled={pendingRows.has(app.id)}
+                          readOnly={Boolean(app.applied_at)}
+                          title={app.applied_at ? 'Use History & evidence to correct an existing applied date with a reason.' : 'Set the applied date'}
+                          onChange={(e) => {
+                            if (!app.applied_at) setDraftValue(app.id, 'applied_at', e.target.value)
+                          }}
+                          onBlur={(e) => {
+                            if (app.applied_at) return
+                            const value = e.target.value
+                            if (value !== localInputValue(app.applied_at) && value) {
+                              updateApp(app.id, { applied_at: inputToIso(value), status: 'applied' }, { draftFields: ['applied_at'] })
                             }
-                          }
-                        }}
-                      />
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !app.applied_at) {
+                              e.preventDefault()
+                              const value = e.currentTarget.value
+                              if (value) updateApp(app.id, { applied_at: inputToIso(value), status: 'applied' }, { draftFields: ['applied_at'] })
+                            }
+                          }}
+                        />
+                        {app.applied_at && (
+                          <button className="btn btn-grey btn-sm" type="button" onClick={() => setExpandedTrackId(app.id)}>
+                            Correct with reason
+                          </button>
+                        )}
+                      </div>
                       {fieldErrors[app.id]?.applied_at && <p id={`app-${app.id}-applied-error`} className="error-msg" role="alert">{fieldErrors[app.id].applied_at}</p>}
                     </td>
                   )}
@@ -599,9 +615,32 @@ export default function Applications() {
                     <button className="btn btn-grey" style={{ marginLeft: 6 }} disabled={pendingRows.has(app.id)} onClick={() => addApplicationToToday(app)}>
                       Add to Today
                     </button>
+                    <button
+                      className="btn btn-grey"
+                      style={{ marginLeft: 6 }}
+                      type="button"
+                      aria-expanded={expandedTrackId === app.id}
+                      onClick={() => setExpandedTrackId((current) => current === app.id ? null : app.id)}
+                    >
+                      {expandedTrackId === app.id ? 'Hide history' : 'History & evidence'}
+                    </button>
                     {fieldErrors[app.id]?.non_field && <p className="error-msg" role="alert">{fieldErrors[app.id].non_field}</p>}
                   </td>
                 </tr>
+                {expandedTrackId === app.id && (
+                  <tr className="application-timeline-row">
+                    <td colSpan={columns.filter(([key]) => !hiddenColumns.includes(key)).length + 2}>
+                      <ApplicationTimeline
+                        application={app}
+                        onApplicationChanged={(updated) => {
+                          setApplications((current) => current.map((item) => item.id === app.id ? { ...item, ...updated } : item))
+                          refresh()
+                        }}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
