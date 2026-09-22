@@ -20,6 +20,7 @@ from ..today_schemas import (
     validate_owned_work_item_sources,
 )
 from .lifecycle import apply_job_track_changes, local_day_utc_bounds
+from .reminders import sync_track_reminder
 from .row_queries import RowQuery, build_row_query, order_row_query
 
 TERMINAL_FOLLOWUP_STATUSES = frozenset({"rejected", "offer", "not_applying"})
@@ -594,15 +595,22 @@ def resolve_followup(
             "Resolution must be clear or reschedule.",
         )
 
+    reference = _aware_utc(now or utc_now())
     apply_job_track_changes(
         db,
         user_id=user_id,
         item=track,
         source="today_queue",
         operation_id=operation_id,
-        now=_aware_utc(now or utc_now()),
+        now=reference,
         follow_up_at=target,
         infer_applied_at_from_status=False,
+    )
+    sync_track_reminder(
+        db,
+        user_id=user_id,
+        track_id=track.id,
+        now_utc=reference,
     )
     db.flush()
     return track

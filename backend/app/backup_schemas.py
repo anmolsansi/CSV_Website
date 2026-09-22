@@ -20,7 +20,7 @@ from .evidence_schemas import (
 from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.7.0"
+BACKUP_SCHEMA_REVISION = "2.8.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -376,6 +376,9 @@ class ReminderDeliveryBackupV2(BackupRecordBase):
     attempt_count: int = Field(ge=0)
     next_attempt_at: str | None
     sent_at: str | None
+    # Added in backup schema 2.8.0. Default None preserves 2.7.0 payloads and
+    # their original checksum shape during validation.
+    read_at: str | None = None
     last_error_code: str | None = Field(default=None, max_length=64)
     version: int = Field(gt=0)
 
@@ -653,7 +656,7 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
         **_entries(
             [
                 "occurrence_key", "channel", "status", "scheduled_at",
-                "attempt_count", "next_attempt_at", "sent_at",
+                "attempt_count", "next_attempt_at", "sent_at", "read_at",
                 "last_error_code", "version",
             ],
             "exported",
@@ -1197,6 +1200,22 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
             and index < len(checksum_sections.get("user_profile", []))
         ):
             checksum_sections["user_profile"][index].pop("retention_days", None)
+
+    raw_reminder_deliveries = (
+        raw_sections.get("reminder_deliveries", [])
+        if isinstance(raw_sections, Mapping)
+        else []
+    )
+    for index, raw_record in enumerate(raw_reminder_deliveries):
+        if (
+            isinstance(raw_record, Mapping)
+            and "read_at" not in raw_record
+            and index < len(checksum_sections.get("reminder_deliveries", []))
+        ):
+            # Schema 2.7.0 predates persisted in-app read state. Pydantic fills
+            # the additive field for runtime compatibility, but old checksums
+            # were calculated without the key.
+            checksum_sections["reminder_deliveries"][index].pop("read_at", None)
 
     expected_checksum = compute_sections_checksum(checksum_sections)
     if document.checksum_sha256 != expected_checksum:

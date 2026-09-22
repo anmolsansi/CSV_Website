@@ -2671,3 +2671,112 @@ python -m alembic upgrade head
 ```
 
 **Rollback:** stop before any later reminder worker is enabled, downgrade revision `011` only when no dependent reminder code is active, and preserve existing manual follow-up dates. Never reinterpret sent or unknown history as pending work.
+
+
+## F4 reminder delivery, UI, and acceptance
+
+JG-038 through JG-040 activate the reminder contract established by JG-037 without enabling external delivery by default. The implementation keeps scheduling and email transport behind separate operator gates:
+
+```text
+RUN_REMINDER_WORKER=false
+REMINDER_EMAIL_DELIVERY_ENABLED=false
+REMINDER_WORKER_INTERVAL_SECONDS=60
+REMINDER_LEASE_SECONDS=300
+```
+
+A deployment may run the reminder scheduler only on a designated process. Setting `RUN_REMINDER_WORKER=true` starts the bounded APScheduler job in that process. It does **not** authorize email. Email still requires `REMINDER_EMAIL_DELIVERY_ENABLED=true`, configured SMTP transport, an authenticated provider-linked account destination, and an explicit user preference for the email channel.
+
+### Contract correction: persisted in-app read state
+
+The frozen F4 product contract requires in-app unread state to be independent of transport delivery status. JG-037 revision `011` did not include a read marker, so JG-039 could not implement that requirement truthfully. CCR-F4-READ-1 adds nullable `ReminderDelivery.read_at` in Alembic revision `012`.
+
+`NULL` means an accepted in-app reminder has not been marked read. Marking it read writes a timestamp without changing `status=sent` or `sent_at`. Email deliveries do not use this field. The change is additive. Downgrading revision `012` removes only `read_at`, leaving delivery acceptance history intact.
+
+Portable backup schema revision `2.8.0` exports and restores `read_at`. Valid `2.7.0` backups that predate the field remain accepted with their original checksum shape and restore `read_at=NULL`.
+
+### Planning and scheduling
+
+`backend/app/services/reminders.py` owns planning, claiming, transport outcomes, and recovery. The planner is deterministic for a supplied UTC clock and account IANA timezone:
+
+1. A reminder exists only when the owner opted in, the application has a follow-up due date, and the application remains actionable.
+2. The occurrence key contains the application track ID, canonical UTC follow-up due timestamp, and notification-local date.
+3. The configured local reminder time is resolved with `zoneinfo`. A spring-forward gap moves to the first valid local instant after the gap. A fall-back overlap uses the earlier occurrence only.
+4. Quiet hours defer a planned instant to the next local quiet-end boundary.
+5. Changing the follow-up due date, terminal status, channel, or account timezone replans unsent work. Old `pending` or `failed` occurrences become `cancelled`. `sent` and `unknown` history is never rewritten.
+
+Application PATCH, bulk PATCH, follow-up presets, Today clear/reschedule, and account timezone updates call the same synchronization service before their transaction commits.
+
+### Claiming, retries, and crash recovery
+
+A worker invocation plans enabled accounts, recovers expired leases, and then claims at most 50 due deliveries. PostgreSQL claims use `FOR UPDATE SKIP LOCKED`. Claimed rows transition to `sending`, increment `attempt_count`, and receive a bounded lease. The worker rechecks user preference, source application state, occurrence identity, and channel after claiming and immediately before delivery.
+
+An expired `sending` lease becomes `unknown`, not `pending`. This is conservative because the process may have crashed after a provider accepted a message. `unknown` never retries automatically.
+
+Known transient transport failures use bounded retries at 1 minute, 5 minutes, and 30 minutes with a maximum of three attempts. Permanent/rejected outcomes become `failed` without automatic retry. SMTP disconnects, timeouts, operating-system I/O failures, or other outcomes where acceptance cannot be proved become `unknown`.
+
+In-app delivery uses the same durable occurrence/state machine but no external transport. When due and eligible, it becomes `sent` and appears as unread until `read_at` is written.
+
+### Reminder APIs
+
+All reminder routes are authenticated and owner-scoped:
+
+- `GET /crm/reminders/preferences` returns defaults when no preference row exists plus an opaque preference version and email-availability reason.
+- `PATCH /crm/reminders/preferences` requires that opaque version. Conflicts return 409 instead of overwriting newer settings.
+- `GET /crm/reminders?cursor=&limit=50` returns bounded safe history summaries with an opaque signed cursor. It does not expose recipient addresses, message bodies, credentials, or transport secrets.
+- `POST /crm/reminders/{delivery_id}/retry` accepts only `unknown` deliveries, requires the current integer version and explicit acknowledgement that a duplicate may result, and writes an audit event containing only the operation ID and acknowledgement.
+- `POST /crm/reminders/{delivery_id}/read` marks only delivered in-app reminders as read with a version guard.
+
+Turning reminders off cancels only unsent `pending` and retryable `failed` occurrences. Accepted `sent` rows and uncertain `unknown` rows remain immutable history.
+
+### Today UI behavior
+
+`frontend/src/components/ReminderSettings.jsx` is embedded in Today and uses only the shared API client. It has explicit loading, error, save-pending, disabled-email, empty-history, and per-delivery mutation states.
+
+The UI never labels queued work as sent. `pending`, `sending`, `failed`, `cancelled`, and `unknown` are rendered separately. An unknown email says it is uncertain and may already have been sent. Deliberate retry is a two-step action that warns about possible duplicate delivery. In-app history distinguishes delivered-unread from delivered-read using persisted `read_at`.
+
+### Operations and external-delivery gate
+
+Safe deployment sequence:
+
+1. Deploy revision `012` and application code with both reminder gates false.
+2. Run the PostgreSQL schema-parity suite and reminder worker/API/UI regressions.
+3. Verify preference/history APIs in the target environment while external email remains disabled.
+4. If in-app reminders are approved, designate one scheduler process and set only `RUN_REMINDER_WORKER=true`.
+5. Do not enable email until a staging account, SMTP credentials, provider-linked destination, and explicit test-send authorization exist.
+6. For the controlled-inbox acceptance check, verify the received message in the authorized staging inbox. If those prerequisites are absent, the acceptance test must report the explicit `email_delivery_disabled` gate instead of attempting a real send.
+7. Monitor aggregate reminder worker counters for claimed, sent, failed, unknown, cancelled, and recovered-unknown outcomes. Logs intentionally omit recipient and body data.
+
+If failures or unexpected sends occur, set `REMINDER_EMAIL_DELIVERY_ENABLED=false` first, then `RUN_REMINDER_WORKER=false`, and restart the designated process. Disabling the worker stops new claims. It does not delete pending rows or rewrite sent/unknown history.
+
+Failed rows with a known error code can be diagnosed from safe delivery history and aggregate logs. Unknown rows require a user-controlled deliberate retry because automatic replay could duplicate a provider-accepted message.
+
+### F4 verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest \
+  tests/test_reminder_models.py \
+  tests/test_reminder_worker.py \
+  tests/test_reminder_api.py \
+  tests/test_backup_contract.py \
+  tests/test_backup_export.py \
+  tests/test_schema_parity.py -q
+python -m compileall app
+python -m alembic upgrade head
+```
+
+Frontend checks:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/reminders.spec.ts --project=chromium
+```
+
+Repository CI remains the complete integration gate. The controlled real-email proof is intentionally not executed without external staging authorization and credentials. The accepted local gate is the explicit disabled-state assertion, so implementation cannot accidentally send a real message during CI.
+
+### F4 rollback
+
+Rollback begins by disabling both reminder gates. Do not delete queued reminders and do not reset `sent` or `unknown` to `pending`. Application/frontend code can be rolled back while revision `012` remains in place. If the read-state column itself must be removed, downgrade only from `012` to `011` after confirming no deployed code reads or writes `read_at`. Preserve revision `011` reminder preference/delivery history and all manual follow-up dates.

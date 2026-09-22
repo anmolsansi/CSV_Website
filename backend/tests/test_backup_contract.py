@@ -254,6 +254,30 @@ def test_pre_jg037_v2_without_reminders_keeps_original_checksum_contract():
     assert validated.counts.reminder_deliveries == 0
 
 
+def test_v27_reminder_delivery_without_read_at_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["schema_revision"] = "2.7.0"
+    payload["sections"]["reminder_deliveries"] = [{
+        "backup_ref": "reminder-delivery-1",
+        "track_ref": "track-1",
+        "occurrence_key": "track:1:due:2026-09-22T08:00:00Z:date:2026-09-22",
+        "channel": "in_app",
+        "status": "sent",
+        "scheduled_at": "2026-09-22T09:00:00Z",
+        "attempt_count": 1,
+        "next_attempt_at": None,
+        "sent_at": "2026-09-22T09:00:01Z",
+        "last_error_code": None,
+        "version": 2,
+    }]
+    _rechecksum(payload)
+
+    validated = validate_backup_v2(json.dumps(payload))
+    delivery = validated.sections.reminder_deliveries[0]
+    assert delivery.read_at is None
+    assert validated.checksum_sha256 == payload["checksum_sha256"]
+
+
 def test_pre_jg030_v2_without_company_aliases_keeps_original_checksum_contract():
     payload = _valid_payload()
     payload["sections"].pop("company_aliases")

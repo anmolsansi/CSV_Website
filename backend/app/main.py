@@ -19,9 +19,10 @@ from .backup_schemas import MAX_BACKUP_JSON_BYTES
 from .config import cookie_security_options, settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
+from .services.reminders import run_reminder_worker_once
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, company_aliases, crm, email, evidence, rows, today, upload
+from .routers import auth_router, backup, company_aliases, crm, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -35,8 +36,11 @@ else:
 logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler()
+reminder_scheduler = BackgroundScheduler()
 _maintenance_registration_lock = threading.Lock()
 _maintenance_registered = False
+_reminder_registration_lock = threading.Lock()
+_reminder_registered = False
 
 
 def _start_maintenance_scheduler() -> bool:
@@ -73,14 +77,51 @@ def _stop_maintenance_scheduler() -> None:
         logger.info("maintenance_scheduler outcome=stopped")
 
 
+def _start_reminder_scheduler() -> bool:
+    """Start one process-local reminder worker when explicitly enabled."""
+    global _reminder_registered
+    with _reminder_registration_lock:
+        if _reminder_registered:
+            logger.info("reminder_scheduler outcome=skipped reason=already_registered")
+            return False
+        reminder_scheduler.add_job(
+            run_reminder_worker_once,
+            "interval",
+            seconds=settings.REMINDER_WORKER_INTERVAL_SECONDS,
+            id="reminder_worker",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        reminder_scheduler.start()
+        _reminder_registered = True
+        logger.info("reminder_scheduler outcome=started")
+        return True
+
+
+def _stop_reminder_scheduler() -> None:
+    global _reminder_registered
+    with _reminder_registration_lock:
+        if not _reminder_registered:
+            return
+        reminder_scheduler.shutdown(wait=False)
+        _reminder_registered = False
+        logger.info("reminder_scheduler outcome=stopped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     maintenance_started = False
+    reminder_started = False
     if settings.RUN_MAINTENANCE_JOBS:
         maintenance_started = _start_maintenance_scheduler()
+    if settings.RUN_REMINDER_WORKER:
+        reminder_started = _start_reminder_scheduler()
     try:
         yield
     finally:
+        if reminder_started:
+            _stop_reminder_scheduler()
         if maintenance_started:
             _stop_maintenance_scheduler()
 
@@ -159,6 +200,7 @@ app.include_router(company_aliases.router)
 app.include_router(evidence.router)
 app.include_router(crm.router)
 app.include_router(today.router)
+app.include_router(reminders.router)
 app.include_router(email.router)
 
 
@@ -201,12 +243,14 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import ApplicationEvidence, CompanyAlias, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
+        from .models import ApplicationEvidence, CompanyAlias, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
+        db.query(ReminderDelivery).filter_by(user_id=user.id).delete()
+        db.query(ReminderPreference).filter_by(user_id=user.id).delete()
         db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
         db.query(EvidenceCreateReceipt).filter_by(user_id=user.id).delete()
         db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
