@@ -2,6 +2,7 @@ import copy
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
@@ -489,7 +490,7 @@ def test_restored_timeline_semantic_equivalence(db_session):
 
     row = CsvRow(
         user_id=source.id,
-        upload_batch_id=f"jg036-{uuid4()}",
+        upload_batch_id=str(uuid4()),
         url=f"https://example.test/jobs/restore-{uuid4()}",
         company_guess="Recovery Example",
         title="Platform Engineer",
