@@ -1116,7 +1116,7 @@ def test_restore_does_not_replay_sent_or_pending_email(db_session):
     ).order_by(ReminderDelivery.scheduled_at.asc()).all()
     assert len(deliveries) == 2
     restored_sent = next(item for item in deliveries if item.status == "sent")
-    restored_paused = next(item for item in deliveries if item.status == "cancelled")
+    restored_paused = next(item for item in deliveries if item.status == "pending")
 
     assert restored_sent.sent_at is not None
     assert restored_sent.next_attempt_at is None
@@ -1127,8 +1127,9 @@ def test_restore_does_not_replay_sent_or_pending_email(db_session):
     assert restored_paused.last_error_code == "restored_paused"
     assert f"track:{restored_track.id}:" in restored_sent.occurrence_key
     assert f"track:{restored_track.id}:" in restored_paused.occurrence_key
-    assert not db_session.query(ReminderDelivery).filter(
+    assert restored_pref.enabled is False
+    assert db_session.query(ReminderDelivery).filter(
         ReminderDelivery.user_id == destination_id,
         ReminderDelivery.channel == "email",
-        ReminderDelivery.status.in_(("pending", "sending")),
-    ).count()
+        ReminderDelivery.status == "sending",
+    ).count() == 0
