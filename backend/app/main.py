@@ -201,13 +201,15 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import CompanyAlias, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
+        from .models import ApplicationEvidence, CompanyAlias, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
         db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
+        db.query(EvidenceCreateReceipt).filter_by(user_id=user.id).delete()
+        db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()
