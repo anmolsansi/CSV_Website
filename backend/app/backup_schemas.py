@@ -667,6 +667,16 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
         "excluded",
         "Short-lived upload idempotency receipts are operational replay state, not portable user content.",
     ),
+    "CaptureRequest": _entries(
+        ["id", "user_id", "request_key", "payload_hash", "row_id", "created_at"],
+        "excluded",
+        "Thirty-day capture replay receipts are operational idempotency state and are intentionally reconstructed by future requests rather than exported.",
+    ),
+    "RequestWindowCounter": _entries(
+        ["id", "user_id", "scope", "window_start", "count"],
+        "excluded",
+        "Forty-eight-hour abuse counters are operational rate-limit state and are intentionally excluded from portable user backups.",
+    ),
     "ApplicationEvidence": {
         **_entries(
             ["id", "user_id"],
