@@ -183,6 +183,22 @@ class Settings:
     SMTP_USER = os.getenv("SMTP_USER", "")
     SMTP_PASS = os.getenv("SMTP_PASS", "")
 
+    # F4 reminders. Scheduling and external email activation are intentionally
+    # separate gates. Both default off so roadmap implementation never sends
+    # real email merely because a worker process starts.
+    RUN_REMINDER_WORKER = (
+        os.getenv("RUN_REMINDER_WORKER", "false").lower() == "true"
+    )
+    REMINDER_EMAIL_DELIVERY_ENABLED = (
+        os.getenv("REMINDER_EMAIL_DELIVERY_ENABLED", "false").lower() == "true"
+    )
+    REMINDER_WORKER_INTERVAL_SECONDS = max(
+        30, int(os.getenv("REMINDER_WORKER_INTERVAL_SECONDS", "60"))
+    )
+    REMINDER_LEASE_SECONDS = max(
+        30, int(os.getenv("REMINDER_LEASE_SECONDS", "300"))
+    )
+
     # Sentry
     SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 
