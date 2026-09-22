@@ -17,9 +17,14 @@ from .evidence_schemas import (
     validate_confirmation_url,
     validate_correction_reason,
 )
+from .reminder_schemas import (
+    ReminderPreferenceData,
+    validate_error_code,
+    validate_occurrence_key,
+)
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.6.0"
+BACKUP_SCHEMA_REVISION = "2.7.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -29,6 +34,8 @@ BACKUP_V2_SECTIONS = (
     "company_aliases",
     "work_items",
     "work_item_overrides",
+    "reminder_preferences",
+    "reminder_deliveries",
     "lifecycle_events",
     "saved_views",
     "sessions",
@@ -396,6 +403,51 @@ class UserGoalBackupV2(BackupRecordBase):
     applypilot_per_day: int | None
 
 
+class ReminderPreferenceBackupV2(BackupRecordBase):
+    enabled: bool
+    channel: Literal["in_app", "email"]
+    local_time: str
+    quiet_start: str
+    quiet_end: str
+
+    @model_validator(mode="after")
+    def validate_preference(self):
+        ReminderPreferenceData(
+            enabled=self.enabled,
+            channel=self.channel,
+            local_time=self.local_time,
+            quiet_start=self.quiet_start,
+            quiet_end=self.quiet_end,
+        )
+        return self
+
+
+class ReminderDeliveryBackupV2(BackupRecordBase):
+    track_ref: str | None
+    occurrence_key: str = Field(min_length=1, max_length=255)
+    channel: Literal["in_app", "email"]
+    status: Literal[
+        "pending", "sending", "sent", "failed", "unknown", "cancelled"
+    ]
+    scheduled_at: str
+    lease_until: str | None
+    attempt_count: int = Field(ge=0)
+    next_attempt_at: str | None
+    sent_at: str | None
+    last_error_code: str | None = Field(default=None, max_length=64)
+    version: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_delivery(self):
+        validate_occurrence_key(self.occurrence_key)
+        validate_error_code(self.last_error_code)
+        if self.status == "sent" and self.sent_at is None:
+            raise ValueError("sent reminder delivery requires sent_at.")
+        if self.status != "sent" and self.sent_at is not None:
+            raise ValueError("Only sent reminder delivery may contain sent_at.")
+        return self
+
+
 class UserProfileBackupV2(BackupRecordBase):
     timezone: str = Field(min_length=1, max_length=64)
     # Missing/null remains valid for v2 backups produced before JG-012.
@@ -428,6 +480,8 @@ class BackupSectionsV2(StrictBackupModel):
     company_aliases: list[CompanyAliasBackupV2] = Field(default_factory=list)
     work_items: list[WorkItemBackupV2] = Field(default_factory=list)
     work_item_overrides: list[WorkItemOverrideBackupV2] = Field(default_factory=list)
+    reminder_preferences: list[ReminderPreferenceBackupV2] = Field(default_factory=list, max_length=1)
+    reminder_deliveries: list[ReminderDeliveryBackupV2] = Field(default_factory=list)
     lifecycle_events: list[JobLifecycleEventBackupV2] = Field(default_factory=list)
     saved_views: list[SavedViewBackupV2]
     sessions: list[SearchSessionBackupV2]
@@ -447,6 +501,8 @@ class BackupCountsV2(StrictBackupModel):
     company_aliases: int = Field(default=0, ge=0)
     work_items: int = Field(default=0, ge=0)
     work_item_overrides: int = Field(default=0, ge=0)
+    reminder_preferences: int = Field(default=0, ge=0)
+    reminder_deliveries: int = Field(default=0, ge=0)
     lifecycle_events: int = Field(default=0, ge=0)
     saved_views: int = Field(ge=0)
     sessions: int = Field(ge=0)
@@ -650,6 +706,39 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             ["snoozed_until", "version"],
             "exported",
             "Durable per-action snooze state is portable user data.",
+        ),
+    },
+    "ReminderPreference": {
+        **_entries(
+            ["user_id"],
+            "reconstructed",
+            "Ownership is rebound to the authenticated destination account.",
+        ),
+        **_entries(
+            ["enabled", "channel", "local_time", "quiet_start", "quiet_end"],
+            "exported",
+            "Reminder preferences are portable, but restore intentionally forces enabled false until explicit re-enable.",
+        ),
+    },
+    "ReminderDelivery": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Destination identity and ownership are allocated from backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            ["track_id"],
+            "reconstructed",
+            "Optional application identity is represented as track_ref and remapped on restore.",
+        ),
+        **_entries(
+            [
+                "occurrence_key", "channel", "status", "scheduled_at",
+                "lease_until", "attempt_count", "next_attempt_at", "sent_at",
+                "last_error_code", "version",
+            ],
+            "exported",
+            "Delivery accounting is durable portable history; restore preserves state while keeping reminders disabled.",
         ),
     },
     "MaintenanceStatus": _entries(
@@ -900,6 +989,12 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
                 source_section="work_item_overrides", source_ref=override.backup_ref,
             )
 
+    for delivery in document.sections.reminder_deliveries:
+        _require_target(
+            refs, "job_tracks", delivery.track_ref,
+            source_section="reminder_deliveries", source_ref=delivery.backup_ref,
+        )
+
     lifecycle_positions = {
         event.backup_ref: index
         for index, event in enumerate(document.sections.lifecycle_events)
@@ -1008,6 +1103,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_work_item_overrides_section = (
         isinstance(raw_sections, Mapping) and "work_item_overrides" in raw_sections
     )
+    has_reminder_preferences_section = (
+        isinstance(raw_sections, Mapping) and "reminder_preferences" in raw_sections
+    )
+    has_reminder_deliveries_section = (
+        isinstance(raw_sections, Mapping) and "reminder_deliveries" in raw_sections
+    )
     has_user_profile_section = (
         isinstance(raw_sections, Mapping) and "user_profile" in raw_sections
     )
@@ -1045,6 +1146,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_work_item_overrides_section:
         # Revisions before JG-025 predate durable Today snooze overrides.
         checksum_sections.pop("work_item_overrides", None)
+    if not has_reminder_preferences_section:
+        # Revisions before JG-037 predate reminder preferences.
+        checksum_sections.pop("reminder_preferences", None)
+    if not has_reminder_deliveries_section:
+        # Revisions before JG-037 predate reminder delivery history.
+        checksum_sections.pop("reminder_deliveries", None)
     if not has_user_profile_section:
         # Revisions 2.0.0 and 2.1.0 predate portable account timezone.
         checksum_sections.pop("user_profile", None)
@@ -1127,6 +1234,8 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "company_aliases": CompanyAliasBackupV2,
     "work_items": WorkItemBackupV2,
     "work_item_overrides": WorkItemOverrideBackupV2,
+    "reminder_preferences": ReminderPreferenceBackupV2,
+    "reminder_deliveries": ReminderDeliveryBackupV2,
     "lifecycle_events": JobLifecycleEventBackupV2,
     "saved_views": SavedViewBackupV2,
     "sessions": SearchSessionBackupV2,
