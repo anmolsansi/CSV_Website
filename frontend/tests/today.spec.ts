@@ -3,6 +3,10 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 const AS_OF = '2026-09-21T15:00:00Z'
 const TIMEZONE = 'America/New_York'
 
+function futureLocalDateTime(days = 1) {
+  return new Date(Date.now() + (days * 24 * 60 * 60 * 1000)).toISOString().slice(0, 16)
+}
+
 function manualItem(overrides: Record<string, unknown> = {}) {
   return {
     action_key: 'manual:41',
@@ -113,13 +117,14 @@ test.describe('JG-027 Today screen', () => {
   test('keyboard_snooze_persists_after_reload', async ({ page }) => {
     let snoozed = false
     const item = manualItem()
+    const snoozeUntil = futureLocalDateTime()
 
     await routeTodayList(page, () => snoozed ? [] : [item])
     await page.route('**/crm/today/snooze', async (route) => {
       const payload = route.request().postDataJSON()
       expect(payload.action_key).toBe(item.action_key)
       expect(payload.version).toBe(1)
-      expect(payload.until).toContain('2026-09-22')
+      expect(payload.until.slice(0, 16)).toBe(snoozeUntil)
       snoozed = true
       await fulfillJson(route, {
         action_key: item.action_key,
@@ -135,7 +140,7 @@ test.describe('JG-027 Today screen', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Snooze action' })
     await expect(dialog).toBeVisible()
-    await dialog.locator('input[type="datetime-local"]').fill('2026-09-22T10:00')
+    await dialog.locator('input[type="datetime-local"]').fill(snoozeUntil)
     await dialog.getByRole('button', { name: 'Save' }).press('Enter')
 
     await expect(dialog).toHaveCount(0)
@@ -302,6 +307,7 @@ test.describe('JG-027 Today screen', () => {
 
 test.describe('JG-028 Today acceptance', () => {
   test('five-action work session preserves confirmed state through detail navigation and reload', async ({ page }) => {
+    const snoozeUntil = futureLocalDateTime()
     const detail = followupItem({
       action_key: 'followup:70:2026-09-21T13:00:00Z',
       id: 70,
@@ -438,7 +444,7 @@ test.describe('JG-028 Today acceptance', () => {
       .click()
     await page.getByRole('dialog', { name: 'Snooze action' })
       .locator('input[type="datetime-local"]')
-      .fill('2026-09-22T10:00')
+      .fill(snoozeUntil)
     controlActivations += 1
     await page.getByRole('dialog', { name: 'Snooze action' })
       .getByRole('button', { name: 'Save' })
