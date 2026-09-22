@@ -1217,7 +1217,7 @@ def test_document_backup_metadata_marks_byte_coverage_incomplete(db_session):
     db_session.commit()
 
     exported = export_backup_v2(db_session, source.id)
-    assert exported["schema_revision"] == "2.9.0"
+    assert exported["schema_revision"] == BACKUP_SCHEMA_REVISION
     assert exported["document_bytes_included"] is False
     assert exported["counts"]["document_versions"] == 1
     assert exported["counts"]["application_documents"] == 1
