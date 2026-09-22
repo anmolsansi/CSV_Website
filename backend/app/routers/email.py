@@ -1,8 +1,4 @@
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -12,6 +8,7 @@ from ..config import settings
 from ..database import get_db
 from ..email_templates import weekly_digest
 from ..models import User
+from ..services.email_transport import SMTPNotConfigured, render_html_email, send_via_smtp
 from .crm import weekly_report, goal_progress
 
 logger = logging.getLogger(__name__)
@@ -25,36 +22,10 @@ def _collect_digest_data(db: Session, user: User) -> dict:
     return {**report, "goal_progress": goals}
 
 
-def _render_email(to_email: str, subject: str, html_body: str) -> MIMEMultipart:
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = settings.EMAIL_FROM or settings.SMTP_USER
-    msg["To"] = to_email
-    msg.attach(MIMEText(html_body, "html"))
-    return msg
-
-
-def _send_via_smtp(msg: MIMEMultipart):
-    host = settings.SMTP_HOST
-    port = settings.SMTP_PORT
-    user = settings.SMTP_USER
-    password = settings.SMTP_PASS
-
-    if not host:
-        raise SMTPNotConfigured()
-
-    with smtplib.SMTP(host, port, timeout=30) as server:
-        server.ehlo()
-        if port == 587:
-            server.starttls()
-            server.ehlo()
-        if user and password:
-            server.login(user, password)
-        server.send_message(msg)
-
-
-class SMTPNotConfigured(Exception):
-    pass
+# Compatibility aliases keep the existing digest route/tests stable while the
+# transport itself lives in the service layer and is shared by reminders.
+_render_email = render_html_email
+_send_via_smtp = send_via_smtp
 
 
 @router.post("/weekly-digest")
