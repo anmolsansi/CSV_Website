@@ -2298,7 +2298,7 @@ def export_backup_bundle(db: Session, user_id: int) -> bytes:
                 "A ready document does not match its stored size/checksum.",
                 status_code=409,
             )
-        member = f"documents/{record['backup_ref']}"
+        member = f"documents/{source.id}"
         payload = path.read_bytes()
         expanded_bytes += len(payload)
         if expanded_bytes > MAX_BACKUP_BUNDLE_EXPANDED_BYTES:
@@ -2369,7 +2369,8 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
                 if not _safe_bundle_member_name(info.filename):
                     raise _bundle_error("bundle_unsafe_member", "Backup bundle contains an unsafe member path.")
                 mode = (info.external_attr >> 16) & 0xFFFF
-                if info.is_dir() or stat.S_ISLNK(mode):
+                file_type = stat.S_IFMT(mode)
+                if info.is_dir() or file_type not in (0, stat.S_IFREG):
                     raise _bundle_error("bundle_unsafe_member", "Backup bundle may contain regular files only.")
                 if info.flag_bits & 0x1:
                     raise _bundle_error("bundle_encrypted_member", "Encrypted ZIP members are not supported.")
@@ -2419,6 +2420,7 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
                 if item.state == "ready"
             }
             manifest_by_ref: dict[str, dict[str, Any]] = {}
+            manifest_paths: set[str] = set()
             expected_members = {"backup.json", "manifest.json"}
             for entry in manifest["documents"]:
                 if not isinstance(entry, dict) or set(entry) != {"backup_ref", "path", "size_bytes", "sha256"}:
@@ -2429,13 +2431,25 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
                 record = ready_records.get(ref)
                 if record is None:
                     raise _bundle_error("bundle_unexpected_document", "Manifest references a document not marked ready in backup.json.")
-                expected_path = f"documents/{ref}"
-                if entry["path"] != expected_path or not _safe_bundle_member_name(expected_path):
-                    raise _bundle_error("bundle_unsafe_member", "Document member path does not match its portable reference.")
+                member_path = entry["path"]
+                if (
+                    not isinstance(member_path, str)
+                    or not _safe_bundle_member_name(member_path)
+                    or not member_path.startswith("documents/")
+                    or member_path.count("/") != 1
+                ):
+                    raise _bundle_error("bundle_unsafe_member", "Document member path must use documents/{uuid}.")
+                try:
+                    UUID(member_path.split("/", 1)[1])
+                except (ValueError, AttributeError) as exc:
+                    raise _bundle_error("bundle_unsafe_member", "Document member path must use documents/{uuid}.") from exc
+                if member_path in manifest_paths:
+                    raise _bundle_error("bundle_duplicate_member", "Document manifest member paths must be unique.")
+                manifest_paths.add(member_path)
                 if entry["size_bytes"] != record.size_bytes or entry["sha256"] != record.sha256:
                     raise _bundle_error("bundle_document_metadata_mismatch", "Document manifest size/checksum differs from backup.json.")
                 manifest_by_ref[ref] = entry
-                expected_members.add(expected_path)
+                expected_members.add(member_path)
 
             if set(ready_records) != set(manifest_by_ref):
                 raise _bundle_error("bundle_missing_document", "A ready document is missing from the bundle manifest.")
