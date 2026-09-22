@@ -229,9 +229,7 @@ def test_known_transient_failure_bounded_retry(db_session):
 
             later = third_now + timedelta(hours=1)
             result = process_reminder_batch(db_session, now_utc=later, transport=transport)
-            assert result["claimed"] == 1
-            # A terminal known failure has no retry time, but failed is normally
-            # claimable. Max attempts therefore must suppress it explicitly.
+            assert result["claimed"] == 0
         finally:
             reminder_service.email_delivery_availability = old_availability
     finally:
