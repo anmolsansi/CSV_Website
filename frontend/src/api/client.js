@@ -150,6 +150,37 @@ export const api = {
   markRowApplied: (rowId) =>
     client.post('/crm/from-rows/bulk', { row_ids: [rowId], status: 'applied' }).then((r) => r.data),
 
+  // CRM - Private document versions
+  getDocuments: () => client.get('/crm/documents').then((r) => r.data),
+  uploadDocument: (file, { kind, label, documentFamilyId, signal, onProgress, idempotencyKey } = {}) => {
+    const fd = new FormData()
+    fd.append('kind', kind)
+    fd.append('label', label)
+    if (documentFamilyId) fd.append('document_family_id', documentFamilyId)
+    fd.append('file', file)
+    return client.post('/crm/documents', fd, {
+      signal,
+      headers: { 'Idempotency-Key': idempotencyKey || createOperationId() },
+      onUploadProgress: (event) => {
+        if (onProgress && event.total) {
+          onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+        }
+      },
+    }).then((r) => r.data)
+  },
+  downloadDocument: (documentId) =>
+    client.get(`/crm/documents/${documentId}/download`, { responseType: 'blob' }),
+  deleteDocument: (documentId) =>
+    client.delete(`/crm/documents/${documentId}`),
+  getDocumentApplications: (documentId, params = {}) =>
+    client.get(`/crm/documents/${documentId}/applications`, { params }).then((r) => r.data),
+  getTrackDocuments: (trackId) =>
+    client.get(`/crm/tracks/${trackId}/documents`).then((r) => r.data),
+  attachTrackDocument: (trackId, payload) =>
+    client.post(`/crm/tracks/${trackId}/documents`, payload).then((r) => r.data),
+  detachTrackDocument: (trackId, documentId) =>
+    client.delete(`/crm/tracks/${trackId}/documents/${documentId}`),
+
   // CRM - Application evidence and timeline
   getApplicationTimeline: (trackId, params = {}) =>
     client.get(`/crm/tracks/${trackId}/timeline`, { params }).then((r) => r.data),
