@@ -69,7 +69,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["011"]
+    assert script.get_heads() == ["012"]
 
 
 def test_legacy_schema_patch_module_removed():
