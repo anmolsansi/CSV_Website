@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, formatApiError } from '../api/client'
+import JobAvailability from './JobAvailability'
 
 const CSV_FIELD_LABELS = {
   ats_group: 'ATS Group', location_group: 'Location Group', search_bucket: 'Search Bucket',
@@ -209,6 +210,8 @@ export default function RowDrawer({ row, onClose }) {
           <div className="drawer-field"><span className="drawer-field-label">Resume Score</span><span className="drawer-field-value">{data.resume_match_score || '-'}</span></div>
           <div className="drawer-field"><span className="drawer-field-label">Decision</span><span className="drawer-field-value">{data.decision || '-'}</span></div>
         </div>
+
+        <JobAvailability rowId={row.id} />
 
         <div className="drawer-section">
           <h4>Application Status</h4>
