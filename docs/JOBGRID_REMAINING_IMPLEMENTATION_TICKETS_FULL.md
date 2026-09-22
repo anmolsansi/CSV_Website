@@ -187,7 +187,7 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 - [x] [JG-029 — Implement conservative URL and company identity rules](#jg-029)
 - [x] [JG-030 — Persist aliases and backfill derived identity safely](#jg-030)
 - [ ] [JG-031 — Expose matching and show applied-before context](#jg-031)
-- [ ] [JG-032 — Validate duplicate warnings against false positives](#jg-032)
+- [x] [JG-032 — Validate duplicate warnings against false positives](#jg-032)
 
 **F3 — Application evidence and a trustworthy timeline**
 
@@ -7616,7 +7616,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-032"></a>
 ### JG-032 — Validate duplicate warnings against false positives
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** Feature rank 2  
 **Type:** verification/operations  
 **Execution position:** 32/64; group step 4/4
@@ -7791,14 +7791,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-032 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: applied-before.spec.ts: tracking_variant_warning_and_continue
-- [ ] Required regression passes: new_requisition_not_exact_duplicate
-- [ ] Required regression passes: source_delete_retains_warning
-- [ ] Required regression passes: alias_remove_changes_grouping_only
-- [ ] Required regression passes: matching_query_bounded_for_large_fixture
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-032 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: applied-before.spec.ts: tracking_variant_warning_and_continue
+- [x] Required regression passes: new_requisition_not_exact_duplicate
+- [x] Required regression passes: source_delete_retains_warning
+- [x] Required regression passes: alias_remove_changes_grouping_only
+- [x] Required regression passes: matching_query_bounded_for_large_fixture
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -7816,12 +7816,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -7830,11 +7830,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-031` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: [#117](https://github.com/anmolsansi/CSV_Website/issues/117), tracking JG-032 implementation and acceptance.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-031 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** Tracking issue #117 and implementation PR #118 add the JG-032 labeled false-positive acceptance matrix without changing runtime matching rules, writers, or schema. The required new-requisition, source-deletion, alias-removal, bounded-query, and tracking-variant browser regressions, the PostgreSQL-backed backend suite, backend compile check, frontend production build, and full Chromium Playwright suite pass on CI run #237 at implementation head `c5d646f1006fd81bfba1992933f05e5910bf68f4`. The synthetic matrix records 2/2 correct duplicate-grade exact/canonical warnings with zero exact/canonical warnings across its two negative cases; this is fixture evidence only, not a real-world accuracy claim. JG-032 remains locally/CI verified and does not claim staging acceptance or production release.
 
 ---
 
