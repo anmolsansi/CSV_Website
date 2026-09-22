@@ -7864,7 +7864,7 @@ Mark a synthetic job applied, add a confirmation URL, correct the applied date w
 <a id="jg-033"></a>
 ### JG-033 — Add evidence records and immutable event payload rules
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** Feature rank 3  
 **Type:** schema/contract  
 **Execution position:** 33/64; group step 1/4
@@ -7938,7 +7938,7 @@ Status labels alone cannot answer when an application was made or which evidence
 | Path | Snapshot state | Intended role |
 |---|---|---|
 | `backend/app/models.py` | EXISTS | ORM fields, relationships and database constraints |
-| `backend/alembic/versions/009_application_evidence.py` | PROPOSED NEW | Additive schema revision; verify actual revision/head first |
+| `backend/alembic/versions/010_application_evidence.py` | PROPOSED NEW | Additive schema revision; verify actual revision/head first |
 | `backend/app/evidence_schemas.py` | PROPOSED NEW | Strict request/record validation contract |
 | `backend/app/services/lifecycle.py` | PROPOSED NEW | Shared transaction/query/domain behavior |
 | `backend/tests/test_evidence_models.py` | PROPOSED NEW | Regression fixture and assertions for this ticket |
@@ -8042,13 +8042,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-033 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: evidence_track_owner_checked
-- [ ] Required regression passes: unknown_event_payload_field_rejected
-- [ ] Required regression passes: original_event_immutable_after_correction
-- [ ] Required regression passes: backup_preserves_evidence_event_references
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-033 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: evidence_track_owner_checked
+- [x] Required regression passes: unknown_event_payload_field_rejected
+- [x] Required regression passes: original_event_immutable_after_correction
+- [x] Required regression passes: backup_preserves_evidence_event_references
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -8066,12 +8066,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -8084,7 +8084,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-032 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** JG-032 was merged before implementation began. JG-033 uses additive Alembic revision `010` because `009` is already the JG-030 job-identity migration. PR #120 final validated head `dd9a1df611c3175ee9c6fc1202bc333b51ecdb17` passed CI run #254: 408 PostgreSQL-backed backend tests passed, 144 Chromium Playwright tests passed, the frontend production build passed, and backend compilation passed. Required ownership, immutable-event, evidence-reference backup/restore, migration parity and 30-day recovery-retention regressions are included. JG-034 still owns public evidence/timeline mutation routes and JG-035 owns the UI, so no production activation or deployment is claimed by this ticket.
 
 ---
 
