@@ -258,3 +258,40 @@ def test_soft_delete_recovery_retention_is_bounded(db_session):
     assert fresh.body == "Fresh recovery body"
     assert db_session.get(EvidenceCreateReceipt, old_receipt_id) is None
     assert db_session.get(EvidenceCreateReceipt, fresh_receipt_id) is not None
+
+
+def test_status_correction_reference_must_match_application(db_session):
+    user = _user(db_session, "correction-owner")
+    first_track = _track(db_session, user, "correction-a")
+    second_track = _track(db_session, user, "correction-b")
+    original = write_event(
+        db_session,
+        user_id=user.id,
+        job_url=first_track.url,
+        kind="status_changed",
+        occurred_at=datetime(2026, 9, 22, 8, 0, 0),
+        source="evidence_test",
+        payload={"from": "opened", "to": "applied"},
+        job_track_id=first_track.id,
+        operation_id=uuid4(),
+    )
+    db_session.flush()
+
+    with pytest.raises(LifecycleEventError) as exc:
+        write_event(
+            db_session,
+            user_id=user.id,
+            job_url=second_track.url,
+            kind="status_changed",
+            occurred_at=datetime(2026, 9, 22, 8, 1, 0),
+            source="evidence_test",
+            payload={
+                "from": "opened",
+                "to": "applied",
+                "correction_of": original.id,
+                "reason": "Wrong application.",
+            },
+            job_track_id=second_track.id,
+            operation_id=uuid4(),
+        )
+    assert exc.value.code == "invalid_event_payload"
