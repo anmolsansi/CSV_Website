@@ -149,3 +149,34 @@ def test_invalid_attempt_counts_toward_rate_limit(
     assert limited.status_code == 429
     assert limited.json()["detail"]["code"] == "capture_rate_limited"
     assert int(limited.headers["Retry-After"]) > 0
+
+
+
+def test_capture_returns_owned_application_identity_warning(
+    auth_client, db_session
+):
+    user = db_session.query(User).filter_by(email="test@jobgrid.dev").one()
+    url = f"https://capture.example/jobs/{uuid4()}"
+    track = JobTrack(
+        user_id=user.id,
+        url=url,
+        company="Example",
+        title="Engineer",
+        status="opened",
+        notes=None,
+    )
+    db_session.add(track)
+    db_session.commit()
+
+    response = _capture(
+        auth_client,
+        url=url,
+        title="Engineer",
+        company="Example",
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["created"] is True
+    assert body["matches"][0]["track_id"] == track.id
+    assert body["matches"][0]["confidence"] == "exact"
+    assert body["company_history_count"] >= 1
