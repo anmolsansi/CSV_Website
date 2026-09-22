@@ -8328,7 +8328,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-035"></a>
 ### JG-035 — Build timeline and evidence entry in application detail
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #124  
 **Priority:** Feature rank 3  
 **Type:** interface integration  
 **Execution position:** 35/64; group step 3/4
@@ -8506,13 +8506,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-035 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: application-timeline.spec.ts: apply_evidence_correct_reload
-- [ ] Required regression passes: unknown_import_date_label
-- [ ] Required regression passes: script_like_text_rendered_literally
-- [ ] Required regression passes: stale_edit_draft_preserved
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-035 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: application-timeline.spec.ts: apply_evidence_correct_reload
+- [x] Required regression passes: unknown_import_date_label
+- [x] Required regression passes: script_like_text_rendered_literally
+- [x] Required regression passes: stale_edit_draft_preserved
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -8530,12 +8530,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -8544,11 +8544,21 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-034` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #123. Implementation PR: #124.
+
+#### Completion evidence
+
+- JG-034 dependency was already merged on `main` before JG-035 implementation began.
+- GitHub issue #123 and PR #124 track this ticket. PR #124 merged to `main` as `57aad32742966f651827a089f427822ea760b72b`.
+- Final CI run #267 on head `db76b4dc7c3bb94c1fbcaefa55bf2dd7f1da4940` passed every repository gate: backend compile, frontend production build, 416 PostgreSQL-backed backend tests, and 147 Chromium E2E tests.
+- The required JG-035 browser regressions pass: apply/evidence/correct/reload, honest Unknown occurrence dates, literal script-like evidence text, and stale-edit draft preservation.
+- Existing JG-017 applied-date validation remains compatible. Clearing an existing date still surfaces the original field validation, while a non-empty date change is routed to the reasoned correction flow.
+- Timeline serialization now exposes occurrence and recorded timestamps separately without removing the existing timestamp field.
+- Rollback remains data-preserving: disable/remove the JG-035 interface while retaining application evidence and lifecycle rows.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-034 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** The JG-035 application timeline/evidence interface is merged and repository validation is green. JG-036 remains the separate F3 lifecycle/recovery acceptance ticket. External staging or deployment is not claimed by this completion marker.
 
 ---
 
