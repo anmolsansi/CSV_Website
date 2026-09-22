@@ -214,12 +214,12 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [ ] [JG-045 — Add manual capture schema and replay identity](#jg-045)
 - [ ] [JG-046 — Implement capture API with identity warnings](#jg-046)
-- [ ] [JG-047 — Build quick-add page and user-invoked bookmarklet](#jg-047)
-- [ ] [JG-048 — Validate capture across browsers and lifecycle transitions](#jg-048)
+- [x] [JG-047 — Build quick-add page and user-invoked bookmarklet](#jg-047)
+- [x] [JG-048 — Validate capture across browsers and lifecycle transitions](#jg-048)
 
 **F7 — Job freshness and explicit deadlines**
 
-- [ ] [JG-049 — Model explicit deadlines and availability evidence](#jg-049)
+- [x] [JG-049 — Model explicit deadlines and availability evidence](#jg-049)
 - [ ] [JG-050 — Implement manual freshness and a disabled-by-default safe check adapter](#jg-050)
 - [ ] [JG-051 — Show deadlines freshness labels and Today actions](#jg-051)
 - [ ] [JG-052 — Validate freshness limits and false-closure resistance](#jg-052)
@@ -11438,9 +11438,17 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
 - External staging/deployment is not claimed by this local completion marker.
 
+#### Completion evidence
+
+- Implementation PR: #145, merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
+- Final validated branch candidate: `a3740254c3add90f6a4088bdcd6f296c2b06e3cc`.
+- GitHub Actions CI run #335 passed Frontend Build, Backend Compile Check, Backend Tests (490 passed), and E2E Tests (Playwright, 163 passed).
+- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by these tickets.
+- The required JG-047 browser regressions cover bookmarklet payload editing/saving, malformed or expired drafts, login draft preservation, external return rejection, and repeat-submit single-row behavior.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-046 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED; merged to `main` via PR #145 after final CI validation.** The quick-add page, bookmarklet, safe login return, expiring browser-local draft recovery, match context, retry behavior, required regressions, documentation, and rollback notes are complete for JG-047.
 
 ---
 
@@ -11673,9 +11681,17 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
 - External staging/deployment is not claimed by this local completion marker.
 
+#### Completion evidence
+
+- Implementation PR: #145, merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
+- Final validated branch candidate: `a3740254c3add90f6a4088bdcd6f296c2b06e3cc`.
+- GitHub Actions CI run #335 passed Frontend Build, Backend Compile Check, Backend Tests (490 passed), and E2E Tests (Playwright, 163 passed).
+- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by these tickets.
+- Five sequential Chromium capture-form saves completed in 172 ms, 93 ms, 81 ms, 82 ms, and 83 ms in CI, all below the under-one-minute-per-job acceptance target.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-047 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED; merged to `main` via PR #145 after final CI validation.** Capture browser/lifecycle validation, hostile-title escaping, popup fallback, duplicate warning flow, source-row deletion preservation, backup provenance, and timing evidence are complete for JG-048.
 
 ---
 
@@ -11779,7 +11795,7 @@ Stale jobs waste effort, but network failures must not be misrepresented as clos
 | Path | Snapshot state | Intended role |
 |---|---|---|
 | `backend/app/models.py` | EXISTS | ORM fields, relationships and database constraints |
-| `backend/alembic/versions/013_job_availability.py` | PROPOSED NEW | Additive schema revision; verify actual revision/head first |
+| `backend/alembic/versions/015_job_availability.py` | PROPOSED NEW | Additive schema revision; verify actual revision/head first |
 | `backend/app/availability_schemas.py` | PROPOSED NEW | Strict request/record validation contract |
 | `backend/tests/test_availability_models.py` | PROPOSED NEW | Regression fixture and assertions for this ticket |
 | `backend/app/backup_schemas.py` | PROPOSED NEW | Strict request/record validation contract |
@@ -11931,9 +11947,17 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
 - JG-050 outbound URL checking and JG-051 freshness UI remain out of scope and are not presented as shipped.
 
+#### Completion evidence
+
+- Implementation PR: #145, merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
+- Final validated branch candidate: `a3740254c3add90f6a4088bdcd6f296c2b06e3cc`.
+- GitHub Actions CI run #335 passed Frontend Build, Backend Compile Check, Backend Tests (490 passed), and E2E Tests (Playwright, 163 passed).
+- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by these tickets.
+- Alembic revision `015_job_availability` and portable backup schema revision `2.11.0` passed PostgreSQL schema parity, backup compatibility, restore, source-deletion, deadline, and closure-precedence coverage.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-048 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED; merged to `main` via PR #145 after final CI validation.** URL-scoped availability/deadline persistence, closure precedence, DST-safe date-only conversion, Today eligibility/action identity, seven-day request metadata cleanup, migration `015`, backup schema `2.11.0`, and required regressions are complete for JG-049.
 
 ---
 
