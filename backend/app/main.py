@@ -22,7 +22,7 @@ from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, capture, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
+from .routers import auth_router, availability, backup, capture, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -194,6 +194,7 @@ crm.router.routes[:] = [
 
 app.include_router(auth_router.router)
 app.include_router(upload.router)
+app.include_router(availability.router)
 app.include_router(rows.router)
 app.include_router(backup.router)
 app.include_router(capture.router)
