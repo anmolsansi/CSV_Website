@@ -7384,7 +7384,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-031"></a>
 ### JG-031 — Expose matching and show applied-before context
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally verified  
 **Priority:** Feature rank 2  
 **Type:** interface integration  
 **Execution position:** 31/64; group step 3/4
@@ -7566,14 +7566,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-031 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: visited_only_has_no_applied_warning
-- [ ] Required regression passes: exact_match_returns_prior_application_date
-- [ ] Required regression passes: canonical_warning_does_not_block_reapply
-- [ ] Required regression passes: slash_company_navigation_works
-- [ ] Required regression passes: foreign_alias_cannot_be_deleted
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-031 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: visited_only_has_no_applied_warning
+- [x] Required regression passes: exact_match_returns_prior_application_date
+- [x] Required regression passes: canonical_warning_does_not_block_reapply
+- [x] Required regression passes: slash_company_navigation_works
+- [x] Required regression passes: foreign_alias_cannot_be_deleted
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F2.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -7591,12 +7591,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -7609,7 +7609,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-030 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED / locally verified.** Tracking issue #115 and implementation PR #116 expose owner-scoped applied-before matching and explicit company alias controls without schema changes, automatic job merges, or destructive history rewrites. The five required JG-031 regressions, the PostgreSQL-backed backend suite, backend compile check, frontend production build, and full Chromium Playwright suite pass on CI run #232 at implementation head `2c97219e1c8741f301c59632a18c8a7626599cce`. JG-031 remains a locally/CI-verified ticket, not a claim of production deployment; JG-032 still owns the F2 false-positive acceptance matrix before group activation.
 
 ---
 
