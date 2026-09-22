@@ -1267,7 +1267,10 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
                     section="evidence_recovery",
                     backup_ref=record.backup_ref,
                 )
+            deleted_at = evidence.updated_at
             evidence.body = record.body
+            # Restoring recovery content must not extend the original deadline.
+            evidence.updated_at = deleted_at
             counts["evidence_recovery"]["created"] += 1
         else:
             counts["evidence_recovery"]["skipped"] += 1
