@@ -230,3 +230,35 @@ def test_production_oauth_callback_and_logout_use_secure_none_cookie(
     assert "HttpOnly" in logout_cookie
     assert "Secure" in logout_cookie
     assert "SameSite=none" in logout_cookie
+
+
+class _FakeOAuthRedirectClient:
+    async def authorize_redirect(self, request, redirect_uri, **kwargs):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("https://provider.example.test/authorize")
+
+
+def test_capture_oauth_return_path_is_allowlisted(client, monkeypatch):
+    monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    monkeypatch.setattr(auth_router, "_client", lambda provider: _FakeOAuthRedirectClient())
+
+    safe_login = client.get(
+        "/auth/login/google?return_to=%2Fcapture",
+        follow_redirects=False,
+    )
+    assert safe_login.status_code in {302, 307}
+
+    monkeypatch.setattr(auth_router, "_client", lambda provider: _FakeOAuthClient())
+    safe_callback = client.get("/auth/callback/google", follow_redirects=False)
+    assert safe_callback.status_code in {302, 307}
+    assert safe_callback.headers["location"] == "http://localhost:5173/capture"
+
+    unsafe_login = client.get(
+        "/auth/login/google?return_to=https%3A%2F%2Fevil.example.test",
+        follow_redirects=False,
+    )
+    assert unsafe_login.status_code in {302, 307}
+
+    unsafe_callback = client.get("/auth/callback/google", follow_redirects=False)
+    assert unsafe_callback.status_code in {302, 307}
+    assert unsafe_callback.headers["location"] == "http://localhost:5173"
