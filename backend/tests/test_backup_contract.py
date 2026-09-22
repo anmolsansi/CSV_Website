@@ -20,6 +20,8 @@ from app.backup_schemas import (
     JobTrackBackupV2,
     JobLifecycleEventBackupV2,
     MODEL_FIELD_INVENTORY,
+    ReminderDeliveryBackupV2,
+    ReminderPreferenceBackupV2,
     SavedViewBackupV2,
     SearchSessionBackupV2,
     UrlHistoryBackupV2,
@@ -46,6 +48,8 @@ from app.models import (
     JobLifecycleEvent,
     MaintenanceStatus,
     OAuthIdentity,
+    ReminderDelivery,
+    ReminderPreference,
     SavedView,
     SearchSession,
     UrlHistory,
@@ -140,6 +144,8 @@ def test_assert_complete_model_field_inventory():
         "UserGoal": UserGoal,
         "WorkItem": WorkItem,
         "WorkItemOverride": WorkItemOverride,
+        "ReminderPreference": ReminderPreference,
+        "ReminderDelivery": ReminderDelivery,
         "MaintenanceStatus": MaintenanceStatus,
     }
 
@@ -167,6 +173,8 @@ def test_frozen_section_record_allowlists_are_strict():
         "company_aliases": CompanyAliasBackupV2,
         "work_items": WorkItemBackupV2,
         "work_item_overrides": WorkItemOverrideBackupV2,
+        "reminder_preferences": ReminderPreferenceBackupV2,
+        "reminder_deliveries": ReminderDeliveryBackupV2,
         "lifecycle_events": JobLifecycleEventBackupV2,
         "saved_views": SavedViewBackupV2,
         "sessions": SearchSessionBackupV2,
@@ -255,6 +263,22 @@ def test_pre_jg025_v2_without_today_sections_keeps_original_checksum_contract():
     assert validated.counts.work_items == 0
     assert validated.sections.work_item_overrides == []
     assert validated.counts.work_item_overrides == 0
+
+
+def test_pre_jg037_v2_without_reminder_sections_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["sections"].pop("reminder_preferences")
+    payload["sections"].pop("reminder_deliveries")
+    payload["counts"].pop("reminder_preferences")
+    payload["counts"].pop("reminder_deliveries")
+    payload["schema_revision"] = "2.6.0"
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    validated = validate_backup_v2(payload)
+    assert validated.sections.reminder_preferences == []
+    assert validated.sections.reminder_deliveries == []
+    assert validated.counts.reminder_preferences == 0
+    assert validated.counts.reminder_deliveries == 0
 
 
 def test_unknown_section_or_ownership_field():
@@ -994,3 +1018,141 @@ def test_backup_remaps_status_correction_reference(db_session):
 
     assert restored_correction.payload["correction_of"] == restored_original.id
     assert restored_correction.payload["reason"] == "Recorded the wrong status."
+
+
+def test_restore_does_not_replay_sent_or_pending_email(db_session):
+    source = User(
+        email=f"reminder-backup-source-{uuid4()}@example.test",
+        timezone="America/Chicago",
+    )
+    destination = User(
+        email=f"reminder-backup-destination-{uuid4()}@example.test",
+        timezone="UTC",
+    )
+    db_session.add_all([source, destination])
+    db_session.flush()
+
+    preference = ReminderPreference(
+        user_id=source.id,
+        enabled=True,
+        channel="email",
+        local_time="09:15",
+        quiet_start="22:00",
+        quiet_end="07:30",
+    )
+    track = JobTrack(
+        user_id=source.id,
+        url=f"https://example.test/jobs/reminder-backup-{uuid4()}",
+        status="follow_up",
+        follow_up_at=datetime(2026, 9, 24, 14, 0, 0),
+    )
+    db_session.add_all([preference, track])
+    db_session.flush()
+
+    pending_at = datetime(2026, 9, 24, 14, 15, tzinfo=timezone.utc)
+    sent_at = datetime(2026, 9, 23, 14, 15, tzinfo=timezone.utc)
+    pending = ReminderDelivery(
+        user_id=source.id,
+        track_id=track.id,
+        occurrence_key=f"track:{track.id}:2026-09-24T14:00:00Z:2026-09-24",
+        channel="email",
+        status="pending",
+        scheduled_at=pending_at,
+        attempt_count=0,
+        version=1,
+    )
+    sent = ReminderDelivery(
+        user_id=source.id,
+        track_id=track.id,
+        occurrence_key=f"track:{track.id}:2026-09-23T14:00:00Z:2026-09-23",
+        channel="email",
+        status="sent",
+        scheduled_at=sent_at,
+        attempt_count=1,
+        sent_at=sent_at,
+        version=2,
+    )
+    db_session.add_all([pending, sent])
+    db_session.commit()
+
+    payload = export_backup_v2(db_session, source.id)
+    assert payload["schema_revision"] == "2.7.0"
+    assert payload["counts"]["reminder_preferences"] == 1
+    assert payload["counts"]["reminder_deliveries"] == 2
+    assert payload["sections"]["reminder_preferences"][0]["enabled"] is True
+    assert {item["status"] for item in payload["sections"]["reminder_deliveries"]} == {
+        "pending",
+        "sent",
+    }
+
+    result = restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert result["counts"]["reminder_preferences"] == {
+        "created": 1,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert result["counts"]["reminder_deliveries"] == {
+        "created": 2,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert any(
+        warning["code"] == "reminder_preferences_restored_disabled"
+        for warning in result["warnings"]
+    )
+
+    db_session.expire_all()
+    restored_preference = (
+        db_session.query(ReminderPreference)
+        .filter_by(user_id=destination.id)
+        .one()
+    )
+    assert restored_preference.enabled is False
+    assert restored_preference.channel == "email"
+    assert restored_preference.local_time == "09:15"
+    assert restored_preference.quiet_start == "22:00"
+    assert restored_preference.quiet_end == "07:30"
+
+    restored = (
+        db_session.query(ReminderDelivery)
+        .filter_by(user_id=destination.id)
+        .order_by(ReminderDelivery.status.asc())
+        .all()
+    )
+    assert len(restored) == 2
+    by_status = {item.status: item for item in restored}
+    assert set(by_status) == {"pending", "sent"}
+    assert by_status["pending"].sent_at is None
+    assert by_status["pending"].attempt_count == 0
+    assert by_status["sent"].attempt_count == 1
+    assert by_status["sent"].sent_at == sent_at
+    assert all(item.track_id is not None for item in restored)
+
+    replay = restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(payload),
+        "merge_missing",
+    )
+    assert replay["counts"]["reminder_preferences"]["skipped"] == 1
+    assert replay["counts"]["reminder_deliveries"]["skipped"] == 2
+
+    db_session.expire_all()
+    assert (
+        db_session.query(ReminderPreference)
+        .filter_by(user_id=destination.id)
+        .one()
+        .enabled
+        is False
+    )
+    assert {
+        item.status
+        for item in db_session.query(ReminderDelivery)
+        .filter_by(user_id=destination.id)
+        .all()
+    } == {"pending", "sent"}
