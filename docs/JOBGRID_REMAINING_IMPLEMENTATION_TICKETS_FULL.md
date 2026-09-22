@@ -9768,7 +9768,7 @@ Upload Resume v1, attach it to application A, upload v2 and attach to B. Downloa
 <a id="jg-041"></a>
 ### JG-041 — Model immutable document versions and private storage boundaries
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #138
 **Priority:** Feature rank 5  
 **Type:** schema/contract  
 **Execution position:** 41/64; group step 1/4
@@ -9950,13 +9950,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-041 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: referenced_version_cannot_be_overwritten
-- [ ] Required regression passes: cross_user_link_rejected
-- [ ] Required regression passes: quota_concurrency_one_reservation_wins
-- [ ] Required regression passes: ephemeral_or_public_path_configuration_rejected
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-041 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: referenced_version_cannot_be_overwritten
+- [x] Required regression passes: cross_user_link_rejected
+- [x] Required regression passes: quota_concurrency_one_reservation_wins
+- [x] Required regression passes: ephemeral_or_public_path_configuration_rejected
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -9999,7 +9999,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-042"></a>
 ### JG-042 — Implement bounded upload download and storage reconciliation
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #138
 **Priority:** Feature rank 5  
 **Type:** API/service  
 **Execution position:** 42/64; group step 2/4
@@ -10183,15 +10183,15 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-042 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: oversize_stream_stops_without_ready_file
-- [ ] Required regression passes: crash_before_and_after_rename_reconciles
-- [ ] Required regression passes: foreign_uuid_download404
-- [ ] Required regression passes: download_headers_and_hash_match
-- [ ] Required regression passes: retry_upload_single_version
-- [ ] Required regression passes: filename_path_traversal_cannot_escape_storage
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-042 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: oversize_stream_stops_without_ready_file
+- [x] Required regression passes: crash_before_and_after_rename_reconciles
+- [x] Required regression passes: foreign_uuid_download404
+- [x] Required regression passes: download_headers_and_hash_match
+- [x] Required regression passes: retry_upload_single_version
+- [x] Required regression passes: filename_path_traversal_cannot_escape_storage
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -10234,7 +10234,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-043"></a>
 ### JG-043 — Add document library and per-application version selection
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #138
 **Priority:** Feature rank 5  
 **Type:** interface integration  
 **Execution position:** 43/64; group step 3/4
@@ -10423,13 +10423,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-043 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: document_versions.spec.ts: application_A_keeps_v1_after_v2
-- [ ] Required regression passes: failed_upload_never_appears_ready
-- [ ] Required regression passes: referenced_delete_conflict_explained
-- [ ] Required regression passes: download_requires_current_session
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-043 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: document_versions.spec.ts: application_A_keeps_v1_after_v2
+- [x] Required regression passes: failed_upload_never_appears_ready
+- [x] Required regression passes: referenced_delete_conflict_explained
+- [x] Required regression passes: download_requires_current_session
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F5.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
