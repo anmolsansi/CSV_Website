@@ -395,6 +395,7 @@ class ReminderDelivery(Base):
     attempt_count = Column(Integer, default=0, nullable=False)
     next_attempt_at = Column(DateTime(timezone=True), nullable=True, index=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
     last_error_code = Column(String(64), nullable=True)
     version = Column(Integer, default=1, nullable=False)
 
