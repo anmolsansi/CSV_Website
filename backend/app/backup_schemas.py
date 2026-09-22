@@ -276,6 +276,7 @@ class JobLifecycleEventBackupV2(BackupRecordBase):
     csv_row_ref: str | None
     job_track_ref: str | None
     evidence_ref: str | None = None
+    correction_of_ref: str | None = None
     kind: Literal[
         "first_visited",
         "first_applied",
@@ -296,7 +297,7 @@ class JobLifecycleEventBackupV2(BackupRecordBase):
         allowlists = {
             "first_visited": frozenset(),
             "first_applied": frozenset(),
-            "status_changed": frozenset({"from", "to", "correction_of", "reason"}),
+            "status_changed": frozenset({"from", "to", "reason"}),
             "applied_date_corrected": frozenset({"from", "to", "reason"}),
             "followup_changed": frozenset({"from", "to"}),
             # evidence_id is represented by portable evidence_ref in backups.
@@ -334,19 +335,17 @@ class JobLifecycleEventBackupV2(BackupRecordBase):
                 validate_correction_reason(reason)
             except EvidenceContractError as exc:
                 raise ValueError(exc.message) from exc
-        correction_of = self.payload.get("correction_of")
         if self.kind == "status_changed" and (
-            correction_of is not None or reason is not None
+            self.correction_of_ref is not None or reason is not None
         ):
-            if (
-                not isinstance(correction_of, int)
-                or isinstance(correction_of, bool)
-                or correction_of <= 0
-                or reason is None
-            ):
+            if self.correction_of_ref is None or reason is None:
                 raise ValueError(
-                    "Status correction requires correction_of and bounded reason."
+                    "Status correction requires correction_of_ref and bounded reason."
                 )
+        elif self.correction_of_ref is not None:
+            raise ValueError(
+                "Only status_changed correction events may carry correction_of_ref."
+            )
         return self
 
 
@@ -901,7 +900,11 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
                 source_section="work_item_overrides", source_ref=override.backup_ref,
             )
 
-    for event in document.sections.lifecycle_events:
+    lifecycle_positions = {
+        event.backup_ref: index
+        for index, event in enumerate(document.sections.lifecycle_events)
+    }
+    for index, event in enumerate(document.sections.lifecycle_events):
         _require_target(
             refs, "csv_rows", event.csv_row_ref,
             source_section="lifecycle_events", source_ref=event.backup_ref,
@@ -914,6 +917,21 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
             refs, "application_evidence", event.evidence_ref,
             source_section="lifecycle_events", source_ref=event.backup_ref,
         )
+        _require_target(
+            refs, "lifecycle_events", event.correction_of_ref,
+            source_section="lifecycle_events", source_ref=event.backup_ref,
+        )
+        if (
+            event.correction_of_ref is not None
+            and lifecycle_positions[event.correction_of_ref] >= index
+        ):
+            raise BackupContractError(
+                "conflicting_reference_graph",
+                409,
+                "Correction events must reference an earlier lifecycle event.",
+                section="lifecycle_events",
+                backup_ref=event.backup_ref,
+            )
 
     for event in document.sections.audit_events:
         _require_target(refs, "sessions", event.session_ref, source_section="audit_events", source_ref=event.backup_ref)
@@ -1059,6 +1077,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
             and index < len(checksum_sections.get("lifecycle_events", []))
         ):
             checksum_sections["lifecycle_events"][index].pop("evidence_ref", None)
+        if (
+            isinstance(raw_record, Mapping)
+            and "correction_of_ref" not in raw_record
+            and index < len(checksum_sections.get("lifecycle_events", []))
+        ):
+            checksum_sections["lifecycle_events"][index].pop("correction_of_ref", None)
 
     raw_profiles = (
         raw_sections.get("user_profile", [])
