@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -67,7 +67,7 @@ def purge_expired_evidence_recovery_state(
             f"limit must be between 1 and {MAX_EVIDENCE_MAINTENANCE_BATCH}.",
         )
     if now.tzinfo is not None:
-        now = now.replace(tzinfo=None)
+        now = now.astimezone(timezone.utc).replace(tzinfo=None)
 
     evidence_cutoff = now - timedelta(days=EVIDENCE_SOFT_DELETE_RETENTION_DAYS)
     expired_evidence = (
@@ -82,7 +82,10 @@ def purge_expired_evidence_recovery_state(
         .all()
     )
     for item in expired_evidence:
+        deleted_at = item.updated_at
         item.body = None
+        # Maintenance redaction must not rewrite the user's deletion timestamp.
+        item.updated_at = deleted_at
 
     receipt_cutoff = now - timedelta(days=EVIDENCE_RECEIPT_RETENTION_DAYS)
     expired_receipts = (
