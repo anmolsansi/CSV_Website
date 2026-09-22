@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4, uuid5
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1268,9 +1269,14 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
                     backup_ref=record.backup_ref,
                 )
             deleted_at = evidence.updated_at
-            evidence.body = record.body
+            session.execute(
+                update(ApplicationEvidence)
+                .where(ApplicationEvidence.id == evidence.id)
+                .values(body=record.body, updated_at=deleted_at)
+                .execution_options(synchronize_session=False)
+            )
             # Restoring recovery content must not extend the original deadline.
-            evidence.updated_at = deleted_at
+            session.expire(evidence)
             counts["evidence_recovery"]["created"] += 1
         else:
             counts["evidence_recovery"]["skipped"] += 1
