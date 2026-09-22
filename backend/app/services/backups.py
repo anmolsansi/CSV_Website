@@ -232,6 +232,9 @@ def _serialize_sections(
             "clicked_at": _utc_iso(row.clicked_at),
             "archived": row.archived,
             "archived_at": _utc_iso(row.archived_at),
+            "capture_source": row.capture_source,
+            "captured_at": _utc_iso(row.captured_at),
+            "capture_notes": row.capture_notes,
             "is_duplicate": row.is_duplicate,
             "duplicate_of_ref": _required_ref(
                 refs["csv_rows"], row.duplicate_of_id,
@@ -806,7 +809,7 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
         if existing is None:
             counts["csv_rows"]["created"] += 1
         else:
-            fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
+            fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
             counts["csv_rows"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
     for record in document.sections.url_history:
@@ -1121,7 +1124,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         existing = session.query(CsvRow).filter_by(user_id=user_id, url=record.url).first()
         if existing is not None:
             apply_persisted_job_identity(existing)
-            fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
+            fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
             outcome = _classify_existing(_record_equal(existing, record, fields))
             refs["csv_rows"][record.backup_ref] = existing.id
             _persist_import_map(session, user_id, backup_id, "csv_rows", record.backup_ref, existing.id)
@@ -1138,6 +1141,9 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             clicked_at=_parse_backup_datetime(record.clicked_at),
             archived=record.archived,
             archived_at=_parse_backup_datetime(record.archived_at),
+            capture_source=record.capture_source,
+            captured_at=_parse_backup_datetime(record.captured_at),
+            capture_notes=record.capture_notes,
             is_duplicate=record.is_duplicate,
             duplicate_of_id=None,
             **values,
