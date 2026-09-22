@@ -136,12 +136,6 @@ def test_canonical_warning_does_not_block_reapply(client, db_session):
     assert warning.json()["matches"][0]["track_id"] == prior.id
     assert warning.json()["matches"][0]["confidence"] == "canonical"
 
-    retained_identity = {
-        "url": row.url,
-        "company": row.company_guess,
-        "title": row.title,
-    }
-
     created = client.post(f"/crm/from-row/{row.id}")
     assert created.status_code == 200
     assert created.json()["warning_candidates"][0]["confidence"] == "canonical"
@@ -397,6 +391,12 @@ def test_source_delete_retains_warning(client, db_session):
         company="Durable History Co",
         title="Backend Engineer",
     )
+
+    retained_identity = {
+        "url": row.url,
+        "company": row.company_guess,
+        "title": row.title,
+    }
 
     created = client.post(f"/crm/from-row/{row.id}")
     assert created.status_code == 200
