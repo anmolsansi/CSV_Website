@@ -152,8 +152,11 @@ test.describe('JG-043 document versions', () => {
     expect(authenticated.ok()).toBeTruthy()
     expect(await authenticated.body()).toEqual(PDF_V1)
 
-    const anonymous = await playwrightRequest.newContext()
+    const anonymous = await playwrightRequest.newContext({
+      storageState: { cookies: [], origins: [] },
+    })
     try {
+      await anonymous.post(`${API_URL}/auth/logout`)
       const unauthenticated = await anonymous.get(
         `${API_URL}/crm/documents/${document.id}/download`
       )
