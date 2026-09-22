@@ -1,6 +1,6 @@
 import copy
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -9,12 +9,14 @@ from app.backup_schemas import (
     BACKUP_SCHEMA_REVISION,
     BACKUP_V2_SECTIONS,
     CSV_ROW_TEXT_FIELDS,
+    ApplicationEvidenceBackupV2,
     ApplyPilotBatchBackupV2,
     AuditEventBackupV2,
     BackupContractError,
     ColumnPreferenceBackupV2,
     CompanyAliasBackupV2,
     CsvRowBackupV2,
+    EvidenceRecoveryBackupV2,
     JobTrackBackupV2,
     JobLifecycleEventBackupV2,
     MODEL_FIELD_INVENTORY,
@@ -33,11 +35,13 @@ from app.backup_schemas import (
 )
 from app.models import (
     CSV_COLUMNS,
+    ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
     CompanyAlias,
     CsvRow,
+    EvidenceCreateReceipt,
     JobTrack,
     JobLifecycleEvent,
     MaintenanceStatus,
@@ -51,6 +55,7 @@ from app.models import (
     WorkItemOverride,
 )
 from app.services.backups import export_backup_v2, restore_backup_v2
+from app.services.lifecycle import write_event
 from app.today_schemas import followup_action_key, manual_action_key
 
 NOW = "2026-09-16T09:30:00Z"
@@ -123,6 +128,8 @@ def test_assert_complete_model_field_inventory():
         "UrlHistory": UrlHistory,
         "CsvRow": CsvRow,
         "JobTrack": JobTrack,
+        "ApplicationEvidence": ApplicationEvidence,
+        "EvidenceCreateReceipt": EvidenceCreateReceipt,
         "CompanyAlias": CompanyAlias,
         "JobLifecycleEvent": JobLifecycleEvent,
         "SavedView": SavedView,
@@ -155,6 +162,8 @@ def test_frozen_section_record_allowlists_are_strict():
         "csv_rows": CsvRowBackupV2,
         "url_history": UrlHistoryBackupV2,
         "job_tracks": JobTrackBackupV2,
+        "application_evidence": ApplicationEvidenceBackupV2,
+        "evidence_recovery": EvidenceRecoveryBackupV2,
         "company_aliases": CompanyAliasBackupV2,
         "work_items": WorkItemBackupV2,
         "work_item_overrides": WorkItemOverrideBackupV2,
@@ -790,3 +799,124 @@ def test_backup_import_invalid_json_returns_parser_400(auth_client):
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "invalid_json"
     assert "traceback" not in response.text.lower()
+
+
+def test_backup_preserves_evidence_event_references(db_session):
+    source = User(email=f"evidence-source-{uuid4()}@example.test")
+    destination = User(email=f"evidence-destination-{uuid4()}@example.test")
+    db_session.add_all([source, destination])
+    db_session.flush()
+
+    track = JobTrack(
+        user_id=source.id,
+        url=f"https://example.com/jobs/evidence-{uuid4()}",
+        status="applied",
+        applied_at=datetime.utcnow(),
+    )
+    db_session.add(track)
+    db_session.flush()
+
+    evidence = ApplicationEvidence(
+        user_id=source.id,
+        track_id=track.id,
+        kind="confirmation_url",
+        body="https://example.com/application/confirmation",
+        occurred_at=datetime.utcnow(),
+        version=1,
+    )
+    db_session.add(evidence)
+    db_session.flush()
+
+    event = write_event(
+        db_session,
+        user_id=source.id,
+        job_url=track.url,
+        kind="evidence_added",
+        occurred_at=datetime.utcnow(),
+        source="backup_test",
+        payload={
+            "evidence_id": evidence.id,
+            "evidence_kind": "confirmation_url",
+        },
+        job_track_id=track.id,
+        operation_id=uuid4(),
+    )
+    db_session.commit()
+
+    exported = export_backup_v2(db_session, source.id)
+    assert exported["counts"]["application_evidence"] == 1
+    assert exported["counts"]["evidence_recovery"] == 0
+    portable_evidence = exported["sections"]["application_evidence"][0]
+    portable_event = next(
+        item
+        for item in exported["sections"]["lifecycle_events"]
+        if item["event_key"] == event.event_key
+    )
+    assert portable_event["evidence_ref"] == portable_evidence["backup_ref"]
+    assert "evidence_id" not in portable_event["payload"]
+    assert portable_event["payload"]["evidence_kind"] == "confirmation_url"
+
+    document = validate_backup_v2(exported)
+    restored = restore_backup_v2(
+        db_session, destination.id, document, mode="merge_missing"
+    )
+    assert restored["counts"]["application_evidence"]["created"] == 1
+    assert restored["counts"]["lifecycle_events"]["created"] >= 1
+
+    restored_evidence = db_session.query(ApplicationEvidence).filter_by(
+        user_id=destination.id
+    ).one()
+    restored_event = db_session.query(JobLifecycleEvent).filter_by(
+        user_id=destination.id,
+        event_key=event.event_key,
+    ).one()
+    assert restored_evidence.track_id != evidence.track_id
+    assert restored_event.payload["evidence_id"] == restored_evidence.id
+    assert restored_event.payload["evidence_kind"] == "confirmation_url"
+
+
+def test_deleted_evidence_body_uses_recovery_section(db_session):
+    source = User(email=f"recovery-source-{uuid4()}@example.test")
+    destination = User(email=f"recovery-destination-{uuid4()}@example.test")
+    db_session.add_all([source, destination])
+    db_session.flush()
+
+    track = JobTrack(
+        user_id=source.id,
+        url=f"https://example.com/jobs/recovery-{uuid4()}",
+        status="opened",
+    )
+    db_session.add(track)
+    db_session.flush()
+    deleted_at = datetime.utcnow() - timedelta(days=1)
+    evidence = ApplicationEvidence(
+        user_id=source.id,
+        track_id=track.id,
+        kind="note",
+        body="Recoverable private evidence",
+        version=2,
+        is_deleted=True,
+        updated_at=deleted_at,
+    )
+    db_session.add(evidence)
+    db_session.commit()
+
+    exported = export_backup_v2(db_session, source.id)
+    ordinary = exported["sections"]["application_evidence"][0]
+    recovery = exported["sections"]["evidence_recovery"][0]
+    assert ordinary["is_deleted"] is True
+    assert ordinary["body"] is None
+    assert recovery["body"] == "Recoverable private evidence"
+    assert recovery["evidence_ref"] == ordinary["backup_ref"]
+
+    restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(exported),
+        mode="merge_missing",
+    )
+    restored_evidence = db_session.query(ApplicationEvidence).filter_by(
+        user_id=destination.id
+    ).one()
+    assert restored_evidence.is_deleted is True
+    assert restored_evidence.body == "Recoverable private evidence"
