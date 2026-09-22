@@ -19,6 +19,7 @@ from app.backup_schemas import (
     CsvRowBackupV2,
     DocumentVersionBackupV2,
     EvidenceRecoveryBackupV2,
+    JobAvailabilityBackupV2,
     JobTrackBackupV2,
     JobLifecycleEventBackupV2,
     ReminderDeliveryBackupV2,
@@ -50,6 +51,8 @@ from app.models import (
     DocumentCreateReceipt,
     DocumentVersion,
     EvidenceCreateReceipt,
+    JobAvailability,
+    JobCheckRequest,
     JobTrack,
     JobLifecycleEvent,
     MaintenanceStatus,
@@ -140,6 +143,8 @@ def test_assert_complete_model_field_inventory():
         "UrlHistory": UrlHistory,
         "CsvRow": CsvRow,
         "JobTrack": JobTrack,
+        "JobAvailability": JobAvailability,
+        "JobCheckRequest": JobCheckRequest,
         "DocumentVersion": DocumentVersion,
         "ApplicationDocument": ApplicationDocument,
         "DocumentCreateReceipt": DocumentCreateReceipt,
@@ -181,6 +186,7 @@ def test_frozen_section_record_allowlists_are_strict():
         "csv_rows": CsvRowBackupV2,
         "url_history": UrlHistoryBackupV2,
         "job_tracks": JobTrackBackupV2,
+        "job_availability": JobAvailabilityBackupV2,
         "document_versions": DocumentVersionBackupV2,
         "application_documents": ApplicationDocumentBackupV2,
         "application_evidence": ApplicationEvidenceBackupV2,
@@ -222,6 +228,21 @@ def test_null_empty_false_zero_round_trip():
 
     reparsed = validate_backup_v2(json.dumps(dumped))
     assert reparsed.model_dump(mode="json") == dumped
+
+
+
+
+def test_pre_jg049_v2_without_job_availability_keeps_original_checksum_contract():
+    payload = _valid_payload()
+    payload["sections"].pop("job_availability")
+    payload["counts"].pop("job_availability")
+    payload["schema_revision"] = "2.10.0"
+    payload["checksum_sha256"] = compute_sections_checksum(payload["sections"])
+
+    validated = validate_backup_v2(json.dumps(payload))
+    assert validated.sections.job_availability == []
+    assert validated.counts.job_availability == 0
+    assert validated.checksum_sha256 == payload["checksum_sha256"]
 
 
 def test_older_v2_without_lifecycle_section_keeps_original_checksum_contract():
