@@ -9055,7 +9055,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-038"></a>
 ### JG-038 — Implement clock-safe planning claiming and delivery
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #134
 **Priority:** Feature rank 4  
 **Type:** service/contract  
 **Execution position:** 38/64; group step 2/4
@@ -9231,14 +9231,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-038 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: dst_gap_and_overlap_one_daily_occurrence
-- [ ] Required regression passes: two_workers_one_claim
-- [ ] Required regression passes: crash_after_acceptance_becomes_unknown
-- [ ] Required regression passes: known_transient_failure_bounded_retry
-- [ ] Required regression passes: rescheduled_followup_cancels_old_delivery
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-038 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: dst_gap_and_overlap_one_daily_occurrence
+- [x] Required regression passes: two_workers_one_claim
+- [x] Required regression passes: crash_after_acceptance_becomes_unknown
+- [x] Required regression passes: known_transient_failure_bounded_retry
+- [x] Required regression passes: rescheduled_followup_cancels_old_delivery
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -9256,12 +9256,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -9272,16 +9272,20 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Completion evidence
+
+PR #134 merged the F4 worker implementation. GitHub Actions CI run #287 passed the full PostgreSQL-backed backend suite (444 tests), backend compile, frontend production build, and the complete Playwright suite (149 tests). Required JG-038 reminder-worker regressions are included in that green run.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-037 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-038 worker planning, deterministic occurrence synchronization, PostgreSQL lease claiming, delivery outcome accounting, bounded retry behavior, recovery handling, and operational counters merged to `main` via PR #134.
 
 ---
 
 <a id="jg-039"></a>
 ### JG-039 — Expose opt-in preferences and delivery history
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #134
 **Priority:** Feature rank 4  
 **Type:** interface integration  
 **Execution position:** 39/64; group step 3/4
@@ -9462,14 +9466,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-039 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: opt_out_cancels_unsent_only
-- [ ] Required regression passes: unverified_destination_cannot_enable_email
-- [ ] Required regression passes: unknown_retry_requires_explicit_action
-- [ ] Required regression passes: foreign_delivery_hidden
-- [ ] Required regression passes: ui_does_not_label_queued_as_sent
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-039 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: opt_out_cancels_unsent_only
+- [x] Required regression passes: unverified_destination_cannot_enable_email
+- [x] Required regression passes: unknown_retry_requires_explicit_action
+- [x] Required regression passes: foreign_delivery_hidden
+- [x] Required regression passes: ui_does_not_label_queued_as_sent
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -9487,12 +9491,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -9503,16 +9507,20 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Completion evidence
+
+PR #134 merged the authenticated reminder API and UI integration. CI run #287 passed 444 PostgreSQL-backed backend tests and 149 Playwright tests, including opt-out/history ownership, unavailable-email, explicit-unknown-retry, and truthful queued-versus-sent UI coverage.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-038 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-039 owner-scoped reminder preferences/history APIs, optimistic version guards, explicit unknown retry, persisted in-app read state, and Today reminder settings/history UI merged to `main` via PR #134.
 
 ---
 
 <a id="jg-040"></a>
 ### JG-040 — Verify reminder recovery and controlled real delivery
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged to `main` via PR #134; controlled external email remains disabled pending explicit staging authorization/credentials
 **Priority:** Feature rank 4  
 **Type:** verification/operations  
 **Execution position:** 40/64; group step 4/4
@@ -9684,13 +9692,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-040 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: reminders.spec.ts: opt_in_due_opt_out
-- [ ] Required regression passes: restart_does_not_duplicate_accepted_delivery
-- [ ] Required regression passes: timezone_change_replans_unsent
-- [ ] Required regression passes: controlled_inbox_receipt_or_explicit_blocked_gate
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-040 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: reminders.spec.ts: opt_in_due_opt_out
+- [x] Required regression passes: restart_does_not_duplicate_accepted_delivery
+- [x] Required regression passes: timezone_change_replans_unsent
+- [x] Required regression passes: controlled_inbox_receipt_or_explicit_blocked_gate
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F4.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -9708,12 +9716,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -9724,9 +9732,13 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
 
+#### Completion evidence
+
+CI run #287 passed the full backend and frontend suites. The acceptance path `controlled_inbox_receipt_or_explicit_blocked_gate` passed through the explicit blocked-gate branch because no staging authorization/credentials were supplied. This preserves the ticket's stop condition and keeps local completion distinct from future staging proof of a received real email.
+
 #### Ticket intake result
 
-**PLANNED; waits for JG-039 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED WITH SAFE EXTERNAL GATE.** JG-040 fake-clock, restart/lease recovery, timezone replanning, UI opt-in/opt-out/reload, operations documentation, and blocked-gate acceptance merged to `main` via PR #134. No real email was sent because explicit staging authorization and credentials were not supplied; `REMINDER_EMAIL_DELIVERY_ENABLED=false` remains the default.
 
 ---
 
