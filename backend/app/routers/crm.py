@@ -47,6 +47,7 @@ from ..services.row_queries import (
     order_row_query,
     resolve_row_sort_column,
 )
+from ..services.reminders import sync_track_reminder, sync_user_reminders
 from ..services.retention import (
     MAX_RETENTION_DAYS,
     MIN_RETENTION_DAYS,
@@ -266,6 +267,13 @@ def _apply_track_patch(
         **lifecycle_kwargs,
     )
     apply_persisted_job_identity(item)
+    if "follow_up_at" in lifecycle_kwargs or "status" in lifecycle_kwargs:
+        sync_track_reminder(
+            db,
+            user_id=user_id,
+            track_id=item.id,
+            now_utc=now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now,
+        )
 
 
 def num_expr(col):
@@ -897,6 +905,11 @@ def update_profile_timezone(
         raise HTTPException(422, exc.message) from exc
 
     user.timezone = timezone_name
+    sync_user_reminders(
+        db,
+        user_id=user.id,
+        now_utc=datetime.now(timezone.utc),
+    )
     db.commit()
     db.refresh(user)
     return {"timezone": user.timezone}
@@ -1686,6 +1699,12 @@ def set_follow_up_preset(
             operation_id=operation_id,
             now=now,
             follow_up_at=follow_up_at,
+        )
+        sync_track_reminder(
+            db,
+            user_id=user.id,
+            track_id=item.id,
+            now_utc=now.replace(tzinfo=timezone.utc),
         )
         emit_event(
             db,
