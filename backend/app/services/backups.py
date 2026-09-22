@@ -1376,13 +1376,17 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             else record.occurrence_key
         )
         restored_status = (
-            "cancelled"
-            if record.status in {"pending", "sending"}
+            "pending"
+            if record.status == "pending"
+            else "unknown"
+            if record.status == "sending"
             else record.status
         )
         restored_error = (
             "restored_paused"
-            if record.status in {"pending", "sending"}
+            if record.status == "pending"
+            else "restored_inflight_unknown"
+            if record.status == "sending"
             else record.last_error_code
         )
         existing = session.query(ReminderDelivery).filter_by(
@@ -1439,9 +1443,15 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             "reminder_deliveries", record.backup_ref, item.id,
         )
         counts["reminder_deliveries"]["created"] += 1
-        if record.status in {"pending", "sending"}:
+        if record.status == "pending":
             warnings.append(_restore_warning(
                 "reminder_delivery_restored_paused",
+                section="reminder_deliveries",
+                backup_ref=record.backup_ref,
+            ))
+        elif record.status == "sending":
+            warnings.append(_restore_warning(
+                "reminder_delivery_restored_unknown",
                 section="reminder_deliveries",
                 backup_ref=record.backup_ref,
             ))
