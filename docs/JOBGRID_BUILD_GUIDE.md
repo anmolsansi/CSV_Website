@@ -16,6 +16,144 @@ JG-002 activates complete v2 export and adds stable restore identity persistence
 
 JG-025 extends backup v2 with durable manual Today work items and snooze overrides. Portable backups remap WorkItem track/row/view references and regenerate action keys from destination IDs so source database IDs never become restore authority.
 
+
+JG-041 extends backup schema revision **2.9.0** with immutable document metadata,
+SHA-256 checksums, and application/document references. The ordinary JSON backup
+sets `document_bytes_included=false`. It does **not** contain the private file bytes,
+so importing this JSON intentionally skips document metadata/links instead of creating
+a misleading `ready` document row without its bytes. JG-044 owns the future ZIP
+bundle and byte-level restore proof.
+
+## Private document versions (JG-041–JG-043)
+
+Document versions are private account-owned application artifacts. The implementation
+uses three persistence records in `backend/app/models.py`:
+
+- `DocumentVersion` is an immutable resume or cover-letter version with a UUID,
+  family UUID, version number, original display filename, verified media type, byte
+  count, SHA-256 digest, private storage key, and state.
+- `ApplicationDocument` records whether an exact immutable version was **Used** or
+  kept as a **Reference** for one application. A partial unique index permits at most
+  one Used version per application and document kind.
+- `DocumentCreateReceipt` keeps upload idempotency outcomes for replay protection.
+  These receipts are operational state and are excluded from portable backup data.
+
+Alembic revision `013` adds these tables after existing revision `012`. The roadmap's
+older proposed `011_documents.py` filename was not reused because revisions 011 and
+012 already exist in the applied reminder chain. Never rewrite an applied migration to
+make the filename match an old ticket draft.
+
+### Private storage configuration
+
+Set `DOCUMENT_STORAGE_DIR` to an **absolute, private, durable filesystem path** that
+is outside the repository, frontend public/build directories, and any web server static
+mount. Production configuration rejects the system temporary directory because it is
+not durable storage.
+
+The document feature returns a safe unavailable state when this path is absent or
+unsafe. Other JobGrid features can continue running. The API never exposes storage
+keys or private filesystem paths.
+
+Example local setup:
+
+```sh
+export DOCUMENT_STORAGE_DIR=/absolute/private/path/jobgrid-documents
+```
+
+The service creates private `staging/`, `documents/`, and `trash/` children.
+Do not mount any of them as static web content.
+
+### Upload and immutable version flow
+
+`POST /crm/documents` accepts multipart form data with `kind`, `label`, optional
+`document_family_id`, and `file`. Every request requires a UUID
+`Idempotency-Key`.
+
+The storage flow is:
+
+1. Stream the upload in bounded chunks and stop after **10 MiB**.
+2. Write to a random staging name. User-supplied filenames are display metadata only.
+3. Verify the actual bytes as a genuine PDF signature or strict UTF-8 text.
+4. Calculate SHA-256 while streaming.
+5. Lock the owner row, enforce the **100 MiB account quota**, allocate the next family
+   version, and persist a pending metadata/receipt record.
+6. Atomically rename the staged file into a random owner-scoped private key, fsync the
+   file/directory, then mark the row and receipt ready.
+7. A replay with the same key and identical payload returns the original version.
+   Reusing the key for different content returns a conflict.
+
+A ready document version is never overwritten in place. Upload another family version
+instead. The ORM also rejects changes to content-identity fields below the route layer.
+
+### Application links and corrections
+
+The authenticated document routes are:
+
+- `GET /crm/documents` for the owner-only library and quota summary.
+- `GET /crm/documents/{uuid}/download` for an authenticated attachment response.
+  Responses use `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`.
+- `GET /crm/documents/{uuid}/applications` for a bounded linked-application view
+  with at most 50 records per page.
+- `GET /crm/tracks/{id}/documents` for the exact versions attached to one application.
+- `POST /crm/tracks/{id}/documents` to attach a ready owner-owned version as Used
+  or Reference.
+- `DELETE /crm/tracks/{id}/documents/{uuid}` to detach only. It never deletes bytes.
+- `DELETE /crm/documents/{uuid}` to delete an unreferenced library version. Referenced
+  versions return `409 document_is_referenced` with bounded application context.
+
+Replacing an existing Used version is deliberately different from adding a Reference.
+The caller must name the current Used version as `replace_document_version_id`. A
+successful correction records an audit fact with the old and new immutable version IDs.
+The earlier version stays in the private library unless it is later detached everywhere
+and explicitly deleted.
+
+### Recovery and reconciliation
+
+`backend/app/services/documents.py` owns bounded reconciliation. After the one-hour
+grace window it can:
+
+- delete stale staging parts;
+- promote a pending row to ready only when the final file exists and its size/hash match;
+- mark an unrecoverable pending row failed;
+- count ready rows whose bytes are missing without silently substituting another version;
+- remove old untracked orphan files; and
+- purge quarantined deleted bytes after the retention window.
+
+Document logs expose action/outcome/counters only. They do not log private paths,
+filenames, hashes, recipients, or document contents.
+
+### Document UI
+
+`frontend/src/pages/Documents.jsx` provides the authenticated library, upload
+progress/cancellation, quota feedback, immutable family version creation, downloads,
+reference-aware deletion, and linked-application context. Missing bytes are shown as a
+recovery state and cannot be downloaded.
+
+`frontend/src/components/ApplicationDocuments.jsx` is embedded in the expanded
+Applications detail. It records the exact Used or Reference version and requires an
+explicit confirmation before correcting a Used version. Links back to
+`/documents?track_id=<id>` and `/applications?track_id=<id>` preserve the application
+context.
+
+### Verification
+
+Focused checks:
+
+```sh
+cd backend
+pytest tests/test_document_models.py tests/test_document_storage.py tests/test_document_api.py -q
+pytest tests/test_backup_contract.py tests/test_schema_parity.py -q
+
+cd ../frontend
+npm run build
+npx playwright test tests/document-versions.spec.ts --project=chromium
+```
+
+PostgreSQL is required for the migration-parity and serialized quota-concurrency
+acceptance tests. SQLite is not treated as proof of those PostgreSQL locking/index
+semantics.
+
+
 JG-003 activates the backend restore contract:
 
 - `POST /crm/backup/import?mode=verify_only` validates and preflights without writing.
