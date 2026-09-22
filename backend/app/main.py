@@ -21,7 +21,7 @@ from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, company_aliases, crm, email, rows, today, upload
+from .routers import auth_router, backup, company_aliases, crm, email, evidence, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -156,6 +156,7 @@ app.include_router(upload.router)
 app.include_router(rows.router)
 app.include_router(backup.router)
 app.include_router(company_aliases.router)
+app.include_router(evidence.router)
 app.include_router(crm.router)
 app.include_router(today.router)
 app.include_router(email.router)
@@ -200,13 +201,15 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import CompanyAlias, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
+        from .models import ApplicationEvidence, CompanyAlias, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
         db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
+        db.query(EvidenceCreateReceipt).filter_by(user_id=user.id).delete()
+        db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()

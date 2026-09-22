@@ -404,6 +404,7 @@ def apply_job_track_changes(
     follow_up_at: Any = _UNSET,
     mark_applied: bool = False,
     infer_applied_at_from_status: bool = True,
+    applied_correction_reason: str | None = None,
 ) -> dict[str, bool]:
     """Apply lifecycle state changes without committing the caller-owned transaction."""
     if item.user_id != user_id:
@@ -482,6 +483,17 @@ def apply_job_track_changes(
         and previous_applied_at is not None
         and applied_changed
     ):
+        correction_payload = {
+            "from": _payload_datetime(previous_applied_at),
+            "to": _payload_datetime(target_applied_at),
+        }
+        if applied_correction_reason is not None:
+            try:
+                correction_payload["reason"] = validate_correction_reason(
+                    applied_correction_reason
+                )
+            except EvidenceContractError as exc:
+                raise LifecycleEventError(exc.code, exc.message) from exc
         write_event(
             session,
             user_id=user_id,
@@ -489,10 +501,7 @@ def apply_job_track_changes(
             kind="applied_date_corrected",
             occurred_at=now_utc,
             source=source,
-            payload={
-                "from": _payload_datetime(previous_applied_at),
-                "to": _payload_datetime(target_applied_at),
-            },
+            payload=correction_payload,
             csv_row_id=item.csv_row_id,
             job_track_id=item.id,
             operation_id=child_operation_id(

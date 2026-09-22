@@ -2505,7 +2505,7 @@ A green local/CI acceptance result is recorded separately from staging acceptanc
 
 ## Application evidence storage and immutable lifecycle payloads
 
-JG-033 adds the F3 persistence contract without activating a new public evidence or timeline route. The API mutation and timeline service arrive in JG-034, and the user interface arrives in JG-035.
+JG-033 provides the F3 persistence contract. JG-034 activates the authenticated evidence mutation, correction, and merged timeline API on those existing tables. JG-035 still owns the user interface.
 
 ### Evidence records
 
@@ -2525,7 +2525,61 @@ Migration `010_application_evidence.py` is additive and follows the already-appl
 
 The existing `JobLifecycleEvent` remains the only lifecycle ledger. JG-033 adds `evidence_added`, `evidence_edited`, and `evidence_deleted`. Their payloads may contain only evidence identifiers, evidence kind, and the version needed for edited/deleted markers. Full evidence bodies are rejected from lifecycle payloads.
 
-Correction metadata is additive. `applied_date_corrected` may carry the previous value, new value, and a trimmed reason of 1 to 500 characters. A compensating `status_changed` correction may additionally carry `correction_of`, which identifies the original event. Existing lifecycle rows are never rewritten to represent a correction. The JG-034 correction endpoint will require the reason when it activates the mutation flow. Existing pre-JG-034 writers remain compatible until that route becomes authoritative.
+Correction metadata is additive. `applied_date_corrected` may carry the previous value, new value, and a trimmed reason of 1 to 500 characters. A compensating `status_changed` correction may additionally carry `correction_of`, which identifies the original event. Existing lifecycle rows are never rewritten to represent a correction. JG-034 requires a reason on the dedicated applied-date and status-correction routes while preserving compatibility for older application writers.
+
+### Evidence mutation API
+
+JG-034 exposes the F3 service under the existing authenticated CRM boundary:
+
+- `POST /crm/tracks/{track_id}/evidence` requires an `Idempotency-Key` UUID. A new matching request returns HTTP 201. Replaying the same key and payload returns HTTP 200 with the same evidence row and does not emit another lifecycle event. Reusing the key with different input returns 409.
+- `PATCH /crm/tracks/{track_id}/evidence/{evidence_id}` requires the current positive `version`. It can update `body` and/or `occurred_at`. A stale version returns 409. A successful edit increments the version and appends one `evidence_edited` marker.
+- `DELETE /crm/tracks/{track_id}/evidence/{evidence_id}` is a soft delete. The first delete appends one `evidence_deleted` marker and increments the version. Repeating the delete as the same owner returns 204 without creating a duplicate event.
+- `PATCH`, `DELETE`, and correction routes accept the same optional `X-Operation-ID` UUID used by existing CRM mutation endpoints. If omitted, the server creates an operation ID for that request.
+
+All parent and evidence lookups are account-scoped. A missing or foreign track/evidence returns 404. Validation failures return 422 before mutation, optimistic/concurrency conflicts return 409, and the route rolls back the caller transaction on service or lifecycle failure. Operational logs include only the action, request ID, outcome, affected count, and elapsed time. Evidence bodies are never written to those logs.
+
+Ordinary evidence serialization includes the private `body` only while evidence is active. A deleted row keeps its historical metadata and recovery storage policy, but its ordinary API representation omits the body entirely.
+
+### Merged timeline API
+
+`GET /crm/tracks/{track_id}/timeline?before=&limit=50` merges the immutable lifecycle ledger with current evidence records. The response shape is:
+
+```json
+{
+  "items": [
+    {
+      "type": "lifecycle",
+      "id": 41,
+      "timestamp": "2026-09-20T12:00:00Z",
+      "kind": "first_applied",
+      "source": "user",
+      "payload": {}
+    },
+    {
+      "type": "evidence",
+      "id": 9,
+      "timestamp": "2026-09-20T12:05:00Z",
+      "kind": "confirmation_url",
+      "source": "user",
+      "track_id": 17,
+      "version": 1,
+      "is_deleted": false,
+      "body": "https://example.com/confirmation"
+    }
+  ],
+  "next_before": null
+}
+```
+
+Pages are capped at 100. The server selects the newest bounded page and returns that page in chronological order. `next_before` is an opaque URL-safe cursor over timestamp, record type, and record ID. Equal timestamps therefore paginate without duplicate or missing records. Clients must not parse or construct the cursor themselves.
+
+Lifecycle sources are normalized to the public labels `user`, `import`, `system`, or `legacy`. Deleted evidence remains visible as a redacted evidence marker with `is_deleted=true`; its private body is absent. Lifecycle evidence-added/edited/deleted markers remain append-only audit facts.
+
+### Corrections
+
+`POST /crm/tracks/{track_id}/applied-date-corrections` accepts a replacement `applied_at` plus a trimmed 1–500 character `reason`. The service takes an application-row lock, routes the change through the shared lifecycle writer, and appends `applied_date_corrected` with the old date, new date, and reason. The original `first_applied` event remains unchanged, so historical applied metrics are not rewritten.
+
+`POST /crm/tracks/{track_id}/status-corrections` accepts `expected_event_id`, `restore_status`, and `reason`. Under an application-row lock, the expected event must still be the latest `status_changed` event, the track's current status must match that event's recorded `to` value, and `restore_status` must equal its prior valid `from` value. Any intervening status change returns 409. Success updates current status and appends a compensating `status_changed` event containing `correction_of` and the reason. The original event is never edited or deleted.
 
 ### Soft-delete recovery and maintenance
 
@@ -2541,7 +2595,7 @@ Focused backend checks are:
 
 ```sh
 cd backend
-pytest tests/test_evidence_models.py tests/test_backup_contract.py tests/test_schema_parity.py -q
+pytest tests/test_evidence_models.py tests/test_evidence_api.py tests/test_backup_contract.py tests/test_schema_parity.py -q
 ```
 
 Repository CI remains the release gate for PostgreSQL migration parity, the complete backend suite, backend compilation, the production frontend build, and Chromium regressions.

@@ -8091,7 +8091,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-034"></a>
 ### JG-034 — Build evidence mutations and merged timeline API
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — merged implementation pending final PR merge  
 **Priority:** Feature rank 3  
 **Type:** API/service  
 **Execution position:** 34/64; group step 2/4
@@ -8268,14 +8268,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-034 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: create_retry_one_evidence_one_event
-- [ ] Required regression passes: pagination_same_timestamp_stable
-- [ ] Required regression passes: soft_deleted_body_absent
-- [ ] Required regression passes: foreign_timeline_returns404
-- [ ] Required regression passes: correction_preserves_original_event_and_metrics
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-034 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: create_retry_one_evidence_one_event
+- [x] Required regression passes: pagination_same_timestamp_stable
+- [x] Required regression passes: soft_deleted_body_absent
+- [x] Required regression passes: foreign_timeline_returns404
+- [x] Required regression passes: correction_preserves_original_event_and_metrics
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -8293,12 +8293,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data; JG-034 itself adds no new migration and the PostgreSQL-backed suite passes.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change plus the date-safe pre-existing Today CI fixture repair required to keep the release gate meaningful.
+- [x] Repository completion is recorded separately from external staging/deployment; JG-034 does not claim an external deployment.
 
 #### Suggested Linear metadata
 
@@ -8307,11 +8307,21 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-033` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #121. Implementation PR: #122.
+
+#### Completion evidence
+
+- JG-033 dependency was merged on `main` before implementation.
+- GitHub issue #121 and PR #122 track this ticket.
+- CI run #261 on the implementation head passed all repository gates: backend compile, frontend production build, 416 PostgreSQL-backed backend tests, and 144 Chromium E2E tests.
+- Required JG-034 regressions pass, including create replay/idempotency, equal-timestamp cursor stability, deleted-body redaction, foreign-account 404 behavior, and immutable correction history/metric preservation.
+- A pre-existing Today browser fixture used a hardcoded snooze date that expired on September 22, 2026. The test-only fixture was changed to a relative future value; no JG-034 product behavior was altered by that repair.
+- JG-034 adds no new schema migration. Evidence, receipt, and lifecycle storage continue to use the JG-033 persistence contract.
+- Rollback remains data-preserving: disable JG-034 consumers while retaining evidence rows, receipts/history semantics, and lifecycle events.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-033 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** The JG-034 service/API scope is implemented and repository validation is green. JG-035 remains the separate UI ticket. External staging or deployment is not claimed by this completion marker.
 
 ---
 
