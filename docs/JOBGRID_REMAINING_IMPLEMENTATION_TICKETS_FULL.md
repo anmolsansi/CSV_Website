@@ -11430,7 +11430,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue: GitHub #144. Implementation/verification PR: #145.
 
-### Completion evidence
+#### Completion evidence
 
 - PR #145 implemented the authenticated `/capture` quick-add flow, editable URL/title/company/notes draft, server-side prior-application context, fragment-based bookmarklet, safe `/capture` login return, one-hour browser-local draft recovery, popup-blocked copy fallback, and retry-stable idempotency.
 - CI run #335 on head `a3740254c3add90f6a4088bdcd6f296c2b06e3cc` passed Frontend Build, Backend Tests (pytest), Backend Compile Check, and Chromium Playwright.
@@ -11438,13 +11438,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
 - External staging/deployment is not claimed by this local completion marker.
 
-#### Completion evidence
-
-- Implementation PR: #145, merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
-- Final validated branch candidate: `a3740254c3add90f6a4088bdcd6f296c2b06e3cc`.
-- GitHub Actions CI run #335 passed Frontend Build, Backend Compile Check, Backend Tests (490 passed), and E2E Tests (Playwright, 163 passed).
-- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by these tickets.
-- The required JG-047 browser regressions cover bookmarklet payload editing/saving, malformed or expired drafts, login draft preservation, external return rejection, and repeat-submit single-row behavior.
+- CI run #335 completed with 490 backend tests and 163 Chromium tests passing.
 
 #### Ticket intake result
 
@@ -11672,7 +11666,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue: GitHub #144. Implementation/verification PR: #145.
 
-### Completion evidence
+#### Completion evidence
 
 - PR #145 added browser and backend acceptance coverage for capture lifecycle separation, hostile title handling, popup fallback, duplicate warnings, source-row deletion preservation, capture provenance backup/restore, and bounded five-job synthetic timing evidence.
 - Backend regressions include `capture_visit_apply_counts_separate`, `source_delete_preserves_captured_application_history`, and `backup_restores_capture_provenance`.
@@ -11681,13 +11675,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
 - External staging/deployment is not claimed by this local completion marker.
 
-#### Completion evidence
-
-- Implementation PR: #145, merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
-- Final validated branch candidate: `a3740254c3add90f6a4088bdcd6f296c2b06e3cc`.
-- GitHub Actions CI run #335 passed Frontend Build, Backend Compile Check, Backend Tests (490 passed), and E2E Tests (Playwright, 163 passed).
-- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by these tickets.
-- Five sequential Chromium capture-form saves completed in 172 ms, 93 ms, 81 ms, 82 ms, and 83 ms in CI, all below the under-one-minute-per-job acceptance target.
+- Five sequential Chromium capture-form saves measured 172 ms, 93 ms, 81 ms, 82 ms, and 83 ms.
 
 #### Ticket intake result
 
@@ -11938,7 +11926,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
 - External issue: GitHub #144. Implementation/verification PR: #145.
 
-### Completion evidence
+#### Completion evidence
 
 - PR #145 added `JobAvailability` and `JobCheckRequest`, additive Alembic revision `015`, owner/URL uniqueness and version constraints, conservative checker precedence, DST-safe deadline conversion, Today deadline eligibility/action identity helpers, seven-day transient request retention, and portable backup schema revision 2.11 support.
 - Required regressions are present and passed: `user_closed_not_overwritten_by_reachable`, `date_only_conversion_visible_and_dst_safe`, `source_delete_preserves_availability`, and `backup_keeps_deadline_source`.
@@ -11947,13 +11935,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
 - JG-050 outbound URL checking and JG-051 freshness UI remain out of scope and are not presented as shipped.
 
-#### Completion evidence
-
-- Implementation PR: #145, merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
-- Final validated branch candidate: `a3740254c3add90f6a4088bdcd6f296c2b06e3cc`.
-- GitHub Actions CI run #335 passed Frontend Build, Backend Compile Check, Backend Tests (490 passed), and E2E Tests (Playwright, 163 passed).
-- Completion is repository-local/released-to-`main` evidence only. No separate external production deployment is claimed by these tickets.
-- Alembic revision `015_job_availability` and portable backup schema revision `2.11.0` passed PostgreSQL schema parity, backup compatibility, restore, source-deletion, deadline, and closure-precedence coverage.
+- CI run #335 completed with 490 backend tests and 163 Chromium tests passing, including PostgreSQL migration/schema-parity coverage.
 
 #### Ticket intake result
 
