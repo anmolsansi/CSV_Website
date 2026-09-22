@@ -2616,3 +2616,33 @@ An existing applied date is read-only in the applications table. Corrections hap
 Timeline pagination uses the server `next_before` cursor. Loading older pages prepends older records while preserving chronological display. Network failures keep evidence/correction drafts and expose retry/reload actions. Successful mutations refresh the persisted timeline and application snapshot.
 
 **Rollback:** remove or disable the JG-035 interface controls only. Do not delete application evidence, evidence receipts, or lifecycle events. Existing application status, notes, and the JG-034 APIs remain compatible.
+
+
+### F3 lifecycle and recovery acceptance proof
+
+JG-036 verifies that application history remains trustworthy across source deletion, backup/restore, and transactional failure. It adds no new storage model or public API.
+
+A source CSV row is disposable after its application snapshot exists. Deleting the CSV row clears `JobTrack.csv_row_id` and database `SET NULL` references on lifecycle rows, but the application, evidence, and lifecycle timeline remain available with the same user-visible content. Evidence continues to be owned by the durable application track, not the CSV source row.
+
+Portable v2 backup preserves active evidence, deleted-evidence recovery data, lifecycle events, evidence references, and status-correction references. Restore remaps database IDs into the destination account. The acceptance fixture compares the source and destination timelines after normalizing only those database-local reference IDs. Event kind, source, occurrence/recording timestamps, evidence body/deletion state, status transitions, correction reasons, and ordering must remain semantically equivalent.
+
+Evidence creation is one transaction with its lifecycle marker and idempotency receipt. The JG-036 failure-injection regression raises a lifecycle-event error after the evidence row has been flushed. The request must fail and the transaction rollback must leave zero evidence rows, zero create receipts, and zero partial lifecycle markers.
+
+Soft deletion immediately removes the private evidence body from ordinary evidence/timeline serialization while retaining only the historical deletion marker. A recently deleted body may exist only in the explicitly labeled recovery backup section for the bounded 30-day recovery window. It is never restored into the ordinary timeline body field.
+
+Status correction remains compensating history, not mutation of prior events. The original status event stays unchanged. A correction appends a new `status_changed` event with `correction_of` and a bounded reason. Reusing an older expected event after a newer status event exists returns a conflict instead of overwriting newer history.
+
+Legacy/import uncertainty is preserved deliberately. Imported record timestamps are not treated as verified submission timestamps, and evidence is a user-recorded assertion rather than proof that an application was actually submitted. Missing occurrence dates remain unknown.
+
+**Verification commands:**
+
+```sh
+cd backend
+python -m pytest tests/test_evidence_api.py tests/test_backup_restore.py -q
+
+cd ../frontend
+npm run test:e2e -- tests/application-timeline.spec.ts --project=chromium
+npm run build
+```
+
+**Rollback:** JG-036 changes only verification coverage and documentation. Removing those tests/docs does not authorize deleting evidence, lifecycle events, correction history, or recovery data.

@@ -5,12 +5,15 @@ from uuid import uuid4
 
 from app.models import (
     ApplicationEvidence,
+    CsvRow,
     EvidenceCreateReceipt,
     JobLifecycleEvent,
     JobTrack,
     User,
 )
+from app.services import evidence as evidence_service
 from app.services.lifecycle import (
+    LifecycleEventError,
     apply_job_track_changes,
     metric_counts,
     write_event,
@@ -150,7 +153,7 @@ def test_pagination_same_timestamp_stable(auth_client, db_session):
     assert len(set(seen)) == 6
 
 
-def test_soft_deleted_body_absent(auth_client, db_session):
+def test_deleted_evidence_body_not_in_normal_read(auth_client, db_session):
     user = _auth_user(db_session)
     track = _track(db_session, user, suffix="soft-delete")
     secret_body = "private confirmation reference"
@@ -215,7 +218,7 @@ def test_foreign_timeline_returns404(auth_client, db_session):
     assert missing.status_code == 404
 
 
-def test_correction_preserves_original_event_and_metrics(auth_client, db_session):
+def test_individual_status_correction_preserves_original_and_rejects_stale_event(auth_client, db_session):
     user = _auth_user(db_session)
     track = _track(db_session, user, suffix="correction")
     original_applied_at = datetime(2026, 9, 18, 12, 0, 0)
@@ -289,6 +292,18 @@ def test_correction_preserves_original_event_and_metrics(auth_client, db_session
     assert correction.payload["from"] == "applied"
     assert correction.payload["to"] == "opened"
     assert correction.payload["reason"] == "Applied status was selected by mistake"
+
+    stale = auth_client.post(
+        f"/crm/tracks/{track.id}/status-corrections",
+        json={
+            "expected_event_id": original_event_id,
+            "restore_status": "opened",
+            "reason": "Second correction must reject the stale original event",
+        },
+        headers={"X-Operation-ID": str(uuid4())},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "status_correction_conflict"
 
     date_correction = (
         db_session.query(JobLifecycleEvent)
@@ -426,3 +441,157 @@ def test_status_correction_rejects_intervening_status_edit(auth_client, db_sessi
     assert response.json()["detail"]["code"] == "status_correction_conflict"
     db_session.expire_all()
     assert db_session.get(JobTrack, track.id).status == "interview"
+
+
+def test_source_row_delete_retains_evidence(auth_client, db_session):
+    user = _auth_user(db_session)
+    row = CsvRow(
+        user_id=user.id,
+        upload_batch_id=str(uuid4()),
+        url=f"https://example.test/jobs/source-delete-{uuid4()}",
+        title="History-safe deletion",
+        company_guess="Example",
+    )
+    db_session.add(row)
+    db_session.flush()
+    track = JobTrack(
+        user_id=user.id,
+        csv_row_id=row.id,
+        url=row.url,
+        company="Example",
+        title="History-safe deletion",
+        status="opened",
+    )
+    db_session.add(track)
+    db_session.flush()
+
+    imported_at = datetime(2026, 9, 17, 9, 0, 0)
+    applied_at = datetime(2026, 9, 18, 10, 0, 0)
+    write_event(
+        db_session,
+        user_id=user.id,
+        job_url=track.url,
+        kind="first_visited",
+        occurred_at=imported_at,
+        source="import",
+        payload={},
+        csv_row_id=row.id,
+        job_track_id=track.id,
+    )
+    apply_job_track_changes(
+        db_session,
+        user_id=user.id,
+        item=track,
+        source="user",
+        operation_id=uuid4(),
+        now=applied_at,
+        status="applied",
+        applied_at=applied_at,
+        infer_applied_at_from_status=False,
+    )
+    db_session.commit()
+    row_id = row.id
+    track_id = track.id
+
+    evidence = auth_client.post(
+        f"/crm/tracks/{track_id}/evidence",
+        json={
+            "kind": "confirmation_text",
+            "body": "Synthetic confirmation retained after CSV deletion",
+            "occurred_at": "2026-09-18T10:05:00Z",
+        },
+        headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert evidence.status_code == 201
+
+    correction = auth_client.post(
+        f"/crm/tracks/{track_id}/applied-date-corrections",
+        json={
+            "applied_at": "2026-09-18T10:15:00Z",
+            "reason": "Confirmation timestamp clarified the recorded time",
+        },
+        headers={"X-Operation-ID": str(uuid4())},
+    )
+    assert correction.status_code == 200
+
+    before = auth_client.get(f"/crm/tracks/{track_id}/timeline")
+    assert before.status_code == 200
+    before_body = before.json()
+    assert len(before_body["items"]) >= 5
+
+    deleted = auth_client.request(
+        "DELETE",
+        "/rows",
+        json={"row_ids": [row_id], "mode": "delete"},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json() == {"archived": 0, "deleted": 1}
+
+    after = auth_client.get(f"/crm/tracks/{track_id}/timeline")
+    assert after.status_code == 200
+    assert after.json() == before_body
+
+    db_session.expire_all()
+    retained_track = db_session.get(JobTrack, track_id)
+    assert retained_track is not None
+    assert retained_track.csv_row_id is None
+    assert (
+        db_session.query(ApplicationEvidence)
+        .filter_by(user_id=user.id, track_id=track_id)
+        .count()
+        == 1
+    )
+    events = (
+        db_session.query(JobLifecycleEvent)
+        .filter_by(user_id=user.id, job_track_id=track_id)
+        .all()
+    )
+    assert len(events) >= 4
+    assert all(event.csv_row_id is None for event in events)
+
+
+def test_event_insert_failure_rolls_back_evidence(
+    auth_client,
+    db_session,
+    monkeypatch,
+):
+    user = _auth_user(db_session)
+    track = _track(db_session, user, suffix="event-failure")
+
+    def fail_event_insert(*args, **kwargs):
+        raise LifecycleEventError(
+            "synthetic_event_failure",
+            "Synthetic lifecycle insertion failure.",
+        )
+
+    monkeypatch.setattr(evidence_service, "write_event", fail_event_insert)
+
+    request_key = str(uuid4())
+    response = auth_client.post(
+        f"/crm/tracks/{track.id}/evidence",
+        json={"kind": "note", "body": "must roll back completely"},
+        headers={"Idempotency-Key": request_key},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "synthetic_event_failure"
+
+    db_session.expire_all()
+    assert (
+        db_session.query(ApplicationEvidence)
+        .filter_by(user_id=user.id, track_id=track.id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(EvidenceCreateReceipt)
+        .filter_by(user_id=user.id, request_key=request_key)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(JobLifecycleEvent)
+        .filter_by(user_id=user.id, job_track_id=track.id)
+        .count()
+        == 0
+    )
