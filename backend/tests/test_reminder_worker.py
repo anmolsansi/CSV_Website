@@ -8,6 +8,7 @@ from app.config import settings
 from app.models import JobTrack, ReminderDelivery, ReminderPreference, User
 from app.reminder_schemas import reminder_occurrence_key
 from app.services.reminders import (
+    aware_utc,
     DeliveryOutcome,
     claim_due_deliveries,
     email_delivery_availability,
@@ -18,6 +19,21 @@ from app.services.reminders import (
     sync_track_reminder,
     sync_user_reminders,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_reminder_state(db_session):
+    # The suite-level database is shared across tests, so keep worker counters
+    # deterministic and prevent enabled reminder preferences from earlier tests
+    # from being planned/claimed here.
+    db_session.query(ReminderDelivery).delete(synchronize_session=False)
+    db_session.query(ReminderPreference).delete(synchronize_session=False)
+    db_session.commit()
+    yield
+    db_session.rollback()
+    db_session.query(ReminderDelivery).delete(synchronize_session=False)
+    db_session.query(ReminderPreference).delete(synchronize_session=False)
+    db_session.commit()
 
 
 class SequenceTransport:
@@ -212,13 +228,13 @@ def test_known_transient_failure_bounded_retry(db_session):
             assert result["failed"] == 1
             db_session.refresh(delivery)
             assert delivery.attempt_count == 1
-            assert delivery.next_attempt_at == first_now + timedelta(minutes=1)
+            assert aware_utc(delivery.next_attempt_at) == first_now + timedelta(minutes=1)
 
             second_now = first_now + timedelta(minutes=1)
             process_reminder_batch(db_session, now_utc=second_now, transport=transport)
             db_session.refresh(delivery)
             assert delivery.attempt_count == 2
-            assert delivery.next_attempt_at == second_now + timedelta(minutes=5)
+            assert aware_utc(delivery.next_attempt_at) == second_now + timedelta(minutes=5)
 
             third_now = second_now + timedelta(minutes=5)
             process_reminder_batch(db_session, now_utc=third_now, transport=transport)
@@ -296,7 +312,7 @@ def test_restart_does_not_duplicate_accepted_delivery(db_session):
     db_session.refresh(delivery)
     assert result["claimed"] == 0
     assert delivery.status == "sent"
-    assert delivery.sent_at == datetime(2026, 9, 22, 10, 0, tzinfo=timezone.utc)
+    assert aware_utc(delivery.sent_at) == datetime(2026, 9, 22, 10, 0, tzinfo=timezone.utc)
 
 
 def test_timezone_change_replans_unsent(db_session):
