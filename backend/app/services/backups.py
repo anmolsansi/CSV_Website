@@ -2575,14 +2575,24 @@ def _preflight_document_bundle(db: Session, user_id: int, document: BackupDocume
 
 def _publish_bundle_staged(staged: StagedDocument, final_path) -> None:
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(staged.path, final_path)
-    with final_path.open("rb") as persisted:
-        os.fsync(persisted.fileno())
-    directory_fd = os.open(str(final_path.parent), os.O_RDONLY)
+    moved = False
     try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+        os.replace(staged.path, final_path)
+        moved = True
+        with final_path.open("rb") as persisted:
+            os.fsync(persisted.fileno())
+        directory_fd = os.open(str(final_path.parent), os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        if moved:
+            try:
+                final_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
 
 
 def _restore_document_bundle_records(
