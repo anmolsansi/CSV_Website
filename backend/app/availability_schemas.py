@@ -146,6 +146,17 @@ def deadline_today_eligible(
     return _naive_utc(deadline_at) < day_end
 
 
+
+def deadline_action_key(availability_id: int, deadline_at: datetime) -> str:
+    if not isinstance(availability_id, int) or isinstance(availability_id, bool) or availability_id <= 0:
+        raise AvailabilityContractError(
+            "invalid_availability_id",
+            "Availability action keys require a positive availability ID.",
+        )
+    normalized = _naive_utc(deadline_at).replace(tzinfo=timezone.utc)
+    return f"deadline:{availability_id}:{normalized.isoformat().replace('+00:00', 'Z')}"
+
+
 def check_request_retention_cutoff(reference: datetime | None = None) -> datetime:
     now = reference or datetime.now(timezone.utc)
     if now.tzinfo is None:
