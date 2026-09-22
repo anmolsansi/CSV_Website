@@ -249,7 +249,9 @@ if settings.TEST_AUTH:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
-        db.query(ReminderDelivery).filter_by(user_id=user.id).delete()\n        db.query(ReminderPreference).filter_by(user_id=user.id).delete()\n        db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
+        db.query(ReminderDelivery).filter_by(user_id=user.id).delete()
+        db.query(ReminderPreference).filter_by(user_id=user.id).delete()
+        db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
         db.query(EvidenceCreateReceipt).filter_by(user_id=user.id).delete()
         db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
