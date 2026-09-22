@@ -433,7 +433,16 @@ def _timeline_source_label(source: str) -> str:
         return "legacy"
     if "import" in lowered or "applypilot" in lowered:
         return "import"
-    if lowered in {"user", "application_patch", "bulk_update", "follow_up"}:
+    if lowered in {
+        "user",
+        "application_patch",
+        "bulk_patch",
+        "bulk_from_rows",
+        "bulk_update",
+        "follow_up",
+        "row_click",
+        "today_queue",
+    }:
         return "user"
     return "system"
 
