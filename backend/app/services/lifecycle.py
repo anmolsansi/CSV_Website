@@ -297,6 +297,27 @@ def write_event(
                 "Evidence lifecycle event must reference its owning application.",
             )
 
+    correction_of = safe_payload.get("correction_of")
+    if kind == "status_changed" and correction_of is not None:
+        original = (
+            session.query(JobLifecycleEvent)
+            .filter(
+                JobLifecycleEvent.id == correction_of,
+                JobLifecycleEvent.user_id == user_id,
+            )
+            .first()
+        )
+        if (
+            original is None
+            or original.kind != "status_changed"
+            or job_track_id is None
+            or original.job_track_id != job_track_id
+        ):
+            raise LifecycleEventError(
+                "invalid_event_payload",
+                "Status correction must reference an earlier status event for the same application.",
+            )
+
     if kind in FIRST_EVENT_KINDS:
         event_key = first_event_key(user_id, job_url, kind)
     else:
