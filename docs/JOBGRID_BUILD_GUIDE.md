@@ -2646,3 +2646,40 @@ npm run build
 ```
 
 **Rollback:** JG-036 changes only verification coverage and documentation. Removing those tests/docs does not authorize deleting evidence, lifecycle events, correction history, or recovery data.
+
+
+### Reminder preference and delivery state model
+
+JG-037 adds the durable F4 reminder schema only. It does **not** start a worker, send email, add reminder routes, or expose reminder controls.
+
+`ReminderPreference` is owner-scoped with one optional row per account. No row means reminders are disabled, and a newly created row also defaults to `enabled=false`. The stored channel defaults to `in_app`, the local reminder time defaults to `09:00`, and quiet hours default to `21:00` through `08:00`. The account's existing IANA `User.timezone` remains the authoritative timezone. JG-037 validates that timezone and all local time fields before later API/worker code may use them.
+
+Local time fields use strict 24-hour `HH:MM`. Quiet-hour ranges are start-inclusive and end-exclusive. Overnight ranges wrap across local midnight. Equal quiet start and end means there is **no quiet period**, rather than a full-day quiet period.
+
+`ReminderDelivery` stores one durable occurrence per `(user_id, occurrence_key, channel)`. It can retain an optional application reference, channel, status, scheduled time, lease, attempt count, retry time, confirmed sent time, bounded safe error code, and optimistic version. The database has owner/schedule indexes for later bounded worker claims. Deleting an application reference uses `SET NULL` so delivery accounting can remain intact.
+
+The state contract is:
+
+- `pending -> sending | cancelled`
+- `sending -> sent | failed | unknown | cancelled`
+- `failed -> pending | cancelled`
+- `sent` and `cancelled` are terminal.
+- `unknown` is quarantined. It does not auto-retry. A later explicit user retry may use the dedicated validation override to move `unknown -> pending` while showing the required possible-duplicate warning.
+
+`sent_at` is required only for a confirmed `sent` outcome. Once present, it is immutable. Failed and unknown outcomes cannot fabricate a sent timestamp.
+
+Alembic revision `011` follows evidence revision `010`. Existing accounts are not backfilled into an enabled preference, so migration alone cannot activate reminders. The migration downgrade exists for disposable migration verification. Operational rollback keeps the additive tables and disables later worker/preferences first so sent/unknown history is never erased or replayed.
+
+Portable backup schema revision `2.7.0` adds `reminder_preferences` and `reminder_deliveries`. Delivery application references are portable `track_ref` values and are remapped on restore. Delivery statuses and timestamps are restored as history without replay or normalization. Restore intentionally forces the destination reminder preference to `enabled=false`; if delivery history is restored into an account that already has a reminder preference, that preference is paused first. A user must explicitly re-enable reminders through the later JG-039 flow. Backups through revision `2.6.0` remain valid when the new sections are absent.
+
+**Verification commands:**
+
+```sh
+cd backend
+python -m pytest tests/test_reminder_models.py tests/test_backup_contract.py -q
+python -m pytest tests/test_schema_parity.py -q
+```
+
+PostgreSQL CI remains the migration/schema-parity authority. SQLite-only execution does not establish the database claims in this ticket.
+
+**Rollback:** disable future reminder worker/preference controls and leave reminder tables/history in place. Pending rows stay paused. Do not reset `sent` or `unknown` states and do not replay restored outbox rows.
