@@ -1,6 +1,6 @@
 import importlib.util
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,6 +23,8 @@ from app.models import (
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
+    ReminderDelivery,
+    ReminderPreference,
     SavedView,
     SearchSession,
     UrlHistory,
@@ -103,8 +105,32 @@ def _seed_complete_fixture(db, email):
         display_name="Example Co",
         company_key=str(uuid4()),
     )
-    db.add_all([track, view, history, preference, goal, batch, alias])
+    reminder_preference = ReminderPreference(
+        user_id=user.id,
+        enabled=False,
+        channel="in_app",
+        local_time="09:00",
+        quiet_start="21:00",
+        quiet_end="08:00",
+    )
+    db.add_all([
+        track, view, history, preference, goal, batch, alias,
+        reminder_preference,
+    ])
     db.flush()
+
+    db.add(
+        ReminderDelivery(
+            user_id=user.id,
+            track_id=track.id,
+            occurrence_key=f"track:{track.id}:due:2026-09-17T09:00:00Z:date:2026-09-17",
+            channel="in_app",
+            status="pending",
+            scheduled_at=datetime(2026, 9, 17, 9, 0, tzinfo=timezone.utc),
+            attempt_count=0,
+            version=1,
+        )
+    )
 
     evidence = ApplicationEvidence(
         user_id=user.id,
@@ -230,6 +256,7 @@ def test_export_reference_graph(auth_client, db_session):
     assert document.sections.work_items[0].row_ref in refs["csv_rows"]
     assert document.sections.work_items[0].source_view_ref in refs["saved_views"]
     assert document.sections.work_item_overrides[0].work_item_ref in refs["work_items"]
+    assert document.sections.reminder_deliveries[0].track_ref in refs["job_tracks"]
     assert document.sections.lifecycle_events[0].csv_row_ref in refs["csv_rows"]
     assert document.sections.lifecycle_events[0].job_track_ref in refs["job_tracks"]
     assert document.sections.audit_events[0].session_ref in refs["sessions"]
