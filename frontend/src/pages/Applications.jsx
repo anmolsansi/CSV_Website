@@ -640,7 +640,7 @@ export default function Applications() {
                 {expandedTrackId === app.id && (
                   <tr className="application-timeline-row">
                     <td colSpan={columns.filter(([key]) => !hiddenColumns.includes(key)).length + 2}>
-                      <JobAvailability trackId={app.id} onChanged={() => refresh()} />
+                      <JobAvailability trackId={app.id} />
                       <ApplicationDocuments application={app} />
                       <ApplicationTimeline
                         application={app}
