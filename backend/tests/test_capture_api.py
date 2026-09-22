@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from app.models import CsvRow, JobTrack, User
+from app.services import capture as capture_service
 
 
 def _capture(client, *, url, key=None, title="Engineer", company="Example", notes=None):
@@ -117,3 +118,34 @@ def test_existing_notes_not_overwritten(auth_client, db_session):
     assert appended.status_code == 200, appended.text
     db_session.refresh(track)
     assert track.notes == "Existing application note\n\nDraft note from capture"
+
+
+
+def test_invalid_attempt_counts_toward_rate_limit(
+    auth_client, monkeypatch
+):
+    auth_client.post("/auth/logout")
+    email = f"capture-rate-{uuid4()}@example.test"
+    assert auth_client.post(
+        "/auth/dev-login", json={"email": email}
+    ).status_code == 200
+    monkeypatch.setattr(capture_service, "CAPTURE_RATE_LIMIT", 1)
+
+    invalid = auth_client.post(
+        "/crm/jobs/capture",
+        json={
+            "job_url": f"https://capture.example/jobs/{uuid4()}",
+            "company": "Example",
+            "source": "manual",
+        },
+        headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert invalid.status_code == 422
+
+    limited = _capture(
+        auth_client,
+        url=f"https://capture.example/jobs/{uuid4()}",
+    )
+    assert limited.status_code == 429
+    assert limited.json()["detail"]["code"] == "capture_rate_limited"
+    assert int(limited.headers["Retry-After"]) > 0
