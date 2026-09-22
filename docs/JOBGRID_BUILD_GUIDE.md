@@ -330,28 +330,30 @@ A v2 document contains exactly:
 - `version`: `"2.0"`
 - `backup_id`: UUID string
 - `exported_at`: UTC ISO-8601 timestamp
-- `schema_revision`: currently `"2.5.0"`
+- `schema_revision`: currently `"2.6.0"`
 - `identity_rule_version`: canonical-identity rule used for derived URL rebuilds, currently `"ccr-identity-1"`
-- `sections`: the fourteen current v2 sections
+- `sections`: the sixteen current v2 sections
 - `counts`: exact record count for every section
 - `checksum_sha256`: lowercase SHA-256 digest of canonical `sections` JSON
 
-The fourteen current sections are:
+The sixteen current sections are:
 
 1. `csv_rows`
 2. `url_history`
 3. `job_tracks`
-4. `company_aliases`
-5. `work_items`
-6. `work_item_overrides`
-7. `lifecycle_events`
-8. `saved_views`
-9. `sessions`
-10. `audit_events`
-11. `applypilot_batches`
-12. `column_preferences`
-13. `user_goal`
-14. `user_profile`
+4. `application_evidence`
+5. `evidence_recovery`
+6. `company_aliases`
+7. `work_items`
+8. `work_item_overrides`
+9. `lifecycle_events`
+10. `saved_views`
+11. `sessions`
+12. `audit_events`
+13. `applypilot_batches`
+14. `column_preferences`
+15. `user_goal`
+16. `user_profile`
 
 Every record has a non-empty `backup_ref` unique within its section. Nullable fields remain present as keys, preserving the difference between null, empty text, `false`, and zero.
 
@@ -2499,3 +2501,49 @@ JG-032 is test/documentation-only and adds no migration. Reverting JG-032 itself
 
 A green local/CI acceptance result is recorded separately from staging acceptance or production release.
 
+
+
+## Application evidence storage and immutable lifecycle payloads
+
+JG-033 adds the F3 persistence contract without activating a new public evidence or timeline route. The API mutation and timeline service arrive in JG-034, and the user interface arrives in JG-035.
+
+### Evidence records
+
+`application_evidence` stores evidence attached to one owned `JobTrack`. The parent relationship uses `ON DELETE RESTRICT`, so application history cannot disappear while evidence still depends on it. Each row stores:
+
+- `kind`: `confirmation_url`, `confirmation_text`, or `note`;
+- `body`: private evidence content. Active evidence requires a body. A soft-deleted row may keep the body only during the recovery window;
+- optional `occurred_at`, plus `created_at` and `updated_at`;
+- optimistic `version`, starting at 1;
+- explicit `is_deleted`.
+
+Confirmation URLs are user assertions. They must be credential-free HTTP(S), are limited to 2,048 characters, and are never fetched automatically. Text and note evidence are limited to 20,000 characters. `backend/app/services/evidence.py::require_owned_track` resolves a parent only inside the authenticated account.
+
+Migration `010_application_evidence.py` is additive and follows the already-applied JG-030 revision `009`. It also creates `evidence_create_receipts`, keyed uniquely by account and UUID request key. Receipts store only the payload hash, evidence ID, and creation time. They are replay state, not portable account content.
+
+### Lifecycle payload rules
+
+The existing `JobLifecycleEvent` remains the only lifecycle ledger. JG-033 adds `evidence_added`, `evidence_edited`, and `evidence_deleted`. Their payloads may contain only evidence identifiers, evidence kind, and the version needed for edited/deleted markers. Full evidence bodies are rejected from lifecycle payloads.
+
+Correction metadata is additive. `applied_date_corrected` may carry the previous value, new value, and a trimmed reason of 1 to 500 characters. A compensating `status_changed` correction may additionally carry `correction_of`, which identifies the original event. Existing lifecycle rows are never rewritten to represent a correction. The JG-034 correction endpoint will require the reason when it activates the mutation flow. Existing pre-JG-034 writers remain compatible until that route becomes authoritative.
+
+### Soft-delete recovery and maintenance
+
+A soft delete hides the body from ordinary serializers immediately. The private body can remain in storage for at most 30 days, measured from the evidence row's deletion `updated_at`. `purge_expired_evidence_recovery_state()` processes at most 500 rows per call, blanks expired private bodies without deleting evidence markers, and removes create receipts older than 30 days. JG-033 does not register a scheduler. The caller owns the transaction and later maintenance wiring.
+
+The ordinary `application_evidence` backup section always redacts the body when `is_deleted=true`. If that body is still inside the recovery window, export places it only in the explicitly labeled `evidence_recovery` section with an absolute `body_purge_at`. Restore remaps the evidence to the destination application and restores the private recovery body only while that original deadline is still active. Restoring a backup never extends the recovery period.
+
+Evidence lifecycle events use `evidence_ref` in portable backups. The runtime database ID is removed from the exported payload and rebuilt from the destination evidence mapping during restore. Older v2 backups that lack both evidence sections, and lifecycle records that predate `evidence_ref`, keep their original checksum shape and remain valid.
+
+### Validation
+
+Focused backend checks are:
+
+```sh
+cd backend
+pytest tests/test_evidence_models.py tests/test_backup_contract.py tests/test_schema_parity.py -q
+```
+
+Repository CI remains the release gate for PostgreSQL migration parity, the complete backend suite, backend compilation, the production frontend build, and Chromium regressions.
+
+Rollback is data-preserving. Disable future evidence consumers first. Do not remove evidence rows, lifecycle events, or application history to roll back application code. Older code can ignore the additive evidence tables and optional v2 evidence sections.
