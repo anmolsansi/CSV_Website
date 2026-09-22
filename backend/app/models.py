@@ -117,6 +117,12 @@ class User(Base):
     lifecycle_events = relationship(
         "JobLifecycleEvent", back_populates="user", cascade="all, delete-orphan"
     )
+    application_evidence = relationship(
+        "ApplicationEvidence", back_populates="user", cascade="all, delete-orphan"
+    )
+    evidence_create_receipts = relationship(
+        "EvidenceCreateReceipt", back_populates="user", cascade="all, delete-orphan"
+    )
     work_items = relationship(
         "WorkItem", back_populates="user", cascade="all, delete-orphan"
     )
@@ -298,6 +304,9 @@ class JobTrack(Base):
 
     user = relationship("User", back_populates="job_tracks")
     csv_row = relationship("CsvRow", back_populates="job_track")
+    application_evidence = relationship(
+        "ApplicationEvidence", back_populates="track"
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
@@ -332,6 +341,82 @@ class CompanyAlias(Base):
         Index(
             "ix_company_aliases_user_company_key",
             "user_id", "company_key",
+        ),
+    )
+
+
+class ApplicationEvidence(Base):
+    """Owner-scoped evidence attached to durable application memory.
+
+    Deleted evidence remains as a marker. Its private body may be retained only
+    for the bounded recovery window and is redacted by ordinary serializers.
+    """
+
+    __tablename__ = "application_evidence"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    kind = Column(String(32), nullable=False)
+    body = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False,
+    )
+    version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="application_evidence")
+    track = relationship("JobTrack", back_populates="application_evidence")
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('confirmation_url', 'confirmation_text', 'note')",
+            name="ck_application_evidence_kind",
+        ),
+        CheckConstraint("version >= 1", name="ck_application_evidence_version"),
+        Index(
+            "ix_application_evidence_user_track",
+            "user_id", "track_id",
+        ),
+        Index(
+            "ix_application_evidence_user_deleted_updated",
+            "user_id", "is_deleted", "updated_at",
+        ),
+    )
+
+
+class EvidenceCreateReceipt(Base):
+    """Thirty-day idempotency receipt for future evidence-create mutations."""
+
+    __tablename__ = "evidence_create_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    evidence_id = Column(
+        Integer, ForeignKey("application_evidence.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", back_populates="evidence_create_receipts")
+    evidence = relationship("ApplicationEvidence")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "request_key", name="uq_evidence_create_receipt_user_key"
         ),
     )
 
