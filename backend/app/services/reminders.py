@@ -261,13 +261,15 @@ def sync_track_reminder(
         attempt_count=0,
         version=1,
     )
-    db.add(delivery)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.add(delivery)
+            db.flush()
+        return delivery
     except IntegrityError:
-        # A concurrent planner may win the deterministic unique key. The caller
-        # transaction must remain usable, so resolve through a savepoint.
-        db.rollback()
+        # A concurrent planner may win the deterministic unique key. The
+        # savepoint rolls back only this insert, preserving the source mutation
+        # that caused replanning in the outer transaction.
         return (
             db.query(ReminderDelivery)
             .filter(
@@ -277,7 +279,6 @@ def sync_track_reminder(
             )
             .first()
         )
-    return delivery
 
 
 def sync_user_reminders(
