@@ -42,7 +42,7 @@ def test_capture_required_column_defaults_valid(auth_client, db_session):
     assert response.status_code == 201, response.text
     row = db_session.get(CsvRow, response.json()["row_id"])
     assert row is not None
-    assert row.upload_batch_id.startswith("capture-")
+    assert len(row.upload_batch_id) == 36
     assert row.url.startswith("https://")
     assert row.clicked is False
     assert row.archived is False
