@@ -2533,7 +2533,7 @@ A soft delete hides the body from ordinary serializers immediately. The private 
 
 The ordinary `application_evidence` backup section always redacts the body when `is_deleted=true`. If that body is still inside the recovery window, export places it only in the explicitly labeled `evidence_recovery` section with an absolute `body_purge_at`. Restore remaps the evidence to the destination application and restores the private recovery body only while that original deadline is still active. Restoring a backup never extends the recovery period.
 
-Evidence lifecycle events use `evidence_ref` in portable backups. The runtime database ID is removed from the exported payload and rebuilt from the destination evidence mapping during restore. Older v2 backups that lack both evidence sections, and lifecycle records that predate `evidence_ref`, keep their original checksum shape and remain valid.
+Evidence lifecycle events use `evidence_ref` in portable backups. The runtime database ID is removed from the exported payload and rebuilt from the destination evidence mapping during restore. Status corrections use the same rule: runtime `correction_of` IDs become `correction_of_ref` in backup records and are remapped to the destination original event during restore. Correction references must point to an earlier lifecycle record, which prevents restore from preserving a source-database primary key by accident. Older v2 backups that lack the evidence sections and the new portable lifecycle reference fields keep their original checksum shape and remain valid.
 
 ### Validation
 
