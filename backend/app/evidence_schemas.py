@@ -5,8 +5,6 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from urllib.parse import urlsplit
-from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -118,11 +116,9 @@ def receipt_expires_at(created_at: datetime) -> datetime:
 def evidence_create_payload_hash(
     *,
     track_id: int,
-    request_key: UUID | str,
     data: EvidenceCreateData,
 ) -> str:
-    """Hash the exact create intent without logging or persisting private text."""
-    key = UUID(str(request_key))
+    """Hash the create payload used to detect conflicting idempotent replays."""
     occurred_at = data.occurred_at
     if occurred_at is not None:
         occurred_at = _aware_utc(occurred_at)
@@ -131,7 +127,6 @@ def evidence_create_payload_hash(
         occurred_value = None
     material = {
         "track_id": track_id,
-        "request_key": str(key),
         "kind": data.kind,
         "body": data.body,
         "occurred_at": occurred_value,
