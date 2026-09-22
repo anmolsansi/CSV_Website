@@ -154,7 +154,6 @@ def test_correction_reason_and_confirmation_url_validation():
     )
     digest = evidence_create_payload_hash(
         track_id=7,
-        request_key=uuid4(),
         data=valid,
     )
     assert len(digest) == 64
