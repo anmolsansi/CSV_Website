@@ -86,4 +86,22 @@ test.describe('Job freshness', () => {
     expect(finalData.confirmed_closed_at).toBeNull()
     expect(finalData.deadline_local_date).toBe(todayDate)
   })
+
+
+  test('timezone_label_visible', async ({ page, request }) => {
+    await request.post(`${API_URL}/test/reset`)
+    await request.post(`${API_URL}/test/seed`)
+
+    await page.goto('/')
+    const firstRow = page.locator('tbody tr').first()
+    await expect(firstRow).toBeVisible()
+    await firstRow.click({ force: true })
+
+    const availability = page.getByTestId('job-availability')
+    await expect(availability).toBeVisible()
+    await expect(availability.getByTestId('deadline-timezone-note')).toContainText(
+      'UTC',
+    )
+    await expect(availability.locator('input[type="date"]')).toBeVisible()
+  })
 })
