@@ -16,7 +16,8 @@ client.interceptors.response.use(
       const skipAuthRedirect = error.config?.skipAuthRedirect
       const alreadyOnLogin = window.location.pathname === '/login'
       if ((status === 401 || status === 403) && !skipAuthRedirect && !alreadyOnLogin) {
-        window.location.href = '/login'
+        const returnTo = window.location.pathname === '/capture' ? '?return_to=%2Fcapture' : ''
+        window.location.href = `/login${returnTo}`
       }
     }
     return Promise.reject(error)
@@ -94,7 +95,10 @@ function todayWindowParams() {
 }
 
 export const api = {
-  loginUrl: (provider) => `${API_URL}/auth/login/${provider}`,
+  loginUrl: (provider, returnTo = null) => {
+    const safeReturn = returnTo === '/capture' ? '?return_to=%2Fcapture' : ''
+    return `${API_URL}/auth/login/${provider}${safeReturn}`
+  },
   devLogin: (email = 'test@jobgrid.dev') =>
     client.post('/auth/dev-login', { email }).then((r) => r.data),
   me: () => client.get('/auth/me', { skipAuthRedirect: true }).then((r) => r.data),
@@ -147,6 +151,10 @@ export const api = {
     client.get('/crm/application-matches', { params: { row_id: rowId } }).then((r) => r.data),
   findApplicationMatches: (payload) =>
     client.post('/crm/application-matches', payload).then((r) => r.data),
+  captureJob: (payload, idempotencyKey = createOperationId()) =>
+    client.post('/crm/jobs/capture', payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }).then((r) => r.data),
   markRowApplied: (rowId) =>
     client.post('/crm/from-rows/bulk', { row_ids: [rowId], status: 'applied' }).then((r) => r.data),
 
