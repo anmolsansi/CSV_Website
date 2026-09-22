@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from itsdangerous import BadSignature, URLSafeSerializer
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -192,19 +192,22 @@ def update_reminder_preferences(
             },
         )
 
-    data = ReminderPreferenceData(
-        enabled=payload.enabled,
-        channel=payload.channel,
-        local_time=payload.local_time,
-        quiet_start=payload.quiet_start,
-        quiet_end=payload.quiet_end,
-    )
     try:
+        data = ReminderPreferenceData(
+            enabled=payload.enabled,
+            channel=payload.channel,
+            local_time=payload.local_time,
+            quiet_start=payload.quiet_start,
+            quiet_end=payload.quiet_end,
+        )
         validate_preference_for_timezone(data, user.timezone)
-    except ValueError as exc:
+    except (ValueError, ValidationError) as exc:
         raise HTTPException(
             422,
-            detail={"code": getattr(exc, "code", "invalid_preferences"), "message": str(exc)},
+            detail={
+                "code": getattr(exc, "code", "invalid_preferences"),
+                "message": "Reminder times must use valid 24-hour HH:MM values.",
+            },
         ) from exc
 
     if data.enabled and data.channel == "email":
