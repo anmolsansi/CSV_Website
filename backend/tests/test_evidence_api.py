@@ -447,7 +447,7 @@ def test_source_row_delete_retains_evidence(auth_client, db_session):
     user = _auth_user(db_session)
     row = CsvRow(
         user_id=user.id,
-        upload_batch_id=f"jg036-{uuid4()}",
+        upload_batch_id=str(uuid4()),
         url=f"https://example.test/jobs/source-delete-{uuid4()}",
         title="History-safe deletion",
         company_guess="Example",
@@ -566,10 +566,11 @@ def test_event_insert_failure_rolls_back_evidence(
 
     monkeypatch.setattr(evidence_service, "write_event", fail_event_insert)
 
+    request_key = str(uuid4())
     response = auth_client.post(
         f"/crm/tracks/{track.id}/evidence",
         json={"kind": "note", "body": "must roll back completely"},
-        headers={"Idempotency-Key": str(uuid4())},
+        headers={"Idempotency-Key": request_key},
     )
 
     assert response.status_code == 422
@@ -584,7 +585,7 @@ def test_event_insert_failure_rolls_back_evidence(
     )
     assert (
         db_session.query(EvidenceCreateReceipt)
-        .filter_by(user_id=user.id)
+        .filter_by(user_id=user.id, request_key=request_key)
         .count()
         == 0
     )
