@@ -57,6 +57,7 @@ from ..evidence_schemas import (
 )
 from .job_identity import CANONICALIZATION_VERSION, apply_persisted_job_identity
 from .documents import DocumentServiceError, StagedDocument, _resolve_storage_key, _storage_root, stage_upload
+from ..document_schemas import MAX_ACCOUNT_DOCUMENT_BYTES
 
 
 def _utc_iso(value: datetime | None) -> str | None:
@@ -2507,6 +2508,16 @@ def _preflight_document_bundle(db: Session, user_id: int, document: BackupDocume
         "document_versions": {"created": 0, "skipped": 0, "conflicts": 0},
         "application_documents": {"created": 0, "skipped": 0, "conflicts": 0},
     }
+    current_document_bytes = int(
+        db.query(func.coalesce(func.sum(DocumentVersion.size_bytes), 0))
+        .filter(
+            DocumentVersion.user_id == user_id,
+            DocumentVersion.state.in_(("pending", "ready")),
+        )
+        .scalar()
+        or 0
+    )
+    restore_created_bytes = 0
     ready_refs: dict[str, DocumentVersion | None] = {}
     for record in document.sections.document_versions:
         if record.state != "ready":
@@ -2523,11 +2534,19 @@ def _preflight_document_bundle(db: Session, user_id: int, document: BackupDocume
         )
         ready_refs[record.backup_ref] = existing
         if existing is None:
+            restore_created_bytes += record.size_bytes
             counts["document_versions"]["created"] += 1
         elif _document_record_equal(existing, record):
             counts["document_versions"]["skipped"] += 1
         else:
             counts["document_versions"]["conflicts"] += 1
+
+    if current_document_bytes + restore_created_bytes > MAX_ACCOUNT_DOCUMENT_BYTES:
+        raise _bundle_error(
+            "document_quota_exceeded",
+            "Restoring this bundle would exceed the 100 MiB account document quota.",
+            status_code=413,
+        )
 
     for link in document.sections.application_documents:
         existing_doc = ready_refs.get(link.document_ref)
