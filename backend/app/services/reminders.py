@@ -363,6 +363,7 @@ def claim_due_deliveries(
         .filter(
             ReminderPreference.enabled.is_(True),
             ReminderDelivery.status.in_(tuple(CLAIMABLE_STATUSES)),
+            ReminderDelivery.attempt_count < MAX_DELIVERY_ATTEMPTS,
             ReminderDelivery.scheduled_at <= now_utc,
             or_(
                 ReminderDelivery.next_attempt_at.is_(None),
