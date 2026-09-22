@@ -195,6 +195,21 @@ def validate_delivery_transition(
             field="sent_at",
         )
 
+    if current_status != target_status:
+        if current_status == "unknown" and target_status == "pending":
+            if not allow_unknown_retry:
+                raise ReminderContractError(
+                    "unknown_retry_requires_explicit_action",
+                    "Unknown delivery may be retried only by an explicit user action.",
+                    field="status",
+                )
+        elif target_status not in LEGAL_DELIVERY_TRANSITIONS[current_status]:
+            raise ReminderContractError(
+                "illegal_delivery_transition",
+                f"Reminder delivery cannot transition from {current_status} to {target_status}.",
+                field="status",
+            )
+
     if target_status == "sent":
         if target_sent_at is None:
             raise ReminderContractError(
@@ -209,22 +224,4 @@ def validate_delivery_transition(
             field="sent_at",
         )
 
-    if current_status == target_status:
-        return target_status
-
-    if current_status == "unknown" and target_status == "pending":
-        if allow_unknown_retry:
-            return target_status
-        raise ReminderContractError(
-            "unknown_retry_requires_explicit_action",
-            "Unknown delivery may be retried only by an explicit user action.",
-            field="status",
-        )
-
-    if target_status not in LEGAL_DELIVERY_TRANSITIONS[current_status]:
-        raise ReminderContractError(
-            "illegal_delivery_transition",
-            f"Reminder delivery cannot transition from {current_status} to {target_status}.",
-            field="status",
-        )
     return target_status
