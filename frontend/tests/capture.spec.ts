@@ -83,7 +83,7 @@ test.describe('JG-047/JG-048 quick capture', () => {
       notes: '',
     }))
     await expect(page.getByRole('heading', { name: 'Log in or sign up' })).toBeVisible()
-    await expect(page).toHaveURL(/\/login\?return_to=%2Fcapture$/)
+    await expect(page).toHaveURL(/\/capture$/)
 
     const login = await page.request.post(`${API_URL}/auth/dev-login`, {
       data: { email: 'test@jobgrid.dev' },
