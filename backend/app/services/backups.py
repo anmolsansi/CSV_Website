@@ -2597,140 +2597,159 @@ def _publish_bundle_staged(staged: StagedDocument, final_path) -> None:
 
 
 def _restore_document_bundle_records(
-    db: Session,
+    session: Session,
     user_id: int,
     document: BackupDocumentV2,
     staged: Mapping[str, StagedDocument],
+    *,
+    root,
+    published: list[Any],
 ) -> dict[str, dict[str, int]]:
-    bind = db.get_bind()
-    engine = getattr(bind, "engine", bind)
-    session = Session(bind=engine, autoflush=False, expire_on_commit=False)
-    root = _storage_root(create=True)
-    published: list[Any] = []
+    """Restore document rows/bytes inside the caller's already-open transaction."""
     counts = {
         "document_versions": {"created": 0, "skipped": 0, "conflicts": 0},
         "application_documents": {"created": 0, "skipped": 0, "conflicts": 0},
     }
     doc_refs: dict[str, str] = {}
-    try:
-        with session.begin():
-            session.query(User).filter(User.id == user_id).with_for_update().one()
-            for record in document.sections.document_versions:
-                if record.state != "ready":
-                    counts["document_versions"]["skipped"] += 1
-                    continue
-                existing = (
-                    session.query(DocumentVersion)
-                    .filter_by(
-                        user_id=user_id,
-                        document_family_id=record.document_family_id,
-                        version_number=record.version_number,
-                    )
-                    .first()
-                )
-                if existing is not None:
-                    if not _document_record_equal(existing, record):
-                        raise _bundle_error(
-                            "document_restore_conflict",
-                            "Destination contains a different document for the same family/version.",
-                            status_code=409,
-                        )
-                    doc_refs[record.backup_ref] = existing.id
-                    target = _resolve_storage_key(root, existing.storage_key)
-                    if target.is_file():
-                        if target.stat().st_size != record.size_bytes or _sha256_path(target) != record.sha256:
-                            raise _bundle_error(
-                                "document_restore_conflict",
-                                "Existing destination document bytes do not match backup metadata.",
-                                status_code=409,
-                            )
-                    else:
-                        _publish_bundle_staged(staged[record.backup_ref], target)
-                        published.append(target)
-                    counts["document_versions"]["skipped"] += 1
-                    continue
 
-                item = DocumentVersion(
-                    id=str(uuid4()),
-                    user_id=user_id,
-                    document_family_id=record.document_family_id,
-                    kind=record.kind,
-                    label=record.label,
-                    original_filename=record.original_filename,
-                    media_type=record.media_type,
-                    size_bytes=record.size_bytes,
-                    sha256=record.sha256,
-                    storage_key=f"documents/{user_id}/{uuid4().hex}.bin",
-                    version_number=record.version_number,
-                    created_at=_parse_backup_datetime(record.created_at),
-                    state="pending",
+    # The core restore already locks the owner row. Re-check the quota under that
+    # same lock so concurrent uploads cannot invalidate the earlier preflight.
+    current_document_bytes = int(
+        session.query(func.coalesce(func.sum(DocumentVersion.size_bytes), 0))
+        .filter(
+            DocumentVersion.user_id == user_id,
+            DocumentVersion.state.in_(("pending", "ready")),
+        )
+        .scalar()
+        or 0
+    )
+    new_document_bytes = 0
+    for record in document.sections.document_versions:
+        if record.state != "ready":
+            continue
+        existing = (
+            session.query(DocumentVersion)
+            .filter_by(
+                user_id=user_id,
+                document_family_id=record.document_family_id,
+                version_number=record.version_number,
+            )
+            .first()
+        )
+        if existing is None:
+            new_document_bytes += record.size_bytes
+    if current_document_bytes + new_document_bytes > MAX_ACCOUNT_DOCUMENT_BYTES:
+        raise _bundle_error(
+            "document_quota_exceeded",
+            "Restoring this bundle would exceed the 100 MiB account document quota.",
+            status_code=413,
+        )
+
+    for record in document.sections.document_versions:
+        if record.state != "ready":
+            counts["document_versions"]["skipped"] += 1
+            continue
+        existing = (
+            session.query(DocumentVersion)
+            .filter_by(
+                user_id=user_id,
+                document_family_id=record.document_family_id,
+                version_number=record.version_number,
+            )
+            .first()
+        )
+        if existing is not None:
+            if not _document_record_equal(existing, record):
+                raise _bundle_error(
+                    "document_restore_conflict",
+                    "Destination contains a different document for the same family/version.",
+                    status_code=409,
                 )
-                session.add(item)
-                session.flush()
-                target = _resolve_storage_key(root, item.storage_key)
+            doc_refs[record.backup_ref] = existing.id
+            target = _resolve_storage_key(root, existing.storage_key)
+            if target.is_file():
+                if target.stat().st_size != record.size_bytes or _sha256_path(target) != record.sha256:
+                    raise _bundle_error(
+                        "document_restore_conflict",
+                        "Existing destination document bytes do not match backup metadata.",
+                        status_code=409,
+                    )
+            else:
                 _publish_bundle_staged(staged[record.backup_ref], target)
                 published.append(target)
-                item.state = "ready"
-                doc_refs[record.backup_ref] = item.id
-                counts["document_versions"]["created"] += 1
+            counts["document_versions"]["skipped"] += 1
+            continue
 
-            for link in document.sections.application_documents:
-                document_id = doc_refs.get(link.document_ref)
-                if document_id is None:
-                    raise _bundle_error(
-                        "invalid_document_link",
-                        "Application link references a document that was not restored.",
-                        status_code=409,
-                    )
-                track_id = _mapped_ref_target(
-                    session, user_id, document.backup_id, "job_tracks", link.track_ref
-                )
-                if track_id is None:
-                    raise _bundle_error(
-                        "conflicting_reference_graph",
-                        "Application link target could not be resolved after restore.",
-                        status_code=409,
-                    )
-                existing = (
-                    session.query(ApplicationDocument)
-                    .filter_by(
-                        user_id=user_id,
-                        track_id=track_id,
-                        document_version_id=document_id,
-                    )
-                    .first()
-                )
-                if existing is not None:
-                    if existing.kind != link.kind or existing.usage != link.usage:
-                        raise _bundle_error(
-                            "document_link_conflict",
-                            "Existing application document link has different semantics.",
-                            status_code=409,
-                        )
-                    counts["application_documents"]["skipped"] += 1
-                    continue
-                session.add(ApplicationDocument(
-                    user_id=user_id,
-                    track_id=track_id,
-                    document_version_id=document_id,
-                    kind=link.kind,
-                    usage=link.usage,
-                    attached_at=_parse_backup_datetime(link.attached_at),
-                ))
-                session.flush()
-                counts["application_documents"]["created"] += 1
-        return counts
-    except Exception:
-        session.rollback()
-        for path in published:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        raise
-    finally:
-        session.close()
+        item = DocumentVersion(
+            id=str(uuid4()),
+            user_id=user_id,
+            document_family_id=record.document_family_id,
+            kind=record.kind,
+            label=record.label,
+            original_filename=record.original_filename,
+            media_type=record.media_type,
+            size_bytes=record.size_bytes,
+            sha256=record.sha256,
+            storage_key=f"documents/{user_id}/{uuid4().hex}.bin",
+            version_number=record.version_number,
+            created_at=_parse_backup_datetime(record.created_at),
+            state="pending",
+        )
+        session.add(item)
+        session.flush()
+        target = _resolve_storage_key(root, item.storage_key)
+        _publish_bundle_staged(staged[record.backup_ref], target)
+        published.append(target)
+        item.state = "ready"
+        doc_refs[record.backup_ref] = item.id
+        counts["document_versions"]["created"] += 1
 
+    for link in document.sections.application_documents:
+        document_id = doc_refs.get(link.document_ref)
+        if document_id is None:
+            raise _bundle_error(
+                "invalid_document_link",
+                "Application link references a document that was not restored.",
+                status_code=409,
+            )
+        track_id = _mapped_ref_target(
+            session, user_id, document.backup_id, "job_tracks", link.track_ref
+        )
+        if track_id is None:
+            raise _bundle_error(
+                "conflicting_reference_graph",
+                "Application link target could not be resolved after restore.",
+                status_code=409,
+            )
+        existing = (
+            session.query(ApplicationDocument)
+            .filter_by(
+                user_id=user_id,
+                track_id=track_id,
+                document_version_id=document_id,
+            )
+            .first()
+        )
+        if existing is not None:
+            if existing.kind != link.kind or existing.usage != link.usage:
+                raise _bundle_error(
+                    "document_link_conflict",
+                    "Existing application document link has different semantics.",
+                    status_code=409,
+                )
+            counts["application_documents"]["skipped"] += 1
+            continue
+        session.add(ApplicationDocument(
+            user_id=user_id,
+            track_id=track_id,
+            document_version_id=document_id,
+            kind=link.kind,
+            usage=link.usage,
+            attached_at=_parse_backup_datetime(link.attached_at),
+        ))
+        session.flush()
+        counts["application_documents"]["created"] += 1
+    return counts
 
 def restore_backup_bundle(db: Session, user_id: int, raw: bytes, mode: str) -> dict[str, Any]:
     """Validate every byte before writes, then restore metadata and immutable bytes."""
@@ -2755,15 +2774,44 @@ def restore_backup_bundle(db: Session, user_id: int, raw: bytes, mode: str) -> d
             result["document_bytes_included"] = True
             return result
 
-        result = restore_backup_v2(db, user_id, document, mode)
-        restored_counts = _restore_document_bundle_records(db, user_id, document, staged)
-        result["counts"].update(restored_counts)
-        result["warnings"] = [
-            warning for warning in result["warnings"]
-            if warning.get("code") != "document_bytes_excluded"
-        ]
-        result["document_bytes_included"] = True
-        return result
+        bind = db.get_bind()
+        engine = getattr(bind, "engine", bind)
+        restore_session = Session(bind=engine, autoflush=False, expire_on_commit=False)
+        root = _storage_root(create=True)
+        published: list[Any] = []
+        try:
+            with restore_session.begin():
+                core = _restore_v2_transaction(restore_session, user_id, document)
+                restored_counts = _restore_document_bundle_records(
+                    restore_session,
+                    user_id,
+                    document,
+                    staged,
+                    root=root,
+                    published=published,
+                )
+            core["counts"].update(restored_counts)
+            return {
+                "backup_id": document.backup_id,
+                "mode": mode,
+                "counts": core["counts"],
+                "warnings": [
+                    warning for warning in core["warnings"]
+                    if warning.get("code") != "document_bytes_excluded"
+                ],
+                "verified": True,
+                "document_bytes_included": True,
+            }
+        except Exception:
+            restore_session.rollback()
+            for path in published:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+        finally:
+            restore_session.close()
     finally:
         for item in staged.values():
             try:
