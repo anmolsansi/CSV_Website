@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models import JobTrack, OAuthIdentity, ReminderDelivery, ReminderPreference, User
+from ..models import JobAvailability, JobTrack, OAuthIdentity, ReminderDelivery, ReminderPreference, User
 from ..reminder_schemas import (
     apply_delivery_transition,
     is_quiet_local_time,
@@ -204,6 +204,25 @@ def sync_track_reminder(
     )
     if track is None:
         return None
+
+    availability = (
+        db.query(JobAvailability)
+        .filter(
+            JobAvailability.user_id == user_id,
+            JobAvailability.job_url == track.url,
+        )
+        .first()
+    )
+    if availability is not None and availability.state == "closed":
+        _cancel_stale_unsent(
+            db,
+            user_id=user_id,
+            track_id=track_id,
+            keep_occurrence_key=None,
+            keep_channel=None,
+        )
+        return None
+
     preference = (
         db.query(ReminderPreference)
         .filter(ReminderPreference.user_id == user_id)
@@ -280,6 +299,42 @@ def sync_track_reminder(
             )
             .first()
         )
+
+
+def sync_availability_reminders(
+    db: Session,
+    *,
+    user_id: int,
+    job_url: str,
+    now_utc: datetime | None = None,
+) -> int:
+    """Revalidate unsent F4 reminders after a manual freshness mutation.
+
+    This does not invent a new deadline-reminder schedule. It only re-runs the
+    existing follow-up source rules for matching durable application history.
+    Sent deliveries are immutable because sync_track_reminder cancels only
+    pending/failed rows.
+    """
+
+    track_ids = [
+        row.id
+        for row in db.query(JobTrack)
+        .filter(
+            JobTrack.user_id == user_id,
+            JobTrack.url == job_url,
+        )
+        .all()
+    ]
+    active = 0
+    for track_id in track_ids:
+        if sync_track_reminder(
+            db,
+            user_id=user_id,
+            track_id=track_id,
+            now_utc=now_utc,
+        ) is not None:
+            active += 1
+    return active
 
 
 def sync_user_reminders(
