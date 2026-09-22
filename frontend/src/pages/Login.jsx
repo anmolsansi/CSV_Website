@@ -9,7 +9,7 @@ const PROVIDERS = [
   { id: 'microsoft', label: 'Continue with Microsoft', icon: 'M' },
 ]
 
-export default function Login() {
+export default function Login({ returnTo = null }) {
   const params = new URLSearchParams(window.location.search)
   const error = params.get('error')
   const [devLoginError, setDevLoginError] = useState('')
@@ -20,7 +20,7 @@ export default function Login() {
     setDevLoginLoading(true)
     try {
       await api.devLogin()
-      window.location.href = '/'
+      window.location.href = returnTo === '/capture' ? '/capture' : '/'
     } catch {
       setDevLoginError('Local test login is not available. Start the backend with TEST_AUTH=true.')
       setDevLoginLoading(false)
@@ -48,7 +48,7 @@ export default function Login() {
             <a
               key={provider.id}
               className="oauth-button"
-              href={api.loginUrl(provider.id)}
+              href={api.loginUrl(provider.id, returnTo)}
             >
               <span className={`oauth-icon ${provider.id}`}>{provider.icon}</span>
               <span>{provider.label}</span>
