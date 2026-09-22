@@ -512,7 +512,10 @@ def test_restore_preserves_user_confirmation(db_session):
         .one()
     )
     assert restored_override.version == 2
-    assert restored_override.snoozed_until == datetime(2026, 9, 30, 12, 0)
+    restored_snooze = restored_override.snoozed_until
+    if restored_snooze.tzinfo is not None:
+        restored_snooze = restored_snooze.astimezone(timezone.utc).replace(tzinfo=None)
+    assert restored_snooze == datetime(2026, 9, 30, 12, 0)
 
 
 def test_deadline_action_snooze_is_owner_scoped(auth_client, db_session):
