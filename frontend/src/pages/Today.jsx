@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, formatApiError } from '../api/client'
 import { useToast } from '../App'
+import ReminderSettings from '../components/ReminderSettings'
 
 function localInputToIso(value) {
   if (!value) return null
@@ -325,9 +326,7 @@ export default function Today() {
         <button className="btn btn-blue" onClick={() => loadToday()}>Refresh</button>
       </div>
 
-      {loadError && <div className="error-msg" role="alert">{loadError} <button className="btn btn-grey btn-sm" onClick={() => loadToday()}>Retry</button></div>}
-
-      <div className="stats-grid app-stats-grid">
+      {loadError && <div className="error-msg" role="alert">{loadError} <button className="btn btn-grey btn-sm" onClick={() => loadToday()}>Retry</button></div>}\n\n      <ReminderSettings />\n\n      <div className="stats-grid app-stats-grid">
         <div className="stat-card"><span>Overdue</span><strong>{queue.counts?.overdue ?? grouped.overdue.length}</strong></div>
         <div className="stat-card"><span>Due today</span><strong>{queue.counts?.due_today ?? grouped.dueToday.length}</strong></div>
         <div className="stat-card"><span>Undated</span><strong>{queue.counts?.undated ?? grouped.undated.length}</strong></div>
