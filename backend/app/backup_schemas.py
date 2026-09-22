@@ -1237,6 +1237,9 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_application_evidence_section = (
         isinstance(raw_sections, Mapping) and "application_evidence" in raw_sections
     )
+    has_job_availability_section = (
+        isinstance(raw_sections, Mapping) and "job_availability" in raw_sections
+    )
     has_document_versions_section = (
         isinstance(raw_sections, Mapping) and "document_versions" in raw_sections
     )
@@ -1286,6 +1289,9 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_application_evidence_section:
         # Revisions before JG-033 predate application evidence.
         checksum_sections.pop("application_evidence", None)
+    if not has_job_availability_section:
+        # Revisions before JG-049 predate URL-scoped deadline/availability state.
+        checksum_sections.pop("job_availability", None)
     if not has_document_versions_section:
         # Revisions before JG-041 predate document metadata.
         checksum_sections.pop("document_versions", None)
@@ -1407,6 +1413,7 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "csv_rows": CsvRowBackupV2,
     "url_history": UrlHistoryBackupV2,
     "job_tracks": JobTrackBackupV2,
+    "job_availability": JobAvailabilityBackupV2,
     "document_versions": DocumentVersionBackupV2,
     "application_documents": ApplicationDocumentBackupV2,
     "application_evidence": ApplicationEvidenceBackupV2,
