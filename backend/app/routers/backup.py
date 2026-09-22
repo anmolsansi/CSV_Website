@@ -14,7 +14,13 @@ from ..auth import get_current_user
 from ..backup_schemas import BackupContractError, MAX_BACKUP_JSON_BYTES
 from ..database import get_db
 from ..models import ApplyPilotBatch, AuditEvent, CsvRow, JobTrack, SavedView, SearchSession, User
-from ..services.backups import export_backup_v2, restore_backup_payload
+from ..services.backups import (
+    MAX_BACKUP_BUNDLE_UPLOAD_BYTES,
+    export_backup_bundle,
+    export_backup_v2,
+    restore_backup_bundle,
+    restore_backup_payload,
+)
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 logger = logging.getLogger(__name__)
@@ -170,6 +176,98 @@ async def import_backup(
         raise HTTPException(
             status_code=500,
             detail={"code": "restore_failed", "message": "Backup restore failed and was rolled back."},
+        ) from exc
+    finally:
+        await file.close()
+
+
+
+@router.get("/backup/export/bundle")
+def export_document_bundle(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export v2 portable metadata together with immutable document bytes."""
+    operation_id = str(uuid4())
+    started = perf_counter()
+    try:
+        content = export_backup_bundle(db, user.id)
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        logger.info(
+            "backup_bundle_export operation_id=%s outcome=success bytes=%s elapsed_ms=%s",
+            operation_id,
+            len(content),
+            int((perf_counter() - started) * 1000),
+        )
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="jobgrid_backup_bundle_{ts}.zip"'
+                )
+            },
+        )
+    except BackupContractError as exc:
+        logger.warning(
+            "backup_bundle_export operation_id=%s outcome=%s elapsed_ms=%s",
+            operation_id,
+            exc.code,
+            int((perf_counter() - started) * 1000),
+        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
+
+
+@router.post("/backup/import/bundle")
+async def import_document_bundle(
+    mode: Literal["merge_missing", "verify_only"] = Query("merge_missing"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Validate and restore a v2 document bundle."""
+    operation_id = str(uuid4())
+    started = perf_counter()
+    try:
+        raw = await file.read(MAX_BACKUP_BUNDLE_UPLOAD_BYTES + 1)
+        if len(raw) > MAX_BACKUP_BUNDLE_UPLOAD_BYTES:
+            raise BackupContractError(
+                "bundle_too_large",
+                413,
+                "Backup bundle exceeds the 150 MiB upload limit.",
+            )
+        result = restore_backup_bundle(db, user.id, raw, mode)
+        affected = sum(values["created"] for values in result["counts"].values())
+        logger.info(
+            "backup_bundle_restore operation_id=%s outcome=success mode=%s affected=%s elapsed_ms=%s",
+            operation_id,
+            mode,
+            affected,
+            int((perf_counter() - started) * 1000),
+        )
+        return result
+    except BackupContractError as exc:
+        logger.warning(
+            "backup_bundle_restore operation_id=%s outcome=%s mode=%s elapsed_ms=%s",
+            operation_id,
+            exc.code,
+            mode,
+            int((perf_counter() - started) * 1000),
+        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
+    except Exception as exc:
+        logger.exception(
+            "backup_bundle_restore operation_id=%s outcome=restore_failed mode=%s elapsed_ms=%s",
+            operation_id,
+            mode,
+            int((perf_counter() - started) * 1000),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "restore_failed",
+                "message": "Document bundle restore failed safely.",
+            },
         ) from exc
     finally:
         await file.close()

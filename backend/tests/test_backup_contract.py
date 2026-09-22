@@ -43,6 +43,7 @@ from app.models import (
     ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
+    CaptureRequest,
     ColumnPreference,
     CompanyAlias,
     CsvRow,
@@ -54,6 +55,7 @@ from app.models import (
     MaintenanceStatus,
     ReminderDelivery,
     ReminderPreference,
+    RequestWindowCounter,
     OAuthIdentity,
     SavedView,
     SearchSession,
@@ -152,6 +154,8 @@ def test_assert_complete_model_field_inventory():
         "ColumnPreference": ColumnPreference,
         "AuditEvent": AuditEvent,
         "ApplyPilotBatch": ApplyPilotBatch,
+        "CaptureRequest": CaptureRequest,
+        "RequestWindowCounter": RequestWindowCounter,
         "UserGoal": UserGoal,
         "WorkItem": WorkItem,
         "WorkItemOverride": WorkItemOverride,
@@ -1213,7 +1217,7 @@ def test_document_backup_metadata_marks_byte_coverage_incomplete(db_session):
     db_session.commit()
 
     exported = export_backup_v2(db_session, source.id)
-    assert exported["schema_revision"] == "2.9.0"
+    assert exported["schema_revision"] == BACKUP_SCHEMA_REVISION
     assert exported["document_bytes_included"] is False
     assert exported["counts"]["document_versions"] == 1
     assert exported["counts"]["application_documents"] == 1

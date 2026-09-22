@@ -20,7 +20,7 @@ from .evidence_schemas import (
 from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.9.0"
+BACKUP_SCHEMA_REVISION = "2.10.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -138,6 +138,10 @@ CsvRowBackupV2 = create_model(
     # Optional default keeps older v2 payloads valid while new exports carry
     # the explicit archive timestamp.
     archived_at=(str | None, None),
+    # JG-045 capture provenance is additive. Defaults preserve pre-2.10 backups.
+    capture_source=(Literal["manual", "bookmarklet"] | None, None),
+    captured_at=(str | None, None),
+    capture_notes=(str | None, Field(default=None, max_length=MAX_NOTE_CHARS)),
     is_duplicate=(bool, ...),
     duplicate_of_ref=(str | None, ...),
     **_csv_dynamic_fields,
@@ -560,7 +564,8 @@ def _entries(
 
 CSV_ROW_EXPORTED_COLUMNS = (
     "upload_batch_id", "created_at", "clicked", "clicked_at", "archived",
-    "archived_at", "is_duplicate", *CSV_ROW_TEXT_FIELDS
+    "archived_at", "capture_source", "captured_at", "capture_notes",
+    "is_duplicate", *CSV_ROW_TEXT_FIELDS
 )
 
 MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
@@ -588,6 +593,11 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
     "CsvRow": {
         **_entries(["id", "user_id"], "reconstructed", "Source database identity/ownership is replaced by backup_ref and authenticated user."),
         **_entries(["duplicate_of_id"], "reconstructed", "Cross-row identity is represented as duplicate_of_ref and remapped on restore."),
+        **_entries(
+            ["capture_source", "captured_at", "capture_notes"],
+            "exported",
+            "Manual/bookmarklet capture provenance and bounded draft notes are durable portable row data.",
+        ),
         **_entries(
             ["canonical_url", "canonical_url_hash"],
             "reconstructed",
@@ -656,6 +666,16 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
         ["id", "user_id", "request_key", "payload_hash", "document_id", "status", "created_at"],
         "excluded",
         "Short-lived upload idempotency receipts are operational replay state, not portable user content.",
+    ),
+    "CaptureRequest": _entries(
+        ["id", "user_id", "request_key", "payload_hash", "row_id", "created_at"],
+        "excluded",
+        "Thirty-day capture replay receipts are operational idempotency state and are intentionally reconstructed by future requests rather than exported.",
+    ),
+    "RequestWindowCounter": _entries(
+        ["id", "user_id", "scope", "window_start", "count"],
+        "excluded",
+        "Forty-eight-hour abuse counters are operational rate-limit state and are intentionally excluded from portable user backups.",
     ),
     "ApplicationEvidence": {
         **_entries(
@@ -1261,6 +1281,10 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
             and index < len(checksum_sections.get("csv_rows", []))
         ):
             checksum_sections["csv_rows"][index].pop("archived_at", None)
+        if isinstance(raw_record, Mapping) and index < len(checksum_sections.get("csv_rows", [])):
+            for additive_field in ("capture_source", "captured_at", "capture_notes"):
+                if additive_field not in raw_record:
+                    checksum_sections["csv_rows"][index].pop(additive_field, None)
 
     raw_lifecycle = (
         raw_sections.get("lifecycle_events", [])

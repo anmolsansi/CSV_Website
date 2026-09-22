@@ -157,6 +157,12 @@ class User(Base):
     document_create_receipts = relationship(
         "DocumentCreateReceipt", back_populates="user", cascade="all, delete-orphan"
     )
+    capture_requests = relationship(
+        "CaptureRequest", back_populates="user", cascade="all, delete-orphan"
+    )
+    request_window_counters = relationship(
+        "RequestWindowCounter", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class OAuthIdentity(Base):
@@ -206,6 +212,9 @@ class CsvRow(Base):
     # Legacy archived rows intentionally keep this NULL. A timestamp is written
     # only when an unarchived row transitions into the archive.
     archived_at = Column(DateTime, nullable=True, index=True)
+    capture_source = Column(String(16), nullable=True)
+    captured_at = Column(DateTime, nullable=True, index=True)
+    capture_notes = Column(Text, nullable=True)
     is_duplicate = Column(Boolean, default=False, nullable=False, index=True)
     duplicate_of_id = Column(Integer, ForeignKey("csv_rows.id"), nullable=True, index=True)
 
@@ -293,8 +302,17 @@ class CsvRow(Base):
     user = relationship("User", back_populates="rows")
     job_track = relationship("JobTrack", back_populates="csv_row", uselist=False)
     duplicate_of = relationship("CsvRow", remote_side=[id], uselist=False)
+    capture_requests = relationship("CaptureRequest", back_populates="row")
 
     __table_args__ = (
+        CheckConstraint(
+            "capture_source IS NULL OR capture_source IN ('manual', 'bookmarklet')",
+            name="ck_csv_rows_capture_source",
+        ),
+        CheckConstraint(
+            "capture_notes IS NULL OR length(capture_notes) <= 20000",
+            name="ck_csv_rows_capture_notes_length",
+        ),
         UniqueConstraint("user_id", "url", name="uq_user_url"),
         Index(
             "ix_csv_rows_user_canonical_hash",
@@ -347,6 +365,60 @@ class JobTrack(Base):
         Index(
             "ix_job_tracks_user_canonical_hash",
             "user_id", "canonical_url_hash",
+        ),
+    )
+
+
+class CaptureRequest(Base):
+    """Owner-scoped idempotency record for manual/bookmarklet capture."""
+
+    __tablename__ = "capture_requests"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", back_populates="capture_requests")
+    row = relationship("CsvRow", back_populates="capture_requests")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "request_key",
+            name="uq_capture_request_user_key",
+        ),
+    )
+
+
+class RequestWindowCounter(Base):
+    """Persisted fixed-window request counter shared across app processes."""
+
+    __tablename__ = "request_window_counters"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    scope = Column(String(64), nullable=False)
+    window_start = Column(DateTime, nullable=False, index=True)
+    count = Column(Integer, nullable=False, default=0)
+
+    user = relationship("User", back_populates="request_window_counters")
+
+    __table_args__ = (
+        CheckConstraint("count >= 0", name="ck_request_window_counters_count"),
+        UniqueConstraint(
+            "user_id", "scope", "window_start",
+            name="uq_request_window_counter_user_scope_window",
         ),
     )
 

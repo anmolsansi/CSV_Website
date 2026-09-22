@@ -55,6 +55,7 @@ class BulkUpdateIn(BaseModel):
 class BulkFromRowsIn(BaseModel):
     row_ids: List[int]
     status: Optional[JobTrackStatus] = None
+    capture_notes_mode: Literal["preserve", "append"] = "preserve"
 
 
 class SavedViewIn(BaseModel):
