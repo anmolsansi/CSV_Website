@@ -188,26 +188,26 @@ test.describe('JG-047/JG-048 quick capture', () => {
     await expect(page.getByTestId('capture-match-list')).toContainText('View application history')
   })
 
-  test('five_job_capture_synthetic_timing', async ({ request }, testInfo) => {
+  test('five_job_capture_synthetic_timing', async ({ page }, testInfo) => {
     const timings: number[] = []
+    await page.goto('/capture')
+
     for (let index = 0; index < 5; index += 1) {
       const started = Date.now()
-      const response = await request.post(`${API_URL}/crm/jobs/capture`, {
-        data: {
-          job_url: `https://timing.example/jobs/${Date.now()}-${index}`,
-          title: `Timing Engineer ${index}`,
-          company: 'Timing Co',
-          source: 'manual',
-        },
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
-      })
-      expect(response.ok()).toBeTruthy()
+      const unique = `${Date.now()}-${index}`
+      await page.locator('#capture-url').fill(`https://timing.example/jobs/${unique}`)
+      await page.locator('#capture-title').fill(`Timing Engineer ${index}`)
+      await page.locator('#capture-company').fill('Timing Co')
+      await page.getByRole('button', { name: 'Save job' }).click()
+      await expect(page.getByTestId('capture-result')).toBeVisible()
       timings.push(Date.now() - started)
     }
+
     expect(timings).toHaveLength(5)
     expect(Math.max(...timings)).toBeLessThan(60_000)
+    console.log(`JG-048 five-job automated browser capture timings (ms): ${timings.join(',')}`)
     testInfo.annotations.push({
-      type: 'synthetic-capture-timing-ms',
+      type: 'automated-browser-capture-timing-ms',
       description: timings.join(','),
     })
   })
