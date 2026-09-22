@@ -75,6 +75,10 @@ JOB_TRACK_STATUS_VALUES = [
     "opened", "applied", "follow_up", "interview",
     "rejected", "offer", "not_applying",
 ]
+REMINDER_CHANNEL_VALUES = ["in_app", "email"]
+REMINDER_DELIVERY_STATUS_VALUES = [
+    "pending", "sending", "sent", "failed", "unknown", "cancelled",
+]
 
 
 class User(Base):
@@ -128,6 +132,13 @@ class User(Base):
     )
     work_item_overrides = relationship(
         "WorkItemOverride", back_populates="user", cascade="all, delete-orphan"
+    )
+    reminder_preference = relationship(
+        "ReminderPreference", back_populates="user", uselist=False,
+        cascade="all, delete-orphan",
+    )
+    reminder_deliveries = relationship(
+        "ReminderDelivery", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -307,12 +318,1190 @@ class JobTrack(Base):
     application_evidence = relationship(
         "ApplicationEvidence", back_populates="track"
     )
+    reminder_deliveries = relationship(
+        "ReminderDelivery", back_populates="track"
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
         Index(
             "ix_job_tracks_user_canonical_hash",
             "user_id", "canonical_url_hash",
+        ),
+    )
+
+
+class ReminderPreference(Base):
+    """Owner-scoped reminder opt-in and local scheduling preferences."""
+
+    __tablename__ = "reminder_preferences"
+
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    enabled = Column(Boolean, default=False, nullable=False)
+    channel = Column(String(16), default="in_app", nullable=False)
+    local_time = Column(String(5), default="09:00", nullable=False)
+    quiet_start = Column(String(5), default="21:00", nullable=False)
+    quiet_end = Column(String(5), default="08:00", nullable=False)
+
+    user = relationship("User", back_populates="reminder_preference")
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('in_app', 'email')",
+            name="ck_reminder_preferences_channel",
+        ),
+        CheckConstraint(
+            "local_time ~ '^[0-2][0-9]:[0-5][0-9]
+    __tablename__ = "company_aliases"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alias_key = Column(String(320), nullable=False)
+    display_name = Column(String(320), nullable=False)
+    company_key = Column(String(36), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="company_aliases")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alias_key", name="uq_company_alias_user_alias_key"
+        ),
+        Index(
+            "ix_company_aliases_user_company_key",
+            "user_id", "company_key",
+        ),
+    )
+
+
+class ApplicationEvidence(Base):
+    """Owner-scoped evidence attached to durable application memory.
+
+    Deleted evidence remains as a marker. Its private body may be retained only
+    for the bounded recovery window and is redacted by ordinary serializers.
+    """
+
+    __tablename__ = "application_evidence"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    kind = Column(String(32), nullable=False)
+    body = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False,
+    )
+    version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="application_evidence")
+    track = relationship("JobTrack", back_populates="application_evidence")
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('confirmation_url', 'confirmation_text', 'note')",
+            name="ck_application_evidence_kind",
+        ),
+        CheckConstraint("version >= 1", name="ck_application_evidence_version"),
+        Index(
+            "ix_application_evidence_user_track",
+            "user_id", "track_id",
+        ),
+        Index(
+            "ix_application_evidence_user_deleted_updated",
+            "user_id", "is_deleted", "updated_at",
+        ),
+    )
+
+
+class EvidenceCreateReceipt(Base):
+    """Thirty-day idempotency receipt for future evidence-create mutations."""
+
+    __tablename__ = "evidence_create_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    evidence_id = Column(
+        Integer, ForeignKey("application_evidence.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", back_populates="evidence_create_receipts")
+    evidence = relationship("ApplicationEvidence")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "request_key", name="uq_evidence_create_receipt_user_key"
+        ),
+    )
+
+
+class JobLifecycleEvent(Base):
+    __tablename__ = "job_lifecycle_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    event_key = Column(String(160), nullable=False)
+    job_url = Column(Text, nullable=False)
+    csv_row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"), nullable=True
+    )
+    job_track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"), nullable=True
+    )
+    kind = Column(String(32), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    source = Column(String(32), nullable=False)
+    payload = Column(JSON, default=dict, nullable=False)
+
+    user = relationship("User", back_populates="lifecycle_events")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "event_key", name="uq_user_lifecycle_event_key"
+        ),
+        Index(
+            "ix_job_lifecycle_events_user_time_kind",
+            "user_id", "occurred_at", "kind",
+        ),
+    )
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    view_type = Column(String(50), nullable=False, default="job_links")
+    filters = Column(JSON, default=dict, nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "view_type", name="uq_user_saved_view"),
+    )
+
+
+class SearchSession(Base):
+    __tablename__ = "search_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    notes = Column(Text)
+
+
+class ColumnPreference(Base):
+    __tablename__ = "column_preferences"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    hidden_columns = Column(JSON, default=list, nullable=False)
+    column_order = Column(JSON, default=list, nullable=False)
+
+    user = relationship("User", back_populates="preference")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    entity_type = Column(String(50), nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ApplyPilotBatch(Base):
+    __tablename__ = "applypilot_batches"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True)
+    name = Column(String(200))
+    payload_json = Column(JSON, nullable=False)
+    status = Column(String(50), default="downloaded", nullable=False)
+    job_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserGoal(Base):
+    __tablename__ = "user_goals"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    open_per_day = Column(Integer, default=30)
+    apply_per_day = Column(Integer, default=10)
+    followup_per_day = Column(Integer, default=5)
+    applypilot_per_day = Column(Integer, default=5)
+
+
+class WorkItem(Base):
+    """Durable manual action for the Today queue.
+
+    Follow-up actions remain derived from JobTrack.follow_up_at and are never
+    copied into this table.
+    """
+
+    __tablename__ = "work_items"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    source_view_id = Column(
+        Integer, ForeignKey("saved_views.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    origin_key = Column(String(255), nullable=True)
+    description = Column(String(500), nullable=False)
+    due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    priority = Column(SmallInteger, nullable=False, default=1)
+    state = Column(String(16), nullable=False, default="pending", index=True)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="work_items")
+    track = relationship("JobTrack")
+    row = relationship("CsvRow")
+    source_view = relationship("SavedView")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "origin_key", name="uq_user_work_item_origin_key"
+        ),
+        CheckConstraint(
+            "length(trim(description)) BETWEEN 1 AND 500 "
+            "AND description = trim(description)",
+            name="ck_work_items_description_trimmed_length",
+        ),
+        CheckConstraint(
+            "priority >= 0 AND priority <= 3",
+            name="ck_work_items_priority_range",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'done')",
+            name="ck_work_items_state",
+        ),
+        CheckConstraint("version > 0", name="ck_work_items_version_positive"),
+        CheckConstraint(
+            "state != 'done' OR completed_at IS NOT NULL",
+            name="ck_work_items_done_has_completed_at",
+        ),
+        Index("ix_work_items_user_due", "user_id", "due_at"),
+    )
+
+
+class WorkItemOverride(Base):
+    """Per-user snooze state for a server-generated Today action key."""
+
+    __tablename__ = "work_item_overrides"
+
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    action_key = Column(String(255), primary_key=True)
+    snoozed_until = Column(DateTime(timezone=True), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("User", back_populates="work_item_overrides")
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(action_key) BETWEEN 1 AND 255",
+            name="ck_work_item_overrides_action_key_length",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_work_item_overrides_version_positive",
+        ),
+        Index(
+            "ix_work_item_overrides_user_snoozed",
+            "user_id", "snoozed_until",
+        ),
+    )
+
+
+class MaintenanceStatus(Base):
+    """Durable aggregate health for cross-process maintenance workers."""
+
+    __tablename__ = "maintenance_status"
+
+    job_name = Column(String(100), primary_key=True)
+    outcome = Column(String(32), nullable=False)
+    last_attempted_at = Column(DateTime, nullable=False)
+    last_successful_at = Column(DateTime, nullable=True)
+    last_failed_at = Column(DateTime, nullable=True)
+    result_json = Column(JSON, default=dict, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class BackupImportMap(Base):
+    """Stable mapping from a portable backup reference to a destination row."""
+
+    __tablename__ = "backup_import_maps"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    backup_id = Column(String(36), nullable=False)
+    section = Column(String(50), nullable=False)
+    backup_ref = Column(String(255), nullable=False)
+    target_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "backup_id", "section", "backup_ref",
+            name="uq_backup_import_map_identity",
+        ),
+    )
+",
+            name="ck_reminder_preferences_local_time_shape",
+        ),
+        CheckConstraint(
+            "quiet_start ~ '^[0-2][0-9]:[0-5][0-9]
+    __tablename__ = "company_aliases"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alias_key = Column(String(320), nullable=False)
+    display_name = Column(String(320), nullable=False)
+    company_key = Column(String(36), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="company_aliases")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alias_key", name="uq_company_alias_user_alias_key"
+        ),
+        Index(
+            "ix_company_aliases_user_company_key",
+            "user_id", "company_key",
+        ),
+    )
+
+
+class ApplicationEvidence(Base):
+    """Owner-scoped evidence attached to durable application memory.
+
+    Deleted evidence remains as a marker. Its private body may be retained only
+    for the bounded recovery window and is redacted by ordinary serializers.
+    """
+
+    __tablename__ = "application_evidence"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    kind = Column(String(32), nullable=False)
+    body = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False,
+    )
+    version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="application_evidence")
+    track = relationship("JobTrack", back_populates="application_evidence")
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('confirmation_url', 'confirmation_text', 'note')",
+            name="ck_application_evidence_kind",
+        ),
+        CheckConstraint("version >= 1", name="ck_application_evidence_version"),
+        Index(
+            "ix_application_evidence_user_track",
+            "user_id", "track_id",
+        ),
+        Index(
+            "ix_application_evidence_user_deleted_updated",
+            "user_id", "is_deleted", "updated_at",
+        ),
+    )
+
+
+class EvidenceCreateReceipt(Base):
+    """Thirty-day idempotency receipt for future evidence-create mutations."""
+
+    __tablename__ = "evidence_create_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    evidence_id = Column(
+        Integer, ForeignKey("application_evidence.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", back_populates="evidence_create_receipts")
+    evidence = relationship("ApplicationEvidence")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "request_key", name="uq_evidence_create_receipt_user_key"
+        ),
+    )
+
+
+class JobLifecycleEvent(Base):
+    __tablename__ = "job_lifecycle_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    event_key = Column(String(160), nullable=False)
+    job_url = Column(Text, nullable=False)
+    csv_row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"), nullable=True
+    )
+    job_track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"), nullable=True
+    )
+    kind = Column(String(32), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    source = Column(String(32), nullable=False)
+    payload = Column(JSON, default=dict, nullable=False)
+
+    user = relationship("User", back_populates="lifecycle_events")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "event_key", name="uq_user_lifecycle_event_key"
+        ),
+        Index(
+            "ix_job_lifecycle_events_user_time_kind",
+            "user_id", "occurred_at", "kind",
+        ),
+    )
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    view_type = Column(String(50), nullable=False, default="job_links")
+    filters = Column(JSON, default=dict, nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "view_type", name="uq_user_saved_view"),
+    )
+
+
+class SearchSession(Base):
+    __tablename__ = "search_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    notes = Column(Text)
+
+
+class ColumnPreference(Base):
+    __tablename__ = "column_preferences"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    hidden_columns = Column(JSON, default=list, nullable=False)
+    column_order = Column(JSON, default=list, nullable=False)
+
+    user = relationship("User", back_populates="preference")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    entity_type = Column(String(50), nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ApplyPilotBatch(Base):
+    __tablename__ = "applypilot_batches"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True)
+    name = Column(String(200))
+    payload_json = Column(JSON, nullable=False)
+    status = Column(String(50), default="downloaded", nullable=False)
+    job_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserGoal(Base):
+    __tablename__ = "user_goals"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    open_per_day = Column(Integer, default=30)
+    apply_per_day = Column(Integer, default=10)
+    followup_per_day = Column(Integer, default=5)
+    applypilot_per_day = Column(Integer, default=5)
+
+
+class WorkItem(Base):
+    """Durable manual action for the Today queue.
+
+    Follow-up actions remain derived from JobTrack.follow_up_at and are never
+    copied into this table.
+    """
+
+    __tablename__ = "work_items"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    source_view_id = Column(
+        Integer, ForeignKey("saved_views.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    origin_key = Column(String(255), nullable=True)
+    description = Column(String(500), nullable=False)
+    due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    priority = Column(SmallInteger, nullable=False, default=1)
+    state = Column(String(16), nullable=False, default="pending", index=True)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="work_items")
+    track = relationship("JobTrack")
+    row = relationship("CsvRow")
+    source_view = relationship("SavedView")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "origin_key", name="uq_user_work_item_origin_key"
+        ),
+        CheckConstraint(
+            "length(trim(description)) BETWEEN 1 AND 500 "
+            "AND description = trim(description)",
+            name="ck_work_items_description_trimmed_length",
+        ),
+        CheckConstraint(
+            "priority >= 0 AND priority <= 3",
+            name="ck_work_items_priority_range",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'done')",
+            name="ck_work_items_state",
+        ),
+        CheckConstraint("version > 0", name="ck_work_items_version_positive"),
+        CheckConstraint(
+            "state != 'done' OR completed_at IS NOT NULL",
+            name="ck_work_items_done_has_completed_at",
+        ),
+        Index("ix_work_items_user_due", "user_id", "due_at"),
+    )
+
+
+class WorkItemOverride(Base):
+    """Per-user snooze state for a server-generated Today action key."""
+
+    __tablename__ = "work_item_overrides"
+
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    action_key = Column(String(255), primary_key=True)
+    snoozed_until = Column(DateTime(timezone=True), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("User", back_populates="work_item_overrides")
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(action_key) BETWEEN 1 AND 255",
+            name="ck_work_item_overrides_action_key_length",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_work_item_overrides_version_positive",
+        ),
+        Index(
+            "ix_work_item_overrides_user_snoozed",
+            "user_id", "snoozed_until",
+        ),
+    )
+
+
+class MaintenanceStatus(Base):
+    """Durable aggregate health for cross-process maintenance workers."""
+
+    __tablename__ = "maintenance_status"
+
+    job_name = Column(String(100), primary_key=True)
+    outcome = Column(String(32), nullable=False)
+    last_attempted_at = Column(DateTime, nullable=False)
+    last_successful_at = Column(DateTime, nullable=True)
+    last_failed_at = Column(DateTime, nullable=True)
+    result_json = Column(JSON, default=dict, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class BackupImportMap(Base):
+    """Stable mapping from a portable backup reference to a destination row."""
+
+    __tablename__ = "backup_import_maps"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    backup_id = Column(String(36), nullable=False)
+    section = Column(String(50), nullable=False)
+    backup_ref = Column(String(255), nullable=False)
+    target_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "backup_id", "section", "backup_ref",
+            name="uq_backup_import_map_identity",
+        ),
+    )
+",
+            name="ck_reminder_preferences_quiet_start_shape",
+        ),
+        CheckConstraint(
+            "quiet_end ~ '^[0-2][0-9]:[0-5][0-9]
+    __tablename__ = "company_aliases"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alias_key = Column(String(320), nullable=False)
+    display_name = Column(String(320), nullable=False)
+    company_key = Column(String(36), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="company_aliases")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alias_key", name="uq_company_alias_user_alias_key"
+        ),
+        Index(
+            "ix_company_aliases_user_company_key",
+            "user_id", "company_key",
+        ),
+    )
+
+
+class ApplicationEvidence(Base):
+    """Owner-scoped evidence attached to durable application memory.
+
+    Deleted evidence remains as a marker. Its private body may be retained only
+    for the bounded recovery window and is redacted by ordinary serializers.
+    """
+
+    __tablename__ = "application_evidence"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    kind = Column(String(32), nullable=False)
+    body = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False,
+    )
+    version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="application_evidence")
+    track = relationship("JobTrack", back_populates="application_evidence")
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('confirmation_url', 'confirmation_text', 'note')",
+            name="ck_application_evidence_kind",
+        ),
+        CheckConstraint("version >= 1", name="ck_application_evidence_version"),
+        Index(
+            "ix_application_evidence_user_track",
+            "user_id", "track_id",
+        ),
+        Index(
+            "ix_application_evidence_user_deleted_updated",
+            "user_id", "is_deleted", "updated_at",
+        ),
+    )
+
+
+class EvidenceCreateReceipt(Base):
+    """Thirty-day idempotency receipt for future evidence-create mutations."""
+
+    __tablename__ = "evidence_create_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    evidence_id = Column(
+        Integer, ForeignKey("application_evidence.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", back_populates="evidence_create_receipts")
+    evidence = relationship("ApplicationEvidence")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "request_key", name="uq_evidence_create_receipt_user_key"
+        ),
+    )
+
+
+class JobLifecycleEvent(Base):
+    __tablename__ = "job_lifecycle_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    event_key = Column(String(160), nullable=False)
+    job_url = Column(Text, nullable=False)
+    csv_row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"), nullable=True
+    )
+    job_track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"), nullable=True
+    )
+    kind = Column(String(32), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    source = Column(String(32), nullable=False)
+    payload = Column(JSON, default=dict, nullable=False)
+
+    user = relationship("User", back_populates="lifecycle_events")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "event_key", name="uq_user_lifecycle_event_key"
+        ),
+        Index(
+            "ix_job_lifecycle_events_user_time_kind",
+            "user_id", "occurred_at", "kind",
+        ),
+    )
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    view_type = Column(String(50), nullable=False, default="job_links")
+    filters = Column(JSON, default=dict, nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", "view_type", name="uq_user_saved_view"),
+    )
+
+
+class SearchSession(Base):
+    __tablename__ = "search_sessions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    notes = Column(Text)
+
+
+class ColumnPreference(Base):
+    __tablename__ = "column_preferences"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    hidden_columns = Column(JSON, default=list, nullable=False)
+    column_order = Column(JSON, default=list, nullable=False)
+
+    user = relationship("User", back_populates="preference")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    entity_type = Column(String(50), nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ApplyPilotBatch(Base):
+    __tablename__ = "applypilot_batches"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("search_sessions.id"), nullable=True)
+    name = Column(String(200))
+    payload_json = Column(JSON, nullable=False)
+    status = Column(String(50), default="downloaded", nullable=False)
+    job_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserGoal(Base):
+    __tablename__ = "user_goals"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True)
+    open_per_day = Column(Integer, default=30)
+    apply_per_day = Column(Integer, default=10)
+    followup_per_day = Column(Integer, default=5)
+    applypilot_per_day = Column(Integer, default=5)
+
+
+class WorkItem(Base):
+    """Durable manual action for the Today queue.
+
+    Follow-up actions remain derived from JobTrack.follow_up_at and are never
+    copied into this table.
+    """
+
+    __tablename__ = "work_items"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    row_id = Column(
+        Integer, ForeignKey("csv_rows.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    source_view_id = Column(
+        Integer, ForeignKey("saved_views.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    origin_key = Column(String(255), nullable=True)
+    description = Column(String(500), nullable=False)
+    due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    priority = Column(SmallInteger, nullable=False, default=1)
+    state = Column(String(16), nullable=False, default="pending", index=True)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="work_items")
+    track = relationship("JobTrack")
+    row = relationship("CsvRow")
+    source_view = relationship("SavedView")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "origin_key", name="uq_user_work_item_origin_key"
+        ),
+        CheckConstraint(
+            "length(trim(description)) BETWEEN 1 AND 500 "
+            "AND description = trim(description)",
+            name="ck_work_items_description_trimmed_length",
+        ),
+        CheckConstraint(
+            "priority >= 0 AND priority <= 3",
+            name="ck_work_items_priority_range",
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'done')",
+            name="ck_work_items_state",
+        ),
+        CheckConstraint("version > 0", name="ck_work_items_version_positive"),
+        CheckConstraint(
+            "state != 'done' OR completed_at IS NOT NULL",
+            name="ck_work_items_done_has_completed_at",
+        ),
+        Index("ix_work_items_user_due", "user_id", "due_at"),
+    )
+
+
+class WorkItemOverride(Base):
+    """Per-user snooze state for a server-generated Today action key."""
+
+    __tablename__ = "work_item_overrides"
+
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    action_key = Column(String(255), primary_key=True)
+    snoozed_until = Column(DateTime(timezone=True), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("User", back_populates="work_item_overrides")
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(action_key) BETWEEN 1 AND 255",
+            name="ck_work_item_overrides_action_key_length",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_work_item_overrides_version_positive",
+        ),
+        Index(
+            "ix_work_item_overrides_user_snoozed",
+            "user_id", "snoozed_until",
+        ),
+    )
+
+
+class MaintenanceStatus(Base):
+    """Durable aggregate health for cross-process maintenance workers."""
+
+    __tablename__ = "maintenance_status"
+
+    job_name = Column(String(100), primary_key=True)
+    outcome = Column(String(32), nullable=False)
+    last_attempted_at = Column(DateTime, nullable=False)
+    last_successful_at = Column(DateTime, nullable=True)
+    last_failed_at = Column(DateTime, nullable=True)
+    result_json = Column(JSON, default=dict, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class BackupImportMap(Base):
+    """Stable mapping from a portable backup reference to a destination row."""
+
+    __tablename__ = "backup_import_maps"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    backup_id = Column(String(36), nullable=False)
+    section = Column(String(50), nullable=False)
+    backup_ref = Column(String(255), nullable=False)
+    target_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "backup_id", "section", "backup_ref",
+            name="uq_backup_import_map_identity",
+        ),
+    )
+",
+            name="ck_reminder_preferences_quiet_end_shape",
+        ),
+    )
+
+
+class ReminderDelivery(Base):
+    """Durable reminder occurrence and delivery accounting state."""
+
+    __tablename__ = "reminder_deliveries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    occurrence_key = Column(String(255), nullable=False)
+    channel = Column(String(16), nullable=False)
+    status = Column(String(16), default="pending", nullable=False, index=True)
+    scheduled_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True, index=True)
+    attempt_count = Column(Integer, default=0, nullable=False)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    last_error_code = Column(String(64), nullable=True)
+    version = Column(Integer, default=1, nullable=False)
+
+    user = relationship("User", back_populates="reminder_deliveries")
+    track = relationship("JobTrack", back_populates="reminder_deliveries")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "occurrence_key", "channel",
+            name="uq_reminder_delivery_occurrence_channel",
+        ),
+        CheckConstraint(
+            "channel IN ('in_app', 'email')",
+            name="ck_reminder_deliveries_channel",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'sending', 'sent', 'failed', 'unknown', 'cancelled')",
+            name="ck_reminder_deliveries_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_reminder_deliveries_attempt_count",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_reminder_deliveries_version",
+        ),
+        CheckConstraint(
+            "(status = 'sent' AND sent_at IS NOT NULL) OR "
+            "(status != 'sent' AND sent_at IS NULL)",
+            name="ck_reminder_deliveries_sent_at_state",
+        ),
+        Index(
+            "ix_reminder_deliveries_user_schedule",
+            "user_id", "scheduled_at",
+        ),
+        Index(
+            "ix_reminder_deliveries_user_status_retry",
+            "user_id", "status", "next_attempt_at",
         ),
     )
 
