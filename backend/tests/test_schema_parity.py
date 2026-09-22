@@ -14,11 +14,13 @@ from sqlalchemy import UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from app.models import (
+    ApplicationEvidence,
     BackupImportMap,
     Base,
     CSV_COLUMNS,
     CompanyAlias,
     CsvRow,
+    EvidenceCreateReceipt,
     JobLifecycleEvent,
     MaintenanceStatus,
     WorkItem,
@@ -45,6 +47,8 @@ def test_models_are_bound_to_metadata():
     assert WorkItem.__tablename__ in Base.metadata.tables
     assert WorkItemOverride.__tablename__ in Base.metadata.tables
     assert CompanyAlias.__tablename__ in Base.metadata.tables
+    assert ApplicationEvidence.__tablename__ in Base.metadata.tables
+    assert EvidenceCreateReceipt.__tablename__ in Base.metadata.tables
 
 
 def test_csv_columns_are_covered_by_migrations():
@@ -61,7 +65,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["009"]
+    assert script.get_heads() == ["010"]
 
 
 def test_legacy_schema_patch_module_removed():
@@ -113,6 +117,11 @@ def _alembic_config() -> Config:
 def _run_alembic_upgrade(database_url: str) -> None:
     with patch.dict(os.environ, {"DATABASE_URL": database_url}):
         command.upgrade(_alembic_config(), "head")
+
+
+def _run_alembic_downgrade(database_url: str, revision: str) -> None:
+    with patch.dict(os.environ, {"DATABASE_URL": database_url}):
+        command.downgrade(_alembic_config(), revision)
 
 
 def _admin_engine(database_url: str):
@@ -347,3 +356,20 @@ def test_migration_replay_is_noop(migrated_postgres_database):
     after = _schema_fingerprint(engine)
     assert _current_revision(engine) == expected_head
     assert after == before
+
+
+@pytest.mark.postgresql
+def test_evidence_migration_upgrade_and_downgrade(migrated_postgres_database):
+    database_url, engine = migrated_postgres_database
+
+    try:
+        _run_alembic_downgrade(database_url, "009")
+        inspector = inspect(engine)
+        assert _current_revision(engine) == "009"
+        assert "application_evidence" not in inspector.get_table_names()
+        assert "evidence_create_receipts" not in inspector.get_table_names()
+    finally:
+        _run_alembic_upgrade(database_url)
+
+    assert _current_revision(engine) == "010"
+    _assert_postgres_matches_metadata(engine)

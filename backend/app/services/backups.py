@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4, uuid5
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,7 @@ from ..backup_schemas import (
     validate_backup_v2,
 )
 from ..models import (
+    ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
     BackupImportMap,
@@ -39,6 +41,10 @@ from ..models import (
     WorkItemOverride,
 )
 from ..today_schemas import followup_action_key, manual_action_key
+from ..evidence_schemas import (
+    evidence_body_is_recoverable,
+    evidence_body_purge_at,
+)
 from .job_identity import CANONICALIZATION_VERSION, apply_persisted_job_identity
 
 
@@ -79,10 +85,27 @@ def _required_ref(
 
 
 def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
+    evidence = (
+        session.query(ApplicationEvidence)
+        .filter(ApplicationEvidence.user_id == user_id)
+        .order_by(ApplicationEvidence.id.asc())
+        .all()
+    )
+    recoverable_evidence = [
+        item
+        for item in evidence
+        if evidence_body_is_recoverable(
+            is_deleted=item.is_deleted,
+            body=item.body,
+            updated_at=item.updated_at,
+        )
+    ]
     return {
         "csv_rows": session.query(CsvRow).filter(CsvRow.user_id == user_id).order_by(CsvRow.id.asc()).all(),
         "url_history": session.query(UrlHistory).filter(UrlHistory.user_id == user_id).order_by(UrlHistory.id.asc()).all(),
         "job_tracks": session.query(JobTrack).filter(JobTrack.user_id == user_id).order_by(JobTrack.id.asc()).all(),
+        "application_evidence": evidence,
+        "evidence_recovery": recoverable_evidence,
         "company_aliases": session.query(CompanyAlias).filter(CompanyAlias.user_id == user_id).order_by(CompanyAlias.id.asc()).all(),
         "work_items": session.query(WorkItem).filter(WorkItem.user_id == user_id).order_by(WorkItem.id.asc()).all(),
         "work_item_overrides": session.query(WorkItemOverride).filter(WorkItemOverride.user_id == user_id).order_by(WorkItemOverride.action_key.asc()).all(),
@@ -237,6 +260,36 @@ def _serialize_sections(
             "updated_at": _utc_iso(item.updated_at),
         })
 
+    for item in snapshot["application_evidence"]:
+        backup_ref = refs["application_evidence"][item.id]
+        sections["application_evidence"].append({
+            "backup_ref": backup_ref,
+            "track_ref": _required_ref(
+                refs["job_tracks"], item.track_id,
+                section="application_evidence", backup_ref=backup_ref,
+            ),
+            "kind": item.kind,
+            # Deleted bodies are never present in the ordinary evidence section.
+            "body": None if item.is_deleted else item.body,
+            "occurred_at": _utc_iso(item.occurred_at),
+            "created_at": _utc_iso(item.created_at),
+            "updated_at": _utc_iso(item.updated_at),
+            "version": item.version,
+            "is_deleted": item.is_deleted,
+        })
+
+    for item in snapshot["evidence_recovery"]:
+        recovery_ref = refs["evidence_recovery"][item.id]
+        sections["evidence_recovery"].append({
+            "backup_ref": recovery_ref,
+            "evidence_ref": _required_ref(
+                refs["application_evidence"], item.id,
+                section="evidence_recovery", backup_ref=recovery_ref,
+            ),
+            "body": item.body,
+            "body_purge_at": _utc_iso(evidence_body_purge_at(item.updated_at)),
+        })
+
     for item in snapshot["company_aliases"]:
         sections["company_aliases"].append({
             "backup_ref": refs["company_aliases"][item.id],
@@ -284,6 +337,37 @@ def _serialize_sections(
 
     for item in snapshot["lifecycle_events"]:
         backup_ref = refs["lifecycle_events"][item.id]
+        payload = dict(item.payload or {})
+        evidence_ref = None
+        correction_of_ref = None
+        if item.kind in {"evidence_added", "evidence_edited", "evidence_deleted"}:
+            evidence_id = payload.pop("evidence_id", None)
+            evidence_ref = _required_ref(
+                refs["application_evidence"], evidence_id,
+                section="lifecycle_events", backup_ref=backup_ref,
+            )
+            if evidence_ref is None:
+                raise BackupContractError(
+                    "conflicting_reference_graph",
+                    409,
+                    "Evidence lifecycle event is missing its evidence reference.",
+                    section="lifecycle_events",
+                    backup_ref=backup_ref,
+                )
+        if item.kind == "status_changed" and "correction_of" in payload:
+            correction_of = payload.pop("correction_of")
+            correction_of_ref = _required_ref(
+                refs["lifecycle_events"], correction_of,
+                section="lifecycle_events", backup_ref=backup_ref,
+            )
+            if correction_of_ref is None:
+                raise BackupContractError(
+                    "conflicting_reference_graph",
+                    409,
+                    "Status correction is missing its original lifecycle reference.",
+                    section="lifecycle_events",
+                    backup_ref=backup_ref,
+                )
         sections["lifecycle_events"].append({
             "backup_ref": backup_ref,
             "event_key": item.event_key,
@@ -296,11 +380,13 @@ def _serialize_sections(
                 refs["job_tracks"], item.job_track_id,
                 section="lifecycle_events", backup_ref=backup_ref,
             ),
+            "evidence_ref": evidence_ref,
+            "correction_of_ref": correction_of_ref,
             "kind": item.kind,
             "occurred_at": _utc_iso(item.occurred_at),
             "recorded_at": _utc_iso(item.recorded_at),
             "source": item.source,
-            "payload": item.payload,
+            "payload": payload,
         })
 
     for item in snapshot["saved_views"]:
@@ -714,6 +800,25 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             )
             counts["job_tracks"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
+    for record in document.sections.application_evidence:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "application_evidence", record.backup_ref
+        )
+        counts["application_evidence"]["skipped" if mapping else "created"] += 1
+
+    for record in document.sections.evidence_recovery:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "evidence_recovery", record.backup_ref
+        )
+        if mapping:
+            counts["evidence_recovery"]["skipped"] += 1
+            continue
+        purge_at = _parse_backup_datetime(record.body_purge_at)
+        if purge_at is None or purge_at <= datetime.utcnow():
+            counts["evidence_recovery"]["skipped"] += 1
+        else:
+            counts["evidence_recovery"]["created"] += 1
+
     for record in document.sections.company_aliases:
         mapping = _lookup_import_map(
             session, user_id, backup_id, "company_aliases", record.backup_ref
@@ -799,13 +904,30 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
         if existing is None:
             counts["lifecycle_events"]["created"] += 1
         else:
+            expected_payload = dict(record.payload)
+            if record.evidence_ref is not None:
+                evidence_id = _mapped_ref_target(
+                    session, user_id, backup_id,
+                    "application_evidence", record.evidence_ref,
+                )
+                if evidence_id is not None:
+                    expected_payload["evidence_id"] = evidence_id
+            if record.correction_of_ref is not None:
+                correction_id = _mapped_ref_target(
+                    session, user_id, backup_id,
+                    "lifecycle_events", record.correction_of_ref,
+                )
+                if correction_id is not None:
+                    expected_payload["correction_of"] = correction_id
             fields = (
                 "event_key", "job_url", "kind", "occurred_at",
-                "recorded_at", "source", "payload",
+                "recorded_at", "source",
             )
-            counts["lifecycle_events"][
-                _classify_existing(_record_equal(existing, record, fields))
-            ] += 1
+            equal = (
+                _record_equal(existing, record, fields)
+                and existing.payload == expected_payload
+            )
+            counts["lifecycle_events"][_classify_existing(equal)] += 1
 
     for section, records in (
         ("applypilot_batches", document.sections.applypilot_batches),
@@ -1107,6 +1229,86 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         if record.session_ref is not None:
             warnings.append(_restore_warning("job_track_session_ref_detached", section="job_tracks", backup_ref=record.backup_ref))
 
+    for record in document.sections.application_evidence:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "application_evidence", record.backup_ref, ApplicationEvidence,
+        )
+        if mapped is not None:
+            refs["application_evidence"][record.backup_ref] = mapped.id
+            counts["application_evidence"]["skipped"] += 1
+            continue
+
+        track_id = _target_id(
+            refs, "job_tracks", record.track_ref,
+            "application_evidence", record.backup_ref,
+        )
+        item = ApplicationEvidence(
+            user_id=user_id,
+            track_id=track_id,
+            kind=record.kind,
+            body=record.body,
+            occurred_at=_parse_backup_datetime(record.occurred_at),
+            created_at=_parse_backup_datetime(record.created_at),
+            updated_at=_parse_backup_datetime(record.updated_at),
+            version=record.version,
+            is_deleted=record.is_deleted,
+        )
+        session.add(item)
+        session.flush()
+        refs["application_evidence"][record.backup_ref] = item.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "application_evidence", record.backup_ref, item.id,
+        )
+        counts["application_evidence"]["created"] += 1
+
+    for record in document.sections.evidence_recovery:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "evidence_recovery", record.backup_ref, ApplicationEvidence,
+        )
+        if mapped is not None:
+            refs["evidence_recovery"][record.backup_ref] = mapped.id
+            counts["evidence_recovery"]["skipped"] += 1
+            continue
+
+        evidence_id = _target_id(
+            refs, "application_evidence", record.evidence_ref,
+            "evidence_recovery", record.backup_ref,
+        )
+        evidence = session.query(ApplicationEvidence).filter(
+            ApplicationEvidence.id == evidence_id,
+            ApplicationEvidence.user_id == user_id,
+        ).one()
+        purge_at = _parse_backup_datetime(record.body_purge_at)
+        if purge_at is not None and purge_at > datetime.utcnow():
+            if not evidence.is_deleted:
+                raise BackupContractError(
+                    "conflicting_reference_graph",
+                    409,
+                    "Recovery body may target only soft-deleted evidence.",
+                    section="evidence_recovery",
+                    backup_ref=record.backup_ref,
+                )
+            deleted_at = evidence.updated_at
+            session.execute(
+                update(ApplicationEvidence)
+                .where(ApplicationEvidence.id == evidence.id)
+                .values(body=record.body, updated_at=deleted_at)
+                .execution_options(synchronize_session=False)
+            )
+            # Restoring recovery content must not extend the original deadline.
+            session.expire(evidence)
+            counts["evidence_recovery"]["created"] += 1
+        else:
+            counts["evidence_recovery"]["skipped"] += 1
+        refs["evidence_recovery"][record.backup_ref] = evidence.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "evidence_recovery", record.backup_ref, evidence.id,
+        )
+
     for record in document.sections.company_aliases:
         mapped = _mapped_target(
             session,
@@ -1285,16 +1487,28 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             refs, "job_tracks", record.job_track_ref,
             "lifecycle_events", record.backup_ref,
         )
+        payload = dict(record.payload)
+        if record.evidence_ref is not None:
+            payload["evidence_id"] = _target_id(
+                refs, "application_evidence", record.evidence_ref,
+                "lifecycle_events", record.backup_ref,
+            )
+        if record.correction_of_ref is not None:
+            payload["correction_of"] = _target_id(
+                refs, "lifecycle_events", record.correction_of_ref,
+                "lifecycle_events", record.backup_ref,
+            )
         existing = session.query(JobLifecycleEvent).filter_by(
             user_id=user_id, event_key=record.event_key
         ).first()
         if existing is not None:
             portable_fields = (
                 "event_key", "job_url", "kind", "occurred_at",
-                "recorded_at", "source", "payload",
+                "recorded_at", "source",
             )
             equal = (
                 _record_equal(existing, record, portable_fields)
+                and existing.payload == payload
                 and existing.csv_row_id == csv_row_id
                 and existing.job_track_id == job_track_id
             )
@@ -1323,7 +1537,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             occurred_at=_parse_backup_datetime(record.occurred_at),
             recorded_at=_parse_backup_datetime(record.recorded_at),
             source=record.source,
-            payload=record.payload,
+            payload=payload,
         )
         # Restore inserts the historical ledger record directly. It must not call
         # lifecycle.write_event(), because restoring rows/tracks is not a new visit

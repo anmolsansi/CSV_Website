@@ -1,6 +1,6 @@
 import importlib.util
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,6 +15,7 @@ from app.backup_schemas import (
     validate_backup_v2,
 )
 from app.models import (
+    ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
     ColumnPreference,
@@ -103,6 +104,18 @@ def _seed_complete_fixture(db, email):
         company_key=str(uuid4()),
     )
     db.add_all([track, view, history, preference, goal, batch, alias])
+    db.flush()
+
+    evidence = ApplicationEvidence(
+        user_id=user.id,
+        track_id=track.id,
+        kind="note",
+        body="Recoverable deleted evidence body",
+        version=2,
+        is_deleted=True,
+        updated_at=datetime.utcnow() - timedelta(days=1),
+    )
+    db.add(evidence)
     db.flush()
 
     lifecycle_event = JobLifecycleEvent(
@@ -211,6 +224,8 @@ def test_export_reference_graph(auth_client, db_session):
     row_records = document.sections.csv_rows
     assert row_records[1].duplicate_of_ref in refs["csv_rows"]
     assert document.sections.job_tracks[0].csv_row_ref in refs["csv_rows"]
+    assert document.sections.application_evidence[0].track_ref in refs["job_tracks"]
+    assert document.sections.evidence_recovery[0].evidence_ref in refs["application_evidence"]
     assert document.sections.work_items[0].track_ref in refs["job_tracks"]
     assert document.sections.work_items[0].row_ref in refs["csv_rows"]
     assert document.sections.work_items[0].source_view_ref in refs["saved_views"]
