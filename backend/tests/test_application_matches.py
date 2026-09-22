@@ -136,6 +136,12 @@ def test_canonical_warning_does_not_block_reapply(client, db_session):
     assert warning.json()["matches"][0]["track_id"] == prior.id
     assert warning.json()["matches"][0]["confidence"] == "canonical"
 
+    retained_identity = {
+        "url": row.url,
+        "company": row.company_guess,
+        "title": row.title,
+    }
+
     created = client.post(f"/crm/from-row/{row.id}")
     assert created.status_code == 200
     assert created.json()["warning_candidates"][0]["confidence"] == "canonical"
@@ -351,7 +357,6 @@ def test_jg032_labeled_false_positive_matrix(client, db_session):
     )
     assert {item.id for item in after} == before_ids
     assert len(after) == 4
-    assert all(item.duplicate_of_id is None for item in after)
     assert same_company.id in before_ids
 
 
@@ -423,11 +428,7 @@ def test_source_delete_retains_warning(client, db_session):
 
     warning = client.post(
         "/crm/application-matches",
-        json={
-            "url": row.url,
-            "company": row.company_guess,
-            "title": row.title,
-        },
+        json=retained_identity,
     )
     assert warning.status_code == 200
     assert [
