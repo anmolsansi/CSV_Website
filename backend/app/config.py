@@ -1,5 +1,7 @@
 import ipaddress
 import os
+import tempfile
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
@@ -28,6 +30,72 @@ def cookie_security_options(environment: str | None) -> dict[str, object]:
 
 class ProductionConfigurationError(RuntimeError):
     """Raised when a production-only safety requirement is not satisfied."""
+
+
+class DocumentStorageConfigurationError(RuntimeError):
+    """Raised when private document storage is absent or unsafe."""
+
+
+def validate_document_storage_path(
+    storage_dir: str | None,
+    *,
+    environment: str | None,
+) -> Path:
+    """Resolve a private storage root and reject served/repo/production-temp paths."""
+    raw = str(storage_dir or "").strip()
+    if not raw:
+        raise DocumentStorageConfigurationError(
+            "DOCUMENT_STORAGE_DIR is not configured"
+        )
+
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise DocumentStorageConfigurationError(
+            "DOCUMENT_STORAGE_DIR must be an absolute path"
+        )
+    candidate = candidate.resolve(strict=False)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    public_roots = (
+        repo_root,
+        repo_root / "frontend" / "public",
+        repo_root / "frontend" / "dist",
+    )
+    for unsafe_root in public_roots:
+        unsafe = unsafe_root.resolve(strict=False)
+        if candidate == unsafe or unsafe in candidate.parents:
+            raise DocumentStorageConfigurationError(
+                "DOCUMENT_STORAGE_DIR must be outside the repository and served directories"
+            )
+
+    if is_production_environment(environment):
+        temp_root = Path(tempfile.gettempdir()).resolve(strict=False)
+        if candidate == temp_root or temp_root in candidate.parents:
+            raise DocumentStorageConfigurationError(
+                "DOCUMENT_STORAGE_DIR must use durable storage in production"
+            )
+
+    return candidate
+
+
+def document_storage_readiness(runtime_settings, *, create: bool = False) -> dict[str, object]:
+    """Return a safe readiness result without exposing the configured path."""
+    try:
+        root = validate_document_storage_path(
+            getattr(runtime_settings, "DOCUMENT_STORAGE_DIR", ""),
+            environment=getattr(runtime_settings, "ENVIRONMENT", ""),
+        )
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+            for child in ("staging", "documents", "trash"):
+                (root / child).mkdir(parents=True, exist_ok=True)
+        if not root.exists() or not root.is_dir():
+            return {"ready": False, "code": "document_storage_missing"}
+        if not os.access(root, os.R_OK | os.W_OK | os.X_OK):
+            return {"ready": False, "code": "document_storage_not_writable"}
+        return {"ready": True, "code": "ready"}
+    except (DocumentStorageConfigurationError, OSError):
+        return {"ready": False, "code": "document_storage_unavailable"}
 
 
 _INSECURE_SECRET_VALUES = {
@@ -198,6 +266,10 @@ class Settings:
     REMINDER_LEASE_SECONDS = max(
         30, int(os.getenv("REMINDER_LEASE_SECONDS", "300"))
     )
+
+    # F5 private document storage. Empty means uploads/downloads are unavailable;
+    # the rest of JobGrid stays healthy until a durable private volume is configured.
+    DOCUMENT_STORAGE_DIR = os.getenv("DOCUMENT_STORAGE_DIR", "")
 
     # Sentry
     SENTRY_DSN = os.getenv("SENTRY_DSN", "")
