@@ -22,7 +22,7 @@ from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, company_aliases, crm, email, evidence, reminders, rows, today, upload
+from .routers import auth_router, backup, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -198,6 +198,7 @@ app.include_router(rows.router)
 app.include_router(backup.router)
 app.include_router(company_aliases.router)
 app.include_router(evidence.router)
+app.include_router(documents.router)
 app.include_router(crm.router)
 app.include_router(today.router)
 app.include_router(reminders.router)
@@ -243,7 +244,7 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import ApplicationEvidence, CompanyAlias, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
+        from .models import ApplicationDocument, ApplicationEvidence, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
@@ -253,7 +254,10 @@ if settings.TEST_AUTH:
         db.query(ReminderPreference).filter_by(user_id=user.id).delete()
         db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
         db.query(EvidenceCreateReceipt).filter_by(user_id=user.id).delete()
+        db.query(ApplicationDocument).filter_by(user_id=user.id).delete()
+        db.query(DocumentCreateReceipt).filter_by(user_id=user.id).delete()
         db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
+        db.query(DocumentVersion).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()
