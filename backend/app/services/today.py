@@ -10,7 +10,8 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import CsvRow, JobTrack, SavedView, WorkItem, WorkItemOverride
+from ..availability_schemas import deadline_action_key
+from ..models import CsvRow, JobAvailability, JobTrack, SavedView, WorkItem, WorkItemOverride
 from ..today_schemas import (
     WorkItemCreate,
     canonical_utc_timestamp,
@@ -189,6 +190,44 @@ def _serialize_followup(
     }
 
 
+def _serialize_deadline(
+    availability: JobAvailability,
+    track: JobTrack | None,
+    row: CsvRow | None,
+    override: WorkItemOverride | None,
+) -> dict[str, Any]:
+    company = track.company if track is not None else (row.company_guess if row is not None else None)
+    role = track.title if track is not None else (row.title if row is not None else None)
+    return {
+        "action_key": deadline_action_key(availability.id, availability.deadline_at),
+        "type": "deadline",
+        "id": availability.id,
+        "description": (
+            f"Review application deadline for {company or 'company'}"
+            + (f" — {role}" if role else "")
+        ),
+        "due_at": canonical_utc_timestamp(availability.deadline_at),
+        "priority": 2,
+        "version": int(availability.version),
+        "snooze_version": int(override.version) if override else 1,
+        "snoozed_until": (
+            canonical_utc_timestamp(override.snoozed_until) if override else None
+        ),
+        "track_id": track.id if track is not None else None,
+        "row_id": (
+            track.csv_row_id
+            if track is not None and track.csv_row_id is not None
+            else (row.id if row is not None else None)
+        ),
+        "source_view_id": None,
+        "origin_label": "Deadline",
+        "company": company,
+        "role": role,
+        "availability_state": availability.state,
+        "availability_reason": availability.check_reason,
+    }
+
+
 def _visible_after_snooze(
     item: dict[str, Any],
     *,
@@ -278,10 +317,56 @@ def build_today_queue(
         .all()
     )
 
+    deadline_rows = (
+        db.query(JobAvailability)
+        .filter(
+            JobAvailability.user_id == user_id,
+            JobAvailability.deadline_at.isnot(None),
+            JobAvailability.deadline_at < day_end_naive,
+            JobAvailability.state != "closed",
+        )
+        .all()
+    )
+    deadline_urls = [row.job_url for row in deadline_rows]
+    track_by_url: dict[str, JobTrack] = {}
+    row_by_url: dict[str, CsvRow] = {}
+    if deadline_urls:
+        track_by_url = {
+            track.url: track
+            for track in db.query(JobTrack)
+            .filter(
+                JobTrack.user_id == user_id,
+                JobTrack.url.in_(deadline_urls),
+            )
+            .all()
+        }
+        row_by_url = {
+            row.url: row
+            for row in db.query(CsvRow)
+            .filter(
+                CsvRow.user_id == user_id,
+                CsvRow.url.in_(deadline_urls),
+            )
+            .order_by(CsvRow.id.asc())
+            .all()
+        }
+    deadlines = [
+        availability
+        for availability in deadline_rows
+        if (
+            track_by_url.get(availability.job_url) is None
+            or track_by_url[availability.job_url].status not in TERMINAL_FOLLOWUP_STATUSES
+        )
+    ]
+
     keys = [manual_action_key(item.id) for item in manual_items]
     keys.extend(
         followup_action_key(track.id, track.follow_up_at)
         for track in followups
+    )
+    keys.extend(
+        deadline_action_key(availability.id, availability.deadline_at)
+        for availability in deadlines
     )
     overrides: dict[str, WorkItemOverride] = {}
     if keys:
@@ -305,6 +390,17 @@ def build_today_queue(
             overrides.get(followup_action_key(track.id, track.follow_up_at)),
         )
         for track in followups
+    )
+    items.extend(
+        _serialize_deadline(
+            availability,
+            track_by_url.get(availability.job_url),
+            row_by_url.get(availability.job_url),
+            overrides.get(
+                deadline_action_key(availability.id, availability.deadline_at)
+            ),
+        )
+        for availability in deadlines
     )
     items = [
         item
@@ -488,6 +584,27 @@ def snooze_action(
             409,
             "Follow-up is no longer actionable.",
         )
+    if kind == "deadline":
+        if source.state == "closed" or source.deadline_at is None:
+            raise TodayServiceError(
+                "action_not_available",
+                409,
+                "Deadline is no longer actionable.",
+            )
+        track = (
+            db.query(JobTrack)
+            .filter(
+                JobTrack.user_id == user_id,
+                JobTrack.url == source.job_url,
+            )
+            .first()
+        )
+        if track is not None and track.status in TERMINAL_FOLLOWUP_STATUSES:
+            raise TodayServiceError(
+                "action_not_available",
+                409,
+                "Deadline is no longer actionable.",
+            )
 
     existing = (
         db.query(WorkItemOverride)
