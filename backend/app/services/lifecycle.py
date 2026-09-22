@@ -15,7 +15,7 @@ from ..evidence_schemas import (
     EvidenceContractError,
     validate_correction_reason,
 )
-from ..models import CsvRow, JobLifecycleEvent, JobTrack
+from ..models import ApplicationEvidence, CsvRow, JobLifecycleEvent, JobTrack
 
 
 FIRST_EVENT_KINDS = frozenset({"first_visited", "first_applied"})
@@ -275,6 +275,27 @@ def write_event(
         csv_row_id=csv_row_id,
         job_track_id=job_track_id,
     )
+
+    if kind in EVIDENCE_EVENT_KINDS:
+        evidence_id = safe_payload["evidence_id"]
+        evidence = (
+            session.query(ApplicationEvidence)
+            .filter(
+                ApplicationEvidence.id == evidence_id,
+                ApplicationEvidence.user_id == user_id,
+            )
+            .first()
+        )
+        if evidence is None:
+            raise LifecycleEventError(
+                "inaccessible_evidence",
+                "Evidence is not available to this account.",
+            )
+        if job_track_id is None or evidence.track_id != job_track_id:
+            raise LifecycleEventError(
+                "invalid_event_payload",
+                "Evidence lifecycle event must reference its owning application.",
+            )
 
     if kind in FIRST_EVENT_KINDS:
         event_key = first_event_key(user_id, job_url, kind)
