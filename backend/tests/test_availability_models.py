@@ -5,11 +5,13 @@ from app.availability_schemas import (
     JOB_CHECK_REQUEST_RETENTION_DAYS,
     apply_checker_evidence,
     check_request_retention_cutoff,
+    deadline_action_key,
     deadline_today_eligible,
     parse_deadline_input,
 )
 from app.backup_schemas import validate_backup_v2
 from app.models import CsvRow, JobAvailability, JobCheckRequest, User
+from app.services.availability import apply_checker_result, prune_job_check_requests
 from app.services.backups import export_backup_v2, restore_backup_v2
 
 
@@ -24,7 +26,31 @@ def _user(db_session, prefix: str, timezone_name: str = "UTC") -> User:
     return user
 
 
-def test_user_closed_not_overwritten_by_reachable():
+def test_user_closed_not_overwritten_by_reachable(db_session):
+    user = _user(db_session, "closed-precedence")
+    availability = JobAvailability(
+        user_id=user.id,
+        job_url=f"https://closed.example/jobs/{uuid4()}",
+        state="closed",
+        confirmed_closed_at=datetime(2026, 9, 22, 11, 0),
+        check_reason="user_confirmed_closed",
+        version=4,
+    )
+    db_session.add(availability)
+    db_session.commit()
+
+    evidence = apply_checker_result(
+        availability,
+        checked_at=datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc),
+        http_status=200,
+    )
+    db_session.commit()
+    assert availability.state == "closed"
+    assert availability.confirmed_closed_at == datetime(2026, 9, 22, 11, 0)
+    assert availability.version == 4
+    assert evidence.state == "closed"
+    assert evidence.check_reason == "user_confirmed_closed"
+
     evidence = apply_checker_evidence("closed", http_status=200)
     assert evidence.state == "closed"
     assert evidence.check_reason == "user_confirmed_closed"
@@ -183,8 +209,40 @@ def test_backup_keeps_deadline_source(db_session):
     assert db_session.query(JobCheckRequest).filter_by(user_id=destination.id).count() == 0
 
 
-def test_check_request_metadata_retention_cutoff_is_seven_days():
+def test_check_request_metadata_retention_cutoff_is_seven_days(db_session):
     reference = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
     cutoff = check_request_retention_cutoff(reference)
     assert JOB_CHECK_REQUEST_RETENTION_DAYS == 7
     assert cutoff == datetime(2026, 9, 15, 12, 0)
+
+    user = _user(db_session, "request-retention")
+    availability = JobAvailability(
+        user_id=user.id,
+        job_url=f"https://retention.example/jobs/{uuid4()}",
+        state="unknown",
+    )
+    db_session.add(availability)
+    db_session.flush()
+    old_request = JobCheckRequest(
+        user_id=user.id,
+        availability_id=availability.id,
+        requested_at=cutoff - timedelta(microseconds=1),
+        status="done",
+        completed_at=cutoff - timedelta(microseconds=1),
+    )
+    boundary_request = JobCheckRequest(
+        user_id=user.id,
+        availability_id=availability.id,
+        requested_at=cutoff,
+        status="done",
+        completed_at=cutoff,
+    )
+    db_session.add_all([old_request, boundary_request])
+    db_session.commit()
+
+    assert prune_job_check_requests(db_session, reference=reference) == 1
+    db_session.commit()
+    assert db_session.query(JobCheckRequest).filter_by(user_id=user.id).count() == 1
+
+    key = deadline_action_key(availability.id, datetime(2026, 9, 22, 18, 30, tzinfo=timezone.utc))
+    assert key == f"deadline:{availability.id}:2026-09-22T18:30:00Z"
