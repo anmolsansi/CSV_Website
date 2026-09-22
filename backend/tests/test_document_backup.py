@@ -9,7 +9,8 @@ from app.models import CsvRow, DocumentVersion, JobTrack, User
 from app.services import backups as backup_service
 
 
-PDF_BYTES_V1 = b"%PDF-1.4\nrecoverable-resume-v1\n%%EOF\n"\nPDF_BYTES_V2 = b"%PDF-1.4\nrecoverable-resume-v2\n%%EOF\n"
+PDF_BYTES_V1 = b"%PDF-1.4\nrecoverable-resume-v1\n%%EOF\n"
+PDF_BYTES_V2 = b"%PDF-1.4\nrecoverable-resume-v2\n%%EOF\n"
 
 
 @pytest.fixture(autouse=True)
