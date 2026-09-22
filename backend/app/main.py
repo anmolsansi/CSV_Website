@@ -22,7 +22,7 @@ from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
+from .routers import auth_router, backup, capture, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -196,6 +196,7 @@ app.include_router(auth_router.router)
 app.include_router(upload.router)
 app.include_router(rows.router)
 app.include_router(backup.router)
+app.include_router(capture.router)
 app.include_router(company_aliases.router)
 app.include_router(evidence.router)
 app.include_router(documents.router)
@@ -244,12 +245,14 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import ApplicationDocument, ApplicationEvidence, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
+        from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
+        db.query(RequestWindowCounter).filter_by(user_id=user.id).delete()
+        db.query(CaptureRequest).filter_by(user_id=user.id).delete()
         db.query(ReminderDelivery).filter_by(user_id=user.id).delete()
         db.query(ReminderPreference).filter_by(user_id=user.id).delete()
         db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
