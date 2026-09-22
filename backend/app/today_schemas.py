@@ -6,7 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
-from .models import CsvRow, JobTrack, SavedView, WorkItem
+from .availability_schemas import deadline_action_key
+from .models import CsvRow, JobAvailability, JobTrack, SavedView, WorkItem
 
 
 class TodayContractError(ValueError):
@@ -161,7 +162,7 @@ def validate_owned_action_key(
     db: Session,
     user_id: int,
     action_key: str,
-) -> tuple[Literal["manual", "followup"], WorkItem | JobTrack]:
+) -> tuple[Literal["manual", "followup", "deadline"], WorkItem | JobTrack | JobAvailability]:
     """Validate a server-generated action key without leaking foreign ownership."""
     if action_key.startswith("manual:"):
         raw_id = action_key.removeprefix("manual:")
@@ -196,5 +197,27 @@ def validate_owned_action_key(
                 "Today action was not found.",
             )
         return "followup", track
+
+    if action_key.startswith("deadline:"):
+        parts = action_key.split(":", 2)
+        if len(parts) != 3 or not parts[1].isdigit() or int(parts[1]) <= 0:
+            raise TodayContractError("invalid_action_key", 422, "Invalid Today action key.")
+        availability = (
+            db.query(JobAvailability)
+            .filter(
+                JobAvailability.id == int(parts[1]),
+                JobAvailability.user_id == user_id,
+            )
+            .first()
+        )
+        if availability is None or availability.deadline_at is None:
+            raise TodayContractError("action_not_found", 404, "Today action was not found.")
+        if action_key != deadline_action_key(availability.id, availability.deadline_at):
+            raise TodayContractError(
+                "action_not_found",
+                404,
+                "Today action was not found.",
+            )
+        return "deadline", availability
 
     raise TodayContractError("invalid_action_key", 422, "Invalid Today action key.")
