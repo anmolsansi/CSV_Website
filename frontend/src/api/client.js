@@ -143,6 +143,12 @@ export const api = {
     client.post('/crm/from-rows/bulk', { row_ids: rowIds, ...(status ? { status } : {}) }).then((r) => r.data),
   getApplicationStats: (params = {}) =>
     client.get('/crm/stats', { params }).then((r) => r.data),
+  getApplicationMatches: (rowId) =>
+    client.get('/crm/application-matches', { params: { row_id: rowId } }).then((r) => r.data),
+  findApplicationMatches: (payload) =>
+    client.post('/crm/application-matches', payload).then((r) => r.data),
+  markRowApplied: (rowId) =>
+    client.post('/crm/from-rows/bulk', { row_ids: [rowId], status: 'applied' }).then((r) => r.data),
 
   // CRM - Analytics
   getAnalytics: () => client.get('/crm/analytics').then((r) => r.data),
@@ -279,6 +285,12 @@ export const api = {
   // CRM - Company history
   getCompanies: (params = {}) => client.get('/crm/companies', { params }).then((r) => r.data),
   getCompanyHistory: (company) => client.get(`/crm/companies/${encodeURIComponent(company)}`).then((r) => r.data),
+  getCompanyAliases: (company) =>
+    client.get('/crm/company-aliases', { params: { company } }).then((r) => r.data),
+  createCompanyAlias: (company, alias) =>
+    client.post('/crm/company-aliases', { company, alias }).then((r) => r.data),
+  deleteCompanyAlias: (aliasId) =>
+    client.delete(`/crm/company-aliases/${aliasId}`).then((r) => r.data),
 
   // CRM - Duplicates
   getDuplicates: () => client.get('/crm/duplicates').then((r) => r.data),
