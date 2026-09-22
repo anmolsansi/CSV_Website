@@ -3,6 +3,7 @@ import { api, apiFieldErrors, formatApiError } from '../api/client'
 import { applicationNavigationState, applicationStateQuery, queryValidationMessage, serializeApplicationQuery } from '../api/queryParams'
 import { useToast } from '../App'
 import ApplicationTimeline from '../components/ApplicationTimeline'
+import ApplicationDocuments from '../components/ApplicationDocuments'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -630,7 +631,7 @@ export default function Applications() {
                       aria-expanded={expandedTrackId === app.id}
                       onClick={() => setExpandedTrackId((current) => current === app.id ? null : app.id)}
                     >
-                      {expandedTrackId === app.id ? 'Hide history' : 'History & evidence'}
+                      {expandedTrackId === app.id ? 'Hide details' : 'History, evidence & documents'}
                     </button>
                     {fieldErrors[app.id]?.non_field && <p className="error-msg" role="alert">{fieldErrors[app.id].non_field}</p>}
                   </td>
@@ -638,6 +639,7 @@ export default function Applications() {
                 {expandedTrackId === app.id && (
                   <tr className="application-timeline-row">
                     <td colSpan={columns.filter(([key]) => !hiddenColumns.includes(key)).length + 2}>
+                      <ApplicationDocuments application={app} />
                       <ApplicationTimeline
                         application={app}
                         onApplicationChanged={(updated) => {
