@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Mapping
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
 
 from .evidence_schemas import (
-    MAX_CORRECTION_REASON_CHARS,
     MAX_EVIDENCE_TEXT_CHARS,
     MAX_EVIDENCE_URL_CHARS,
     EvidenceContractError,
@@ -835,11 +834,46 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
             source_section="application_evidence", source_ref=evidence.backup_ref,
         )
 
+    evidence_by_ref = {
+        evidence.backup_ref: evidence
+        for evidence in document.sections.application_evidence
+    }
     for recovery in document.sections.evidence_recovery:
         _require_target(
             refs, "application_evidence", recovery.evidence_ref,
             source_section="evidence_recovery", source_ref=recovery.backup_ref,
         )
+        evidence = evidence_by_ref[recovery.evidence_ref]
+        if not evidence.is_deleted:
+            raise BackupContractError(
+                "conflicting_reference_graph",
+                409,
+                "Recovery body may target only soft-deleted evidence.",
+                section="evidence_recovery",
+                backup_ref=recovery.backup_ref,
+            )
+        if evidence.kind == "confirmation_url":
+            try:
+                validate_confirmation_url(recovery.body)
+            except EvidenceContractError as exc:
+                raise BackupContractError(
+                    "invalid_schema", 400, exc.message,
+                    section="evidence_recovery", backup_ref=recovery.backup_ref,
+                ) from exc
+        updated_at = datetime.fromisoformat(
+            evidence.updated_at.replace("Z", "+00:00")
+        )
+        purge_at = datetime.fromisoformat(
+            recovery.body_purge_at.replace("Z", "+00:00")
+        )
+        if purge_at > updated_at + timedelta(days=30):
+            raise BackupContractError(
+                "invalid_schema",
+                400,
+                "Evidence recovery deadline cannot extend beyond 30 days after deletion.",
+                section="evidence_recovery",
+                backup_ref=recovery.backup_ref,
+            )
 
     for item in document.sections.work_items:
         _require_target(
