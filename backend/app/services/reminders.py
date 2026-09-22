@@ -246,9 +246,10 @@ def sync_track_reminder(
         .first()
     )
     if existing is not None:
-        if existing.status in {"pending", "failed"}:
+        if existing.status == "pending":
             existing.scheduled_at = planned.scheduled_at
-            existing.next_attempt_at = None
+        # A known transient failure owns its retry timestamp. Routine planning
+        # must not erase backoff and turn it into an immediate retry.
         return existing
 
     delivery = ReminderDelivery(
