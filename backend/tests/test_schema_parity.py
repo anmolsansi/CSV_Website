@@ -14,11 +14,13 @@ from sqlalchemy import UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from app.models import (
+    ApplicationEvidence,
     BackupImportMap,
     Base,
     CSV_COLUMNS,
     CompanyAlias,
     CsvRow,
+    EvidenceCreateReceipt,
     JobLifecycleEvent,
     MaintenanceStatus,
     WorkItem,
@@ -45,6 +47,8 @@ def test_models_are_bound_to_metadata():
     assert WorkItem.__tablename__ in Base.metadata.tables
     assert WorkItemOverride.__tablename__ in Base.metadata.tables
     assert CompanyAlias.__tablename__ in Base.metadata.tables
+    assert ApplicationEvidence.__tablename__ in Base.metadata.tables
+    assert EvidenceCreateReceipt.__tablename__ in Base.metadata.tables
 
 
 def test_csv_columns_are_covered_by_migrations():
@@ -61,7 +65,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["009"]
+    assert script.get_heads() == ["010"]
 
 
 def test_legacy_schema_patch_module_removed():
