@@ -245,7 +245,7 @@ if settings.TEST_AUTH:
     def test_reset(db: Session = Depends(get_db)):
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
-        from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
+        from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobAvailability, JobCheckRequest, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
@@ -253,6 +253,8 @@ if settings.TEST_AUTH:
         user.retention_days = None
         db.query(RequestWindowCounter).filter_by(user_id=user.id).delete()
         db.query(CaptureRequest).filter_by(user_id=user.id).delete()
+        db.query(JobCheckRequest).filter_by(user_id=user.id).delete()
+        db.query(JobAvailability).filter_by(user_id=user.id).delete()
         db.query(ReminderDelivery).filter_by(user_id=user.id).delete()
         db.query(ReminderPreference).filter_by(user_id=user.id).delete()
         db.query(JobLifecycleEvent).filter_by(user_id=user.id).delete()
