@@ -8555,7 +8555,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-036"></a>
 ### JG-036 — Prove history survives lifecycle and recovery operations
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — validated in PR #127  
 **Priority:** Feature rank 3  
 **Type:** verification/operations  
 **Execution position:** 36/64; group step 4/4
@@ -8729,14 +8729,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-036 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: source_row_delete_retains_evidence
-- [ ] Required regression passes: restored_timeline_semantic_equivalence
-- [ ] Required regression passes: event_insert_failure_rolls_back_evidence
-- [ ] Required regression passes: deleted_evidence_body_not_in_normal_read
-- [ ] Required regression passes: individual_status_correction_preserves_original_and_rejects_stale_event
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-036 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: source_row_delete_retains_evidence
+- [x] Required regression passes: restored_timeline_semantic_equivalence
+- [x] Required regression passes: event_insert_failure_rolls_back_evidence
+- [x] Required regression passes: deleted_evidence_body_not_in_normal_read
+- [x] Required regression passes: individual_status_correction_preserves_original_and_rejects_stale_event
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F3.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -8754,12 +8754,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -8768,11 +8768,21 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-035` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #126. Implementation/verification PR: #127.
+
+### Completion evidence
+
+- JG-035 was merged and fully green before JG-036 implementation began.
+- GitHub issue #126 and PR #127 track this verification ticket.
+- Final CI run #272 on head `943e6565aed245415a58c41219b9bb2f3c855226` passed every repository gate.
+- PostgreSQL pytest completed with 419 passing tests, including source-row deletion preservation, cross-account semantic timeline restore, injected evidence/event rollback, deleted-body redaction, and stale status-correction conflict coverage.
+- Chromium compatibility remained green with the JG-035 timeline interface and the broader application-memory browser suite.
+- Frontend production build and backend compile checks passed.
+- No production schema or public route was added by JG-036. Rollback removes only verification/docs changes and never deletes evidence or lifecycle history.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-035 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** F3 history and evidence recovery behavior is verified against source deletion, transactional failure, backup/restore remapping, soft deletion and correction races. External staging/deployment is not claimed by this completion marker.
 
 ---
 
