@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import json
+import os
+import stat
+import zipfile
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import update
@@ -51,6 +56,7 @@ from ..evidence_schemas import (
     evidence_body_purge_at,
 )
 from .job_identity import CANONICALIZATION_VERSION, apply_persisted_job_identity
+from .documents import DocumentServiceError, StagedDocument, _resolve_storage_key, _storage_root, stage_upload
 
 
 def _utc_iso(value: datetime | None) -> str | None:
@@ -2198,3 +2204,519 @@ def restore_backup_payload(db: Session, user_id: int, raw: bytes, mode: str) -> 
     if version in {"1", "1.0"}:
         return restore_backup_v1(db, user_id, payload, mode)
     raise BackupContractError("unsupported_backup_version", 400, "Unsupported backup version.")
+
+
+# JG-044: the portable JSON remains metadata-only for documents. A separate
+# bounded ZIP bundle carries the exact immutable bytes and a checksum manifest.
+BACKUP_BUNDLE_FORMAT = "jobgrid-document-bundle"
+BACKUP_BUNDLE_VERSION = 1
+MAX_BACKUP_BUNDLE_EXPANDED_BYTES = 150 * 1024 * 1024
+MAX_BACKUP_BUNDLE_UPLOAD_BYTES = 150 * 1024 * 1024
+MAX_BACKUP_BUNDLE_MEMBERS = 20_002
+
+
+def _bundle_error(code: str, message: str, *, status_code: int = 400) -> BackupContractError:
+    return BackupContractError(code, status_code, message)
+
+
+def _safe_bundle_member_name(name: str) -> bool:
+    if not name or "\x00" in name or "\\" in name:
+        return False
+    if name.startswith("/") or name.startswith("~"):
+        return False
+    parts = name.split("/")
+    return all(part not in {"", ".", ".."} for part in parts)
+
+
+def _sha256_path(path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(64 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def export_backup_bundle(db: Session, user_id: int) -> bytes:
+    """Return a bounded ZIP containing v2 metadata plus every ready document byte."""
+    backup = export_backup_v2(db, user_id)
+    backup_bytes = json.dumps(
+        backup,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    records = {
+        (record["document_family_id"], record["version_number"]): record
+        for record in backup["sections"]["document_versions"]
+        if record["state"] == "ready"
+    }
+    source_documents = (
+        db.query(DocumentVersion)
+        .filter(DocumentVersion.user_id == user_id, DocumentVersion.state == "ready")
+        .all()
+    )
+    source_by_key = {
+        (item.document_family_id, item.version_number): item
+        for item in source_documents
+    }
+    root = _storage_root(create=False)
+    manifest_documents: list[dict[str, Any]] = []
+    expanded_bytes = len(backup_bytes)
+    document_payloads: list[tuple[str, bytes]] = []
+
+    for key, record in sorted(records.items(), key=lambda pair: pair[1]["backup_ref"]):
+        source = source_by_key.get(key)
+        if source is None:
+            raise _bundle_error(
+                "document_bytes_missing",
+                "A ready document in backup metadata has no owned storage record.",
+                status_code=409,
+            )
+        path = _resolve_storage_key(root, source.storage_key)
+        if not path.is_file():
+            raise _bundle_error(
+                "document_bytes_missing",
+                "A ready document is missing from private storage.",
+                status_code=409,
+            )
+        size = path.stat().st_size
+        digest = _sha256_path(path)
+        if size != record["size_bytes"] or digest != record["sha256"]:
+            raise _bundle_error(
+                "document_bytes_corrupt",
+                "A ready document does not match its stored size/checksum.",
+                status_code=409,
+            )
+        member = f"documents/{record['backup_ref']}"
+        payload = path.read_bytes()
+        expanded_bytes += len(payload)
+        if expanded_bytes > MAX_BACKUP_BUNDLE_EXPANDED_BYTES:
+            raise _bundle_error(
+                "bundle_too_large",
+                "Document backup bundle exceeds the 150 MiB expanded limit.",
+                status_code=413,
+            )
+        manifest_documents.append({
+            "backup_ref": record["backup_ref"],
+            "path": member,
+            "size_bytes": size,
+            "sha256": digest,
+        })
+        document_payloads.append((member, payload))
+
+    manifest = {
+        "format": BACKUP_BUNDLE_FORMAT,
+        "version": BACKUP_BUNDLE_VERSION,
+        "backup_id": backup["backup_id"],
+        "backup_sha256": hashlib.sha256(backup_bytes).hexdigest(),
+        "document_bytes_included": True,
+        "documents": manifest_documents,
+    }
+    manifest_bytes = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    expanded_bytes += len(manifest_bytes)
+    if expanded_bytes > MAX_BACKUP_BUNDLE_EXPANDED_BYTES:
+        raise _bundle_error(
+            "bundle_too_large",
+            "Document backup bundle exceeds the 150 MiB expanded limit.",
+            status_code=413,
+        )
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=False) as archive:
+        archive.writestr("backup.json", backup_bytes)
+        archive.writestr("manifest.json", manifest_bytes)
+        for member, payload in document_payloads:
+            archive.writestr(member, payload)
+    return output.getvalue()
+
+
+def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, StagedDocument]]:
+    if len(raw) > MAX_BACKUP_BUNDLE_UPLOAD_BYTES:
+        raise _bundle_error(
+            "bundle_too_large",
+            "Backup bundle exceeds the 150 MiB upload limit.",
+            status_code=413,
+        )
+
+    staged: dict[str, StagedDocument] = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw), "r") as archive:
+            infos = archive.infolist()
+            if len(infos) > MAX_BACKUP_BUNDLE_MEMBERS:
+                raise _bundle_error("bundle_too_many_members", "Backup bundle contains too many members.")
+            names = [item.filename for item in infos]
+            if len(names) != len(set(names)):
+                raise _bundle_error("bundle_duplicate_member", "Backup bundle contains duplicate member names.")
+            expanded = 0
+            for info in infos:
+                if not _safe_bundle_member_name(info.filename):
+                    raise _bundle_error("bundle_unsafe_member", "Backup bundle contains an unsafe member path.")
+                mode = (info.external_attr >> 16) & 0xFFFF
+                if info.is_dir() or stat.S_ISLNK(mode):
+                    raise _bundle_error("bundle_unsafe_member", "Backup bundle may contain regular files only.")
+                if info.flag_bits & 0x1:
+                    raise _bundle_error("bundle_encrypted_member", "Encrypted ZIP members are not supported.")
+                expanded += info.file_size
+                if expanded > MAX_BACKUP_BUNDLE_EXPANDED_BYTES:
+                    raise _bundle_error(
+                        "bundle_too_large",
+                        "Backup bundle exceeds the 150 MiB expanded limit.",
+                        status_code=413,
+                    )
+
+            if "backup.json" not in names or "manifest.json" not in names:
+                raise _bundle_error(
+                    "bundle_missing_metadata",
+                    "Backup bundle requires backup.json and manifest.json.",
+                )
+            backup_bytes = archive.read("backup.json")
+            if len(backup_bytes) > MAX_BACKUP_JSON_BYTES:
+                raise _bundle_error("backup_too_large", "Backup JSON exceeds the 20 MiB limit.", status_code=413)
+            payload = parse_backup_json(backup_bytes)
+            if not isinstance(payload, dict) or str(payload.get("version")) != "2.0":
+                raise _bundle_error("unsupported_backup_version", "Document bundles require backup v2.")
+            document = validate_backup_v2(payload)
+
+            manifest_raw = archive.read("manifest.json")
+            manifest = parse_backup_json(manifest_raw)
+            if not isinstance(manifest, dict):
+                raise _bundle_error("invalid_bundle_manifest", "Bundle manifest must be an object.")
+            required_manifest_keys = {
+                "format", "version", "backup_id", "backup_sha256",
+                "document_bytes_included", "documents",
+            }
+            if set(manifest) != required_manifest_keys:
+                raise _bundle_error("invalid_bundle_manifest", "Bundle manifest fields do not match the frozen format.")
+            if manifest["format"] != BACKUP_BUNDLE_FORMAT or manifest["version"] != BACKUP_BUNDLE_VERSION:
+                raise _bundle_error("unsupported_bundle_version", "Unsupported document backup bundle version.")
+            if manifest["backup_id"] != document.backup_id:
+                raise _bundle_error("bundle_backup_mismatch", "Bundle manifest does not match backup.json.")
+            if manifest["backup_sha256"] != hashlib.sha256(backup_bytes).hexdigest():
+                raise _bundle_error("bundle_backup_checksum_mismatch", "backup.json checksum does not match the manifest.")
+            if manifest["document_bytes_included"] is not True or not isinstance(manifest["documents"], list):
+                raise _bundle_error("invalid_bundle_manifest", "Bundle manifest must declare included document bytes.")
+
+            ready_records = {
+                item.backup_ref: item
+                for item in document.sections.document_versions
+                if item.state == "ready"
+            }
+            manifest_by_ref: dict[str, dict[str, Any]] = {}
+            expected_members = {"backup.json", "manifest.json"}
+            for entry in manifest["documents"]:
+                if not isinstance(entry, dict) or set(entry) != {"backup_ref", "path", "size_bytes", "sha256"}:
+                    raise _bundle_error("invalid_bundle_manifest", "Document manifest entry is invalid.")
+                ref = entry["backup_ref"]
+                if not isinstance(ref, str) or ref in manifest_by_ref:
+                    raise _bundle_error("invalid_bundle_manifest", "Document manifest references must be unique strings.")
+                record = ready_records.get(ref)
+                if record is None:
+                    raise _bundle_error("bundle_unexpected_document", "Manifest references a document not marked ready in backup.json.")
+                expected_path = f"documents/{ref}"
+                if entry["path"] != expected_path or not _safe_bundle_member_name(expected_path):
+                    raise _bundle_error("bundle_unsafe_member", "Document member path does not match its portable reference.")
+                if entry["size_bytes"] != record.size_bytes or entry["sha256"] != record.sha256:
+                    raise _bundle_error("bundle_document_metadata_mismatch", "Document manifest size/checksum differs from backup.json.")
+                manifest_by_ref[ref] = entry
+                expected_members.add(expected_path)
+
+            if set(ready_records) != set(manifest_by_ref):
+                raise _bundle_error("bundle_missing_document", "A ready document is missing from the bundle manifest.")
+            if set(names) != expected_members:
+                raise _bundle_error("bundle_unexpected_member", "Backup bundle contains missing or unexpected members.")
+
+            links_by_document = {item.document_ref for item in document.sections.application_documents}
+            if not links_by_document.issubset(set(ready_records)):
+                raise _bundle_error("invalid_document_link", "Application links may reference only ready bundled documents.")
+
+            for ref, record in ready_records.items():
+                entry = manifest_by_ref[ref]
+                with archive.open(entry["path"], "r") as source:
+                    try:
+                        item = stage_upload(
+                            source,
+                            original_filename=record.original_filename,
+                            claimed_media_type=record.media_type,
+                        )
+                    except DocumentServiceError as exc:
+                        raise _bundle_error(exc.code, str(exc), status_code=exc.status_code) from exc
+                if item.size_bytes != record.size_bytes or item.sha256 != record.sha256:
+                    item.path.unlink(missing_ok=True)
+                    raise _bundle_error("bundle_document_checksum_mismatch", "Bundled document bytes failed exact size/checksum validation.")
+                staged[ref] = item
+            return document, staged
+    except zipfile.BadZipFile as exc:
+        raise _bundle_error("invalid_bundle_zip", "Backup bundle is not a valid ZIP archive.") from exc
+    except Exception:
+        for item in staged.values():
+            try:
+                item.path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def _document_record_equal(item: DocumentVersion, record: Any) -> bool:
+    return (
+        item.document_family_id == record.document_family_id
+        and item.kind == record.kind
+        and item.label == record.label
+        and item.original_filename == record.original_filename
+        and item.media_type == record.media_type
+        and item.size_bytes == record.size_bytes
+        and item.sha256 == record.sha256
+        and item.version_number == record.version_number
+        and _portable_equal(item.created_at, record.created_at)
+        and item.state == "ready"
+    )
+
+
+def _preflight_document_bundle(db: Session, user_id: int, document: BackupDocumentV2) -> dict[str, dict[str, int]]:
+    counts = {
+        "document_versions": {"created": 0, "skipped": 0, "conflicts": 0},
+        "application_documents": {"created": 0, "skipped": 0, "conflicts": 0},
+    }
+    ready_refs: dict[str, DocumentVersion | None] = {}
+    for record in document.sections.document_versions:
+        if record.state != "ready":
+            counts["document_versions"]["skipped"] += 1
+            continue
+        existing = (
+            db.query(DocumentVersion)
+            .filter_by(
+                user_id=user_id,
+                document_family_id=record.document_family_id,
+                version_number=record.version_number,
+            )
+            .first()
+        )
+        ready_refs[record.backup_ref] = existing
+        if existing is None:
+            counts["document_versions"]["created"] += 1
+        elif _document_record_equal(existing, record):
+            counts["document_versions"]["skipped"] += 1
+        else:
+            counts["document_versions"]["conflicts"] += 1
+
+    for link in document.sections.application_documents:
+        existing_doc = ready_refs.get(link.document_ref)
+        track_id = _mapped_ref_target(
+            db, user_id, document.backup_id, "job_tracks", link.track_ref
+        )
+        if existing_doc is not None and track_id is not None:
+            existing = (
+                db.query(ApplicationDocument)
+                .filter_by(
+                    user_id=user_id,
+                    track_id=track_id,
+                    document_version_id=existing_doc.id,
+                )
+                .first()
+            )
+            if existing is not None:
+                if existing.kind == link.kind and existing.usage == link.usage:
+                    counts["application_documents"]["skipped"] += 1
+                else:
+                    counts["application_documents"]["conflicts"] += 1
+                continue
+        counts["application_documents"]["created"] += 1
+    return counts
+
+
+def _publish_bundle_staged(staged: StagedDocument, final_path) -> None:
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(staged.path, final_path)
+    with final_path.open("rb") as persisted:
+        os.fsync(persisted.fileno())
+    directory_fd = os.open(str(final_path.parent), os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _restore_document_bundle_records(
+    db: Session,
+    user_id: int,
+    document: BackupDocumentV2,
+    staged: Mapping[str, StagedDocument],
+) -> dict[str, dict[str, int]]:
+    bind = db.get_bind()
+    engine = getattr(bind, "engine", bind)
+    session = Session(bind=engine, autoflush=False, expire_on_commit=False)
+    root = _storage_root(create=True)
+    published: list[Any] = []
+    counts = {
+        "document_versions": {"created": 0, "skipped": 0, "conflicts": 0},
+        "application_documents": {"created": 0, "skipped": 0, "conflicts": 0},
+    }
+    doc_refs: dict[str, str] = {}
+    try:
+        with session.begin():
+            session.query(User).filter(User.id == user_id).with_for_update().one()
+            for record in document.sections.document_versions:
+                if record.state != "ready":
+                    counts["document_versions"]["skipped"] += 1
+                    continue
+                existing = (
+                    session.query(DocumentVersion)
+                    .filter_by(
+                        user_id=user_id,
+                        document_family_id=record.document_family_id,
+                        version_number=record.version_number,
+                    )
+                    .first()
+                )
+                if existing is not None:
+                    if not _document_record_equal(existing, record):
+                        raise _bundle_error(
+                            "document_restore_conflict",
+                            "Destination contains a different document for the same family/version.",
+                            status_code=409,
+                        )
+                    doc_refs[record.backup_ref] = existing.id
+                    target = _resolve_storage_key(root, existing.storage_key)
+                    if target.is_file():
+                        if target.stat().st_size != record.size_bytes or _sha256_path(target) != record.sha256:
+                            raise _bundle_error(
+                                "document_restore_conflict",
+                                "Existing destination document bytes do not match backup metadata.",
+                                status_code=409,
+                            )
+                    else:
+                        _publish_bundle_staged(staged[record.backup_ref], target)
+                        published.append(target)
+                    counts["document_versions"]["skipped"] += 1
+                    continue
+
+                item = DocumentVersion(
+                    id=str(uuid4()),
+                    user_id=user_id,
+                    document_family_id=record.document_family_id,
+                    kind=record.kind,
+                    label=record.label,
+                    original_filename=record.original_filename,
+                    media_type=record.media_type,
+                    size_bytes=record.size_bytes,
+                    sha256=record.sha256,
+                    storage_key=f"documents/{user_id}/{uuid4().hex}.bin",
+                    version_number=record.version_number,
+                    created_at=_parse_backup_datetime(record.created_at),
+                    state="pending",
+                )
+                session.add(item)
+                session.flush()
+                target = _resolve_storage_key(root, item.storage_key)
+                _publish_bundle_staged(staged[record.backup_ref], target)
+                published.append(target)
+                item.state = "ready"
+                doc_refs[record.backup_ref] = item.id
+                counts["document_versions"]["created"] += 1
+
+            for link in document.sections.application_documents:
+                document_id = doc_refs.get(link.document_ref)
+                if document_id is None:
+                    raise _bundle_error(
+                        "invalid_document_link",
+                        "Application link references a document that was not restored.",
+                        status_code=409,
+                    )
+                track_id = _mapped_ref_target(
+                    session, user_id, document.backup_id, "job_tracks", link.track_ref
+                )
+                if track_id is None:
+                    raise _bundle_error(
+                        "conflicting_reference_graph",
+                        "Application link target could not be resolved after restore.",
+                        status_code=409,
+                    )
+                existing = (
+                    session.query(ApplicationDocument)
+                    .filter_by(
+                        user_id=user_id,
+                        track_id=track_id,
+                        document_version_id=document_id,
+                    )
+                    .first()
+                )
+                if existing is not None:
+                    if existing.kind != link.kind or existing.usage != link.usage:
+                        raise _bundle_error(
+                            "document_link_conflict",
+                            "Existing application document link has different semantics.",
+                            status_code=409,
+                        )
+                    counts["application_documents"]["skipped"] += 1
+                    continue
+                session.add(ApplicationDocument(
+                    user_id=user_id,
+                    track_id=track_id,
+                    document_version_id=document_id,
+                    kind=link.kind,
+                    usage=link.usage,
+                    attached_at=_parse_backup_datetime(link.attached_at),
+                ))
+                session.flush()
+                counts["application_documents"]["created"] += 1
+        return counts
+    except Exception:
+        session.rollback()
+        for path in published:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+    finally:
+        session.close()
+
+
+def restore_backup_bundle(db: Session, user_id: int, raw: bytes, mode: str) -> dict[str, Any]:
+    """Validate every byte before writes, then restore metadata and immutable bytes."""
+    if mode not in {RESTORE_MODE_MERGE, RESTORE_MODE_VERIFY}:
+        raise _bundle_error("invalid_restore_mode", "Unsupported restore mode.")
+    document, staged = _validate_bundle_zip(raw)
+    try:
+        preflight = _preflight_document_bundle(db, user_id, document)
+        if any(values["conflicts"] for values in preflight.values()):
+            raise _bundle_error(
+                "document_restore_conflict",
+                "Document bundle conflicts with existing destination records.",
+                status_code=409,
+            )
+        if mode == RESTORE_MODE_VERIFY:
+            result = restore_backup_v2(db, user_id, document, mode)
+            result["counts"].update(preflight)
+            result["warnings"] = [
+                warning for warning in result["warnings"]
+                if warning.get("code") != "document_bytes_excluded"
+            ]
+            result["document_bytes_included"] = True
+            return result
+
+        result = restore_backup_v2(db, user_id, document, mode)
+        restored_counts = _restore_document_bundle_records(db, user_id, document, staged)
+        result["counts"].update(restored_counts)
+        result["warnings"] = [
+            warning for warning in result["warnings"]
+            if warning.get("code") != "document_bytes_excluded"
+        ]
+        result["document_bytes_included"] = True
+        return result
+    finally:
+        for item in staged.values():
+            try:
+                item.path.unlink(missing_ok=True)
+            except OSError:
+                pass
