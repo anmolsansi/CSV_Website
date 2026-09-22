@@ -1,19 +1,22 @@
 import copy
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.backup_schemas import MAX_BACKUP_JSON_BYTES, compute_sections_checksum, validate_backup_v2
+from app.evidence_schemas import EvidenceCreateData
 from app.models import (
+    ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
     BackupImportMap,
     ColumnPreference,
     CsvRow,
+    JobLifecycleEvent,
     JobTrack,
     SavedView,
     SearchSession,
@@ -21,7 +24,14 @@ from app.models import (
     User,
     UserGoal,
 )
-from app.services.backups import restore_backup_v2
+from app.services.backups import export_backup_v2, restore_backup_v2
+from app.services.evidence import (
+    correct_applied_date,
+    correct_latest_status,
+    create_evidence,
+    get_timeline,
+)
+from app.services.lifecycle import apply_job_track_changes, write_event
 
 
 def _login(client, email: str):
@@ -430,3 +440,235 @@ def test_v1_import_warns_about_incomplete_history(auth_client, db_session):
     assert track.status == "applied"
     assert track.applied_at == datetime(2026, 9, 15, 10, 0, 0)
     assert track.notes == "legacy note"
+
+
+def _timeline_semantics(items):
+    evidence_kinds = {
+        item["id"]: item["kind"]
+        for item in items
+        if item["type"] == "evidence"
+    }
+    status_events = {
+        item["id"]: (
+            item.get("payload", {}).get("from"),
+            item.get("payload", {}).get("to"),
+        )
+        for item in items
+        if item["type"] == "lifecycle" and item["kind"] == "status_changed"
+    }
+    normalized = []
+    for item in items:
+        payload = dict(item.get("payload") or {})
+        if "evidence_id" in payload:
+            payload["evidence_id"] = evidence_kinds.get(payload["evidence_id"], "missing")
+        if "correction_of" in payload:
+            payload["correction_of"] = status_events.get(
+                payload["correction_of"], "missing"
+            )
+        normalized.append(
+            {
+                "type": item["type"],
+                "kind": item["kind"],
+                "source": item["source"],
+                "timestamp": item["timestamp"],
+                "occurred_at": item.get("occurred_at"),
+                "recorded_at": item.get("recorded_at"),
+                "body": item.get("body"),
+                "is_deleted": item.get("is_deleted"),
+                "payload": payload,
+            }
+        )
+    return normalized
+
+
+def test_restored_timeline_semantic_equivalence(db_session):
+    source = User(email=f"jg036-source-{uuid4()}@example.test")
+    destination = User(email=f"jg036-destination-{uuid4()}@example.test")
+    db_session.add_all([source, destination])
+    db_session.flush()
+
+    row = CsvRow(
+        user_id=source.id,
+        upload_batch_id=f"jg036-{uuid4()}",
+        url=f"https://example.test/jobs/restore-{uuid4()}",
+        company_guess="Recovery Example",
+        title="Platform Engineer",
+    )
+    db_session.add(row)
+    db_session.flush()
+
+    track = JobTrack(
+        user_id=source.id,
+        csv_row_id=row.id,
+        url=row.url,
+        company="Recovery Example",
+        title="Platform Engineer",
+        status="opened",
+    )
+    db_session.add(track)
+    db_session.flush()
+
+    imported_at = datetime(2026, 9, 15, 9, 0, 0)
+    applied_at = datetime(2026, 9, 16, 10, 0, 0)
+    evidence_at = applied_at + timedelta(minutes=5)
+    corrected_applied_at = applied_at + timedelta(minutes=2)
+    interview_at = datetime(2026, 9, 17, 11, 0, 0)
+
+    write_event(
+        db_session,
+        user_id=source.id,
+        job_url=track.url,
+        kind="first_visited",
+        occurred_at=imported_at,
+        source="import",
+        payload={},
+        csv_row_id=row.id,
+        job_track_id=track.id,
+    )
+    apply_job_track_changes(
+        db_session,
+        user_id=source.id,
+        item=track,
+        source="user",
+        operation_id=uuid4(),
+        now=applied_at,
+        status="applied",
+        applied_at=applied_at,
+        infer_applied_at_from_status=False,
+    )
+    evidence = create_evidence(
+        db_session,
+        user_id=source.id,
+        track_id=track.id,
+        data=EvidenceCreateData(
+            kind="confirmation_url",
+            body="https://example.test/confirmation/jg036",
+            occurred_at=evidence_at,
+        ),
+        request_key=uuid4(),
+        now=evidence_at + timedelta(minutes=1),
+    ).evidence
+    correct_applied_date(
+        db_session,
+        user_id=source.id,
+        track_id=track.id,
+        applied_at=corrected_applied_at,
+        reason="Confirmation timestamp corrected the application time",
+        operation_id=uuid4(),
+        now=applied_at + timedelta(minutes=15),
+    )
+    apply_job_track_changes(
+        db_session,
+        user_id=source.id,
+        item=track,
+        source="user",
+        operation_id=uuid4(),
+        now=interview_at,
+        status="interview",
+        infer_applied_at_from_status=False,
+    )
+    db_session.flush()
+    interview_event = (
+        db_session.query(JobLifecycleEvent)
+        .filter_by(
+            user_id=source.id,
+            job_track_id=track.id,
+            kind="status_changed",
+        )
+        .order_by(JobLifecycleEvent.occurred_at.desc(), JobLifecycleEvent.id.desc())
+        .first()
+    )
+    correct_latest_status(
+        db_session,
+        user_id=source.id,
+        track_id=track.id,
+        expected_event_id=interview_event.id,
+        restore_status="applied",
+        reason="Interview status was entered on the wrong role",
+        operation_id=uuid4(),
+        now=interview_at + timedelta(minutes=10),
+    )
+    db_session.commit()
+    source_track_id = track.id
+    source_evidence_id = evidence.id
+    source_interview_event_id = interview_event.id
+    source_url = track.url
+
+    source_page = get_timeline(
+        db_session,
+        user_id=source.id,
+        track_id=source_track_id,
+        limit=50,
+    )
+    assert len(source_page.items) >= 8
+    source_semantics = _timeline_semantics(source_page.items)
+
+    exported = export_backup_v2(db_session, source.id)
+    assert exported["counts"]["application_evidence"] == 1
+    assert exported["counts"]["lifecycle_events"] >= 7
+    restored = restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(exported),
+        "merge_missing",
+    )
+    assert restored["counts"]["application_evidence"] == {
+        "created": 1,
+        "skipped": 0,
+        "conflicts": 0,
+    }
+    assert restored["counts"]["lifecycle_events"]["created"] == exported["counts"][
+        "lifecycle_events"
+    ]
+
+    db_session.expire_all()
+    restored_track = (
+        db_session.query(JobTrack)
+        .filter_by(user_id=destination.id, url=source_url)
+        .one()
+    )
+    restored_evidence = (
+        db_session.query(ApplicationEvidence)
+        .filter_by(user_id=destination.id, track_id=restored_track.id)
+        .one()
+    )
+    assert restored_track.id != source_track_id
+    assert restored_evidence.id != source_evidence_id
+
+    restored_page = get_timeline(
+        db_session,
+        user_id=destination.id,
+        track_id=restored_track.id,
+        limit=50,
+    )
+    assert _timeline_semantics(restored_page.items) == source_semantics
+
+    restored_evidence_event = (
+        db_session.query(JobLifecycleEvent)
+        .filter_by(
+            user_id=destination.id,
+            job_track_id=restored_track.id,
+            kind="evidence_added",
+        )
+        .one()
+    )
+    assert restored_evidence_event.payload["evidence_id"] == restored_evidence.id
+
+    restored_status_events = (
+        db_session.query(JobLifecycleEvent)
+        .filter_by(
+            user_id=destination.id,
+            job_track_id=restored_track.id,
+            kind="status_changed",
+        )
+        .order_by(JobLifecycleEvent.occurred_at.asc(), JobLifecycleEvent.id.asc())
+        .all()
+    )
+    correction_event = next(
+        event
+        for event in restored_status_events
+        if event.payload.get("correction_of") is not None
+    )
+    original_event_ids = {event.id for event in restored_status_events}
+    assert correction_event.payload["correction_of"] in original_event_ids
+    assert correction_event.payload["correction_of"] != source_interview_event_id
