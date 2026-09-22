@@ -109,8 +109,9 @@ def increment_capture_window(
                 counter.count += 1
             current_count = counter.count
             limiter.query(RequestWindowCounter).filter(
+                RequestWindowCounter.user_id == user_id,
                 RequestWindowCounter.window_start
-                < now - timedelta(hours=CAPTURE_COUNTER_RETENTION_HOURS)
+                < now - timedelta(hours=CAPTURE_COUNTER_RETENTION_HOURS),
             ).delete(synchronize_session=False)
         if current_count > CAPTURE_RATE_LIMIT:
             raise CaptureServiceError(
