@@ -6,7 +6,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from itsdangerous import BadSignature, URLSafeSerializer
-from sqlalchemy import or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -317,8 +317,33 @@ def build_today_queue(
         .all()
     )
 
-    deadline_rows = (
-        db.query(JobAvailability)
+    first_row_per_url = (
+        db.query(
+            CsvRow.user_id.label("user_id"),
+            CsvRow.url.label("url"),
+            func.min(CsvRow.id).label("row_id"),
+        )
+        .filter(CsvRow.user_id == user_id)
+        .group_by(CsvRow.user_id, CsvRow.url)
+        .subquery()
+    )
+    deadline_contexts = (
+        db.query(JobAvailability, JobTrack, CsvRow)
+        .outerjoin(
+            JobTrack,
+            and_(
+                JobTrack.user_id == JobAvailability.user_id,
+                JobTrack.url == JobAvailability.job_url,
+            ),
+        )
+        .outerjoin(
+            first_row_per_url,
+            and_(
+                first_row_per_url.c.user_id == JobAvailability.user_id,
+                first_row_per_url.c.url == JobAvailability.job_url,
+            ),
+        )
+        .outerjoin(CsvRow, CsvRow.id == first_row_per_url.c.row_id)
         .filter(
             JobAvailability.user_id == user_id,
             JobAvailability.deadline_at.isnot(None),
@@ -327,36 +352,10 @@ def build_today_queue(
         )
         .all()
     )
-    deadline_urls = [row.job_url for row in deadline_rows]
-    track_by_url: dict[str, JobTrack] = {}
-    row_by_url: dict[str, CsvRow] = {}
-    if deadline_urls:
-        track_by_url = {
-            track.url: track
-            for track in db.query(JobTrack)
-            .filter(
-                JobTrack.user_id == user_id,
-                JobTrack.url.in_(deadline_urls),
-            )
-            .all()
-        }
-        row_by_url = {
-            row.url: row
-            for row in db.query(CsvRow)
-            .filter(
-                CsvRow.user_id == user_id,
-                CsvRow.url.in_(deadline_urls),
-            )
-            .order_by(CsvRow.id.asc())
-            .all()
-        }
     deadlines = [
-        availability
-        for availability in deadline_rows
-        if (
-            track_by_url.get(availability.job_url) is None
-            or track_by_url[availability.job_url].status not in TERMINAL_FOLLOWUP_STATUSES
-        )
+        (availability, track, row)
+        for availability, track, row in deadline_contexts
+        if track is None or track.status not in TERMINAL_FOLLOWUP_STATUSES
     ]
 
     keys = [manual_action_key(item.id) for item in manual_items]
@@ -366,7 +365,7 @@ def build_today_queue(
     )
     keys.extend(
         deadline_action_key(availability.id, availability.deadline_at)
-        for availability in deadlines
+        for availability, _track, _row in deadlines
     )
     overrides: dict[str, WorkItemOverride] = {}
     if keys:
@@ -394,13 +393,13 @@ def build_today_queue(
     items.extend(
         _serialize_deadline(
             availability,
-            track_by_url.get(availability.job_url),
-            row_by_url.get(availability.job_url),
+            track,
+            row,
             overrides.get(
                 deadline_action_key(availability.id, availability.deadline_at)
             ),
         )
-        for availability in deadlines
+        for availability, track, row in deadlines
     )
     items = [
         item
