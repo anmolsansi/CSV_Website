@@ -92,6 +92,8 @@ def test_dst_gap_and_overlap_one_daily_occurrence(db_session):
         db_session,
         timezone_name="America/New_York",
         local_time="02:30",
+        quiet_start="00:00",
+        quiet_end="00:00",
         follow_up_at=datetime(2026, 3, 8, 15, 0, 0),
     )
     planned = plan_due_occurrence(
