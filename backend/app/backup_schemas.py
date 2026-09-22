@@ -614,6 +614,49 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             "Persisted application-memory data required for a lossless v2 record; session_id remains a scalar Text value.",
         ),
     },
+    "DocumentVersion": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Document database identity/ownership is represented by backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            [
+                "document_family_id", "kind", "label", "original_filename",
+                "media_type", "size_bytes", "sha256", "version_number",
+                "created_at", "state",
+            ],
+            "exported",
+            "Immutable document metadata and checksum are portable; file bytes remain excluded until JG-044.",
+        ),
+        **_entries(
+            ["storage_key"],
+            "excluded",
+            "Private storage keys are environment-local implementation details and never portable user data.",
+        ),
+    },
+    "ApplicationDocument": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Association identity/ownership is represented by backup_ref and the authenticated user.",
+        ),
+        **_entries(
+            ["track_id", "document_version_id"],
+            "reconstructed",
+            "Application and document identities are represented as portable references.",
+        ),
+        **_entries(
+            ["kind", "usage", "attached_at"],
+            "exported",
+            "Used/reference attachment semantics are portable metadata.",
+        ),
+    },
+    "DocumentCreateReceipt": _entries(
+        ["id", "user_id", "request_key", "payload_hash", "document_id", "status", "created_at"],
+        "excluded",
+        "Short-lived upload idempotency receipts are operational replay state, not portable user content.",
+    ),
     "ApplicationEvidence": {
         **_entries(
             ["id", "user_id"],
