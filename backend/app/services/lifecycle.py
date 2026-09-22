@@ -11,6 +11,10 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased
 
+from ..evidence_schemas import (
+    EvidenceContractError,
+    validate_correction_reason,
+)
 from ..models import CsvRow, JobLifecycleEvent, JobTrack
 
 
@@ -19,15 +23,26 @@ TRANSITION_EVENT_KINDS = frozenset({
     "status_changed",
     "applied_date_corrected",
     "followup_changed",
+    "evidence_added",
+    "evidence_edited",
+    "evidence_deleted",
+})
+EVIDENCE_EVENT_KINDS = frozenset({
+    "evidence_added",
+    "evidence_edited",
+    "evidence_deleted",
 })
 LIFECYCLE_EVENT_KINDS = FIRST_EVENT_KINDS | TRANSITION_EVENT_KINDS
 
 PAYLOAD_ALLOWLISTS: dict[str, frozenset[str]] = {
     "first_visited": frozenset(),
     "first_applied": frozenset(),
-    "status_changed": frozenset({"from", "to"}),
-    "applied_date_corrected": frozenset({"from", "to"}),
+    "status_changed": frozenset({"from", "to", "correction_of", "reason"}),
+    "applied_date_corrected": frozenset({"from", "to", "reason"}),
     "followup_changed": frozenset({"from", "to"}),
+    "evidence_added": frozenset({"evidence_id", "evidence_kind"}),
+    "evidence_edited": frozenset({"evidence_id", "evidence_kind", "version"}),
+    "evidence_deleted": frozenset({"evidence_id", "evidence_kind", "version"}),
 }
 
 
@@ -93,6 +108,49 @@ def validate_event_payload(kind: str, payload: Mapping[str, Any] | None) -> dict
             "invalid_event_payload",
             "Lifecycle payload contains fields that are not allowed for this event kind.",
         )
+
+    if kind in EVIDENCE_EVENT_KINDS:
+        evidence_id = safe_payload.get("evidence_id")
+        evidence_kind = safe_payload.get("evidence_kind")
+        if not isinstance(evidence_id, int) or isinstance(evidence_id, bool) or evidence_id <= 0:
+            raise LifecycleEventError(
+                "invalid_event_payload",
+                "Evidence lifecycle events require a positive evidence_id.",
+            )
+        if evidence_kind not in {"confirmation_url", "confirmation_text", "note"}:
+            raise LifecycleEventError(
+                "invalid_event_payload",
+                "Evidence lifecycle events require a supported evidence_kind.",
+            )
+        if kind in {"evidence_edited", "evidence_deleted"}:
+            version = safe_payload.get("version")
+            if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+                raise LifecycleEventError(
+                    "invalid_event_payload",
+                    "Edited/deleted evidence events require a positive version.",
+                )
+
+    reason = safe_payload.get("reason")
+    if reason is not None:
+        try:
+            safe_payload["reason"] = validate_correction_reason(reason)
+        except EvidenceContractError as exc:
+            raise LifecycleEventError(exc.code, exc.message) from exc
+
+    correction_of = safe_payload.get("correction_of")
+    if kind == "status_changed" and (
+        correction_of is not None or reason is not None
+    ):
+        if (
+            not isinstance(correction_of, int)
+            or isinstance(correction_of, bool)
+            or correction_of <= 0
+            or reason is None
+        ):
+            raise LifecycleEventError(
+                "invalid_event_payload",
+                "Status correction payloads require correction_of and a bounded reason.",
+            )
     return safe_payload
 
 
