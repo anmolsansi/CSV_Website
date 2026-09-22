@@ -47,17 +47,17 @@ test.describe('JG-031 applied-before context', () => {
       request,
       [
         'url,company_guess,title,ats_group',
-        `${variantUrl},Acme Corp,Senior Engineer,greenhouse`,
+        `${variantUrl},Acme JG031,Canonical Candidate JG031,greenhouse`,
       ].join('\n')
     );
 
     await page.goto('/');
     await page.waitForSelector('table', { timeout: 15000 });
     const search = page.locator('#search-filter');
-    await search.fill('utm_source=jg031');
+    await search.fill('Canonical Candidate JG031');
     await page.waitForTimeout(1200);
 
-    const candidate = page.locator('tbody tr').filter({ hasText: 'utm_source=jg031' }).first();
+    const candidate = page.locator('tbody tr').filter({ hasText: 'Canonical Candidate JG031' }).first();
     await expect(candidate).toBeVisible();
     await candidate.click();
 
@@ -77,7 +77,7 @@ test.describe('JG-031 applied-before context', () => {
     );
 
     const apps = await request.get(`${API_URL}/crm/applications`, {
-      params: { q: 'utm_source=jg031', page: 1, page_size: 20 },
+      params: { q: 'Canonical Candidate JG031', page: 1, page_size: 20 },
     });
     expect(apps.ok()).toBeTruthy();
     const payload = await apps.json();
