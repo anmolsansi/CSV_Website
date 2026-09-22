@@ -1016,6 +1016,12 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
                 backup_ref=event.backup_ref,
             )
 
+    for delivery in document.sections.reminder_deliveries:
+        _require_target(
+            refs, "job_tracks", delivery.track_ref,
+            source_section="reminder_deliveries", source_ref=delivery.backup_ref,
+        )
+
     for event in document.sections.audit_events:
         _require_target(refs, "sessions", event.session_ref, source_section="audit_events", source_ref=event.backup_ref)
         if event.entity_ref is not None:
