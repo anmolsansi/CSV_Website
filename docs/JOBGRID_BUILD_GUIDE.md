@@ -2965,11 +2965,20 @@ Applications expose an **Application documents** region inside the expanded Hist
 
 Delete conflicts explain detach versus delete and link to the applications still referencing that version. Opening the document library from an application carries `track_id`, and the library provides a return link to the same application.
 
-### Backup boundary before JG-044
+### Recoverable document bundles
 
-Portable JSON backup schema revision `2.9.0` includes document metadata, SHA-256 checksums, and application/document references and explicitly sets `document_bytes_included=false`. Private storage keys and file bytes are excluded. JSON restore therefore does not publish ready document rows or links from metadata alone and emits the safe `document_bytes_excluded` warning when document sections are present.
+JG-044 keeps ordinary JSON v2 deliberately metadata-only. JSON export still sets `document_bytes_included=false`, and JSON-only restore still skips document rows/links and returns `document_bytes_excluded`. This preserves the existing portable JSON contract for older clients.
 
-JG-044 owns the byte-bundle backup/restore format and end-to-end hash restoration. Until that ticket passes, JSON metadata coverage must not be described as a complete document-file backup.
+Complete document recovery uses the authenticated ZIP routes:
+
+- `GET /crm/backup/export/bundle`
+- `POST /crm/backup/import/bundle?mode=merge_missing|verify_only`
+
+A bundle contains exactly `backup.json`, `manifest.json`, and one `documents/{backup_ref}` member for every ready document. The manifest binds the bundle to `backup.json` with SHA-256 and repeats each ready document's portable reference, member path, byte size, and SHA-256. Private `storage_key` values never leave the server.
+
+Import rejects absolute/traversal paths, backslash paths, duplicate members, directories, symlinks, encrypted members, unexpected members, missing ready-document members, manifest/metadata mismatches, checksum mismatches, more than 20,002 members, and more than 150 MiB expanded content. Every document is streamed into isolated private staging and verified before restore writes begin. Ready destination rows use new private storage keys. Existing matching family/version records are reused only when metadata and bytes match exactly. Application links are rebuilt through portable backup references. Failed document publication removes newly published files, and staged files are reclaimed in all outcomes.
+
+The account's ordinary JSON backup remains useful for metadata-only portability. Use the ZIP bundle whenever recoverable resume or cover-letter bytes are required.
 
 ### Verification
 
@@ -2981,6 +2990,7 @@ python -m pytest \
   tests/test_document_models.py \
   tests/test_document_storage.py \
   tests/test_document_api.py \
+  tests/test_document_backup.py \
   tests/test_backup_contract.py \
   tests/test_schema_parity.py -q
 python -m compileall app
@@ -3000,3 +3010,71 @@ Repository CI remains the full PostgreSQL migration, backend, production-build, 
 ### Rollback
 
 Disable new uploads/link creation first. Preserve document metadata and private bytes. Do not rewrite historical application links to a newer file. Older application code may ignore the additive revision 013 tables. If the schema itself must be downgraded, do so only after dependent code is disabled and document data has been preserved. Never use public or ephemeral storage as a rollback fallback.
+
+
+## F6 manual job capture, JG-045 and JG-046
+
+JG-045 and JG-046 add a backend capture path for jobs found outside CSV upload. This is intentionally not an application action and not a visit event. JG-047/JG-048 own later UI/bookmarklet surfaces.
+
+### Persistence and migration
+
+Alembic revision `014_job_capture` follows revision `013` and is additive.
+
+`csv_rows` gains nullable `capture_source`, `captured_at`, and `capture_notes`. Existing rows remain null and retain their previous meaning. Capture notes are bounded to 20,000 characters and source is either `manual` or `bookmarklet`.
+
+`capture_requests` stores owner-scoped UUID idempotency keys, payload hashes, nullable row references, and creation time. Deleting a row detaches the receipt through `ON DELETE SET NULL`. Receipts older than 30 days are operational replay state and may be removed. They are not portable backup data.
+
+`request_window_counters` stores `(user_id, scope, UTC-hour window_start, count)`. It is database-backed so multiple app processes share one limit. Capture attempts use a fixed 60-attempt/account/hour limit. The counter transaction commits before payload processing, so validation failures, idempotency conflicts, and later capture rollback still consume an authenticated attempt. Counters older than 48 hours are operational state and are excluded from portable backups.
+
+Portable backup schema revision `2.10.0` includes capture source, timestamp, and notes on CSV rows. Older v2 backups remain valid because omitted capture fields are restored as null and old checksum shapes remove those additive keys before verification.
+
+### Capture API
+
+`POST /crm/jobs/capture` requires an authenticated session and `Idempotency-Key: <UUID>`.
+
+Request:
+
+```json
+{
+  "job_url": "https://jobs.example.com/role/123",
+  "title": "Software Engineer",
+  "company": "Example",
+  "source": "manual",
+  "notes": "Optional draft note"
+}
+```
+
+The URL uses the shared HTTP(S) validator, keeps the original URL unchanged, is limited to 2,048 characters, and rejects credentials or whitespace. Title/company are nonblank and at most 300 characters. Notes are optional and at most 20,000 characters. Unknown fields are rejected.
+
+A new capture returns HTTP 201. An exact owned-URL repeat or identical idempotency replay returns HTTP 200 and the existing row. Reusing one idempotency key with a different payload returns 409. Rate-limit rejection returns 429 with `Retry-After`.
+
+The capture transaction locks the owner row before exact-URL lookup/creation. The existing `unique(user_id, url)` constraint remains the final duplicate guard. Foreign-account rows are never queried or disclosed.
+
+### Identity warnings and lifecycle semantics
+
+Capture derives the same conservative canonical identity fields used by F2. Applied `JobTrack` records can be returned as `exact`, `canonical`, or `possible` warnings. Warnings do not merge records and do not mark anything applied.
+
+Creating a capture writes only `CsvRow` plus its idempotency receipt. It keeps `clicked=false`, `clicked_at=NULL`, creates no `JobTrack`, and emits no visit/application lifecycle event. Dashboard visit metrics therefore remain unchanged until the user explicitly opens the row through the existing visit path.
+
+When a captured row is deliberately sent to Applications through `POST /crm/from-rows/bulk`, capture notes copy into an empty application note. Existing application notes are preserved by default. The optional `capture_notes_mode="append"` deliberately appends the draft after existing notes. Capture notes never silently overwrite application notes.
+
+### F6 verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest \
+  tests/test_capture_models.py \
+  tests/test_capture_api.py \
+  tests/test_backup_contract.py \
+  tests/test_schema_parity.py -q
+python -m compileall app
+python -m alembic upgrade head
+```
+
+Repository CI remains the authoritative full PostgreSQL migration, backend, production frontend build, and Chromium integration gate.
+
+### F6 rollback
+
+Stop callers from using `POST /crm/jobs/capture` first. Existing captured rows remain ordinary CSV rows and can continue to be viewed safely. Application and visit semantics require no rollback because capture never writes those facts. Revision 014 is additive and can remain deployed while older code ignores its columns/tables. Downgrade from 014 to 013 only after capture traffic has stopped and any capture provenance that must be retained has been exported.
