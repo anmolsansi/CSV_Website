@@ -920,3 +920,77 @@ def test_deleted_evidence_body_uses_recovery_section(db_session):
     ).one()
     assert restored_evidence.is_deleted is True
     assert restored_evidence.body == "Recoverable private evidence"
+
+
+def test_backup_remaps_status_correction_reference(db_session):
+    source = User(email=f"correction-source-{uuid4()}@example.test")
+    destination = User(email=f"correction-destination-{uuid4()}@example.test")
+    db_session.add_all([source, destination])
+    db_session.flush()
+
+    track = JobTrack(
+        user_id=source.id,
+        url=f"https://example.com/jobs/correction-{uuid4()}",
+        status="opened",
+    )
+    db_session.add(track)
+    db_session.flush()
+
+    occurred_at = datetime(2026, 9, 22, 8, 0, 0)
+    original = write_event(
+        db_session,
+        user_id=source.id,
+        job_url=track.url,
+        kind="status_changed",
+        occurred_at=occurred_at,
+        source="backup_test",
+        payload={"from": "opened", "to": "applied"},
+        job_track_id=track.id,
+        operation_id=uuid4(),
+    )
+    db_session.flush()
+    correction = write_event(
+        db_session,
+        user_id=source.id,
+        job_url=track.url,
+        kind="status_changed",
+        occurred_at=occurred_at + timedelta(minutes=1),
+        source="backup_test",
+        payload={
+            "from": "applied",
+            "to": "opened",
+            "correction_of": original.id,
+            "reason": "Recorded the wrong status.",
+        },
+        job_track_id=track.id,
+        operation_id=uuid4(),
+    )
+    db_session.commit()
+
+    exported = export_backup_v2(db_session, source.id)
+    portable_by_key = {
+        item["event_key"]: item
+        for item in exported["sections"]["lifecycle_events"]
+    }
+    portable_original = portable_by_key[original.event_key]
+    portable_correction = portable_by_key[correction.event_key]
+    assert portable_correction["correction_of_ref"] == portable_original["backup_ref"]
+    assert "correction_of" not in portable_correction["payload"]
+
+    restore_backup_v2(
+        db_session,
+        destination.id,
+        validate_backup_v2(exported),
+        mode="merge_missing",
+    )
+    restored_original = db_session.query(JobLifecycleEvent).filter_by(
+        user_id=destination.id,
+        event_key=original.event_key,
+    ).one()
+    restored_correction = db_session.query(JobLifecycleEvent).filter_by(
+        user_id=destination.id,
+        event_key=correction.event_key,
+    ).one()
+
+    assert restored_correction.payload["correction_of"] == restored_original.id
+    assert restored_correction.payload["reason"] == "Recorded the wrong status."
