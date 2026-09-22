@@ -419,6 +419,7 @@ def _serialize_sections(
             "attempt_count": item.attempt_count,
             "next_attempt_at": _utc_iso(item.next_attempt_at),
             "sent_at": _utc_iso(item.sent_at),
+            "read_at": _utc_iso(item.read_at),
             "last_error_code": item.last_error_code,
             "version": item.version,
         })
@@ -1402,6 +1403,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
                 and existing.attempt_count == record.attempt_count
                 and existing.next_attempt_at is None
                 and _portable_equal(existing.sent_at, record.sent_at)
+                and _portable_equal(existing.read_at, record.read_at)
                 and existing.last_error_code == restored_error
                 and existing.version == record.version
                 and existing.lease_until is None
@@ -1432,6 +1434,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             attempt_count=record.attempt_count,
             next_attempt_at=None,
             sent_at=_parse_backup_datetime(record.sent_at),
+            read_at=_parse_backup_datetime(record.read_at),
             last_error_code=restored_error,
             version=record.version,
         )
