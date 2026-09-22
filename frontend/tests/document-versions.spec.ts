@@ -165,4 +165,28 @@ test.describe('JG-043 document versions', () => {
       await anonymous.dispose()
     }
   })
+
+  test('json_backup_stays_metadata_only_and_bundle_includes_bytes', async ({ page, request }) => {
+    await resetAndLogin(request)
+    const label = `Bundle ${randomUUID().slice(0, 8)}`
+
+    await page.goto('/documents')
+    await uploadFromLibrary(page, label, PDF_V1, 'bundle.pdf')
+
+    const jsonBackup = await request.get(`${API_URL}/crm/backup/export`, {
+      params: { version: '2' },
+    })
+    expect(jsonBackup.ok()).toBeTruthy()
+    const metadata = await jsonBackup.json()
+    expect(metadata.document_bytes_included).toBe(false)
+    expect(metadata.sections.document_versions.some(
+      (item: any) => item.label === label && item.sha256
+    )).toBeTruthy()
+
+    const bundle = await request.get(`${API_URL}/crm/backup/export/bundle`)
+    expect(bundle.ok()).toBeTruthy()
+    expect(bundle.headers()['content-type']).toContain('application/zip')
+    expect((await bundle.body()).length).toBeGreaterThan(PDF_V1.length)
+  })
+
 })
