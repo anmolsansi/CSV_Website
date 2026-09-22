@@ -21,7 +21,11 @@ def private_document_storage(tmp_path, monkeypatch):
 
 
 def _source_fixture(client, db_session):
-    user = db_session.query(User).filter_by(email="test@jobgrid.dev").one()
+    client.post("/auth/logout")
+    email = f"bundle-source-{uuid4()}@example.test"
+    login = client.post("/auth/dev-login", json={"email": email})
+    assert login.status_code == 200
+    user = db_session.query(User).filter_by(email=email).one()
     row = CsvRow(
         user_id=user.id,
         upload_batch_id=str(uuid4()),
