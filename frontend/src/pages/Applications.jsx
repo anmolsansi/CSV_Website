@@ -226,6 +226,23 @@ export default function Applications() {
     await updateApp(app.id, { mark_applied: true }, { draftFields: [] })
   }
 
+  const commitAppliedDateDraft = async (app, value) => {
+    const persisted = localInputValue(app.applied_at)
+    if (value === persisted) return null
+    if (!app.applied_at) {
+      if (!value) return null
+      return updateApp(app.id, { applied_at: inputToIso(value), status: 'applied' }, { draftFields: ['applied_at'] })
+    }
+    if (!value) {
+      return updateApp(app.id, { applied_at: '' }, { draftFields: ['applied_at'] })
+    }
+    const message = 'Use History & evidence to correct an existing applied date with a reason.'
+    setFieldErrors((prev) => ({ ...prev, [app.id]: { ...(prev[app.id] || {}), applied_at: message } }))
+    setFocusTarget({ itemId: app.id, field: 'applied_at' })
+    setExpandedTrackId(app.id)
+    return null
+  }
+
   const toggleSelect = (id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -527,23 +544,13 @@ export default function Applications() {
                           aria-invalid={Boolean(fieldErrors[app.id]?.applied_at)}
                           aria-describedby={fieldErrors[app.id]?.applied_at ? `app-${app.id}-applied-error` : undefined}
                           disabled={pendingRows.has(app.id)}
-                          readOnly={Boolean(app.applied_at)}
-                          title={app.applied_at ? 'Use History & evidence to correct an existing applied date with a reason.' : 'Set the applied date'}
-                          onChange={(e) => {
-                            if (!app.applied_at) setDraftValue(app.id, 'applied_at', e.target.value)
-                          }}
-                          onBlur={(e) => {
-                            if (app.applied_at) return
-                            const value = e.target.value
-                            if (value !== localInputValue(app.applied_at) && value) {
-                              updateApp(app.id, { applied_at: inputToIso(value), status: 'applied' }, { draftFields: ['applied_at'] })
-                            }
-                          }}
+                          title={app.applied_at ? 'Changing an existing applied date requires a reason in History & evidence.' : 'Set the applied date'}
+                          onChange={(e) => setDraftValue(app.id, 'applied_at', e.target.value)}
+                          onBlur={(e) => commitAppliedDateDraft(app, e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !app.applied_at) {
+                            if (e.key === 'Enter') {
                               e.preventDefault()
-                              const value = e.currentTarget.value
-                              if (value) updateApp(app.id, { applied_at: inputToIso(value), status: 'applied' }, { draftFields: ['applied_at'] })
+                              commitAppliedDateDraft(app, e.currentTarget.value)
                             }
                           }}
                         />
