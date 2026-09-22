@@ -21,6 +21,7 @@ from ..scoring import _parse_score, priority_score as scoring_priority_score, im
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
+from ..services.capture import transfer_capture_notes
 from ..services.job_identity import (
     JobIdentityError,
     apply_persisted_job_identity,
@@ -664,6 +665,11 @@ def bulk_create_from_rows(
             else:
                 apply_persisted_job_identity(item)
             item.csv_row_id = row.id
+            item.notes = transfer_capture_notes(
+                item.notes,
+                row.capture_notes,
+                append=payload.capture_notes_mode == "append",
+            )
             for field, source_field in [
                 ("company", "company_guess"),
                 ("title", "title"),
