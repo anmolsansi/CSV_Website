@@ -150,6 +150,30 @@ export const api = {
   markRowApplied: (rowId) =>
     client.post('/crm/from-rows/bulk', { row_ids: [rowId], status: 'applied' }).then((r) => r.data),
 
+  // CRM - Application evidence and timeline
+  getApplicationTimeline: (trackId, params = {}) =>
+    client.get(`/crm/tracks/${trackId}/timeline`, { params }).then((r) => r.data),
+  createApplicationEvidence: (trackId, payload) =>
+    client.post(`/crm/tracks/${trackId}/evidence`, payload, {
+      headers: { 'Idempotency-Key': createOperationId() },
+    }).then((r) => r.data),
+  updateApplicationEvidence: (trackId, evidenceId, payload) =>
+    client.patch(`/crm/tracks/${trackId}/evidence/${evidenceId}`, payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  deleteApplicationEvidence: (trackId, evidenceId) =>
+    client.delete(`/crm/tracks/${trackId}/evidence/${evidenceId}`, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }),
+  correctApplicationAppliedDate: (trackId, payload) =>
+    client.post(`/crm/tracks/${trackId}/applied-date-corrections`, payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  correctApplicationStatus: (trackId, payload) =>
+    client.post(`/crm/tracks/${trackId}/status-corrections`, payload, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+
   // CRM - Analytics
   getAnalytics: () => client.get('/crm/analytics').then((r) => r.data),
   getFunnelAnalytics: () => client.get('/crm/analytics/funnel').then((r) => r.data),
