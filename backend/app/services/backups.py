@@ -23,6 +23,7 @@ from ..backup_schemas import (
     validate_backup_v2,
 )
 from ..models import (
+    ApplicationDocument,
     ApplicationEvidence,
     ApplyPilotBatch,
     AuditEvent,
@@ -30,6 +31,7 @@ from ..models import (
     ColumnPreference,
     CompanyAlias,
     CsvRow,
+    DocumentVersion,
     JobTrack,
     JobLifecycleEvent,
     ReminderDelivery,
@@ -107,6 +109,8 @@ def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
         "csv_rows": session.query(CsvRow).filter(CsvRow.user_id == user_id).order_by(CsvRow.id.asc()).all(),
         "url_history": session.query(UrlHistory).filter(UrlHistory.user_id == user_id).order_by(UrlHistory.id.asc()).all(),
         "job_tracks": session.query(JobTrack).filter(JobTrack.user_id == user_id).order_by(JobTrack.id.asc()).all(),
+        "document_versions": session.query(DocumentVersion).filter(DocumentVersion.user_id == user_id).order_by(DocumentVersion.created_at.asc(), DocumentVersion.id.asc()).all(),
+        "application_documents": session.query(ApplicationDocument).filter(ApplicationDocument.user_id == user_id).order_by(ApplicationDocument.id.asc()).all(),
         "application_evidence": evidence,
         "evidence_recovery": recoverable_evidence,
         "company_aliases": session.query(CompanyAlias).filter(CompanyAlias.user_id == user_id).order_by(CompanyAlias.id.asc()).all(),
@@ -263,6 +267,38 @@ def _serialize_sections(
             "last_opened_at": _utc_iso(item.last_opened_at),
             "created_at": _utc_iso(item.created_at),
             "updated_at": _utc_iso(item.updated_at),
+        })
+
+    for item in snapshot["document_versions"]:
+        sections["document_versions"].append({
+            "backup_ref": refs["document_versions"][item.id],
+            "document_family_id": item.document_family_id,
+            "kind": item.kind,
+            "label": item.label,
+            "original_filename": item.original_filename,
+            "media_type": item.media_type,
+            "size_bytes": item.size_bytes,
+            "sha256": item.sha256,
+            "version_number": item.version_number,
+            "created_at": _utc_iso(item.created_at),
+            "state": item.state,
+        })
+
+    for item in snapshot["application_documents"]:
+        backup_ref = refs["application_documents"][item.id]
+        sections["application_documents"].append({
+            "backup_ref": backup_ref,
+            "track_ref": _required_ref(
+                refs["job_tracks"], item.track_id,
+                section="application_documents", backup_ref=backup_ref,
+            ),
+            "document_ref": _required_ref(
+                refs["document_versions"], item.document_version_id,
+                section="application_documents", backup_ref=backup_ref,
+            ),
+            "kind": item.kind,
+            "usage": item.usage,
+            "attached_at": _utc_iso(item.attached_at),
         })
 
     for item in snapshot["application_evidence"]:
@@ -519,6 +555,7 @@ def _build_backup_v2(session: Session, user_id: int) -> dict[str, Any]:
         "exported_at": _utc_iso(datetime.now(timezone.utc)),
         "schema_revision": BACKUP_SCHEMA_REVISION,
         "identity_rule_version": CANONICALIZATION_VERSION,
+        "document_bytes_included": False,
         "sections": sections,
         "counts": {name: len(sections[name]) for name in BACKUP_V2_SECTIONS},
         "checksum_sha256": compute_sections_checksum(sections),
@@ -855,6 +892,13 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
                 "open_count", "last_opened_at", "created_at", "updated_at",
             )
             counts["job_tracks"][_classify_existing(_record_equal(existing, record, fields))] += 1
+
+    # JSON v2.9 carries document metadata/checksums only. JG-044 owns the
+    # byte bundle; without bytes, restore must never publish a ready file row.
+    for record in document.sections.document_versions:
+        counts["document_versions"]["skipped"] += 1
+    for record in document.sections.application_documents:
+        counts["application_documents"]["skipped"] += 1
 
     for record in document.sections.application_evidence:
         mapping = _lookup_import_map(
@@ -1458,6 +1502,13 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
                 section="reminder_deliveries",
                 backup_ref=record.backup_ref,
             ))
+
+    if document.sections.document_versions or document.sections.application_documents:
+        for _record in document.sections.document_versions:
+            counts["document_versions"]["skipped"] += 1
+        for _record in document.sections.application_documents:
+            counts["application_documents"]["skipped"] += 1
+        warnings.append(_restore_warning("document_bytes_excluded"))
 
     for record in document.sections.application_evidence:
         mapped = _mapped_target(
