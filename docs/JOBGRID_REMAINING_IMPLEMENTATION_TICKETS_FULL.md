@@ -11206,7 +11206,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-047"></a>
 ### JG-047 — Build quick-add page and user-invoked bookmarklet
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — validated in PR #145 and CI run #335  
 **Priority:** Feature rank 6  
 **Type:** interface integration  
 **Execution position:** 47/64; group step 3/4
@@ -11389,14 +11389,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-047 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: capture.spec.ts: bookmarklet_payload_edit_save
-- [ ] Required regression passes: expired_or_malformed_draft_discarded
-- [ ] Required regression passes: login_preserves_valid_draft
-- [ ] Required regression passes: external_return_url_rejected
-- [ ] Required regression passes: repeat_submit_one_row
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-047 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: capture.spec.ts: bookmarklet_payload_edit_save
+- [x] Required regression passes: expired_or_malformed_draft_discarded
+- [x] Required regression passes: login_preserves_valid_draft
+- [x] Required regression passes: external_return_url_rejected
+- [x] Required regression passes: repeat_submit_one_row
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -11414,12 +11414,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -11428,7 +11428,15 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-046` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #144. Implementation/verification PR: #145.
+
+### Completion evidence
+
+- PR #145 implemented the authenticated `/capture` quick-add flow, editable URL/title/company/notes draft, server-side prior-application context, fragment-based bookmarklet, safe `/capture` login return, one-hour browser-local draft recovery, popup-blocked copy fallback, and retry-stable idempotency.
+- CI run #335 on head `a3740254c3add90f6a4088bdcd6f296c2b06e3cc` passed Frontend Build, Backend Tests (pytest), Backend Compile Check, and Chromium Playwright.
+- The capture browser suite passed the required bookmarklet edit/save, malformed/expired draft discard, login draft preservation, external-return rejection, repeat-submit single-row, hostile-title escaping, popup fallback, and duplicate-warning regressions.
+- PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
+- External staging/deployment is not claimed by this local completion marker.
 
 #### Ticket intake result
 
@@ -11439,7 +11447,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-048"></a>
 ### JG-048 — Validate capture across browsers and lifecycle transitions
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — validated in PR #145 and CI run #335  
 **Priority:** Feature rank 6  
 **Type:** verification/operations  
 **Execution position:** 48/64; group step 4/4
@@ -11615,14 +11623,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-048 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: capture_visit_apply_counts_separate
-- [ ] Required regression passes: title_markup_rendered_as_text
-- [ ] Required regression passes: popup_blocked_copy_fallback
-- [ ] Required regression passes: duplicate_warning_survives_capture_flow
-- [ ] Required regression passes: backup_restores_capture_provenance
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-048 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: capture_visit_apply_counts_separate
+- [x] Required regression passes: title_markup_rendered_as_text
+- [x] Required regression passes: popup_blocked_copy_fallback
+- [x] Required regression passes: duplicate_warning_survives_capture_flow
+- [x] Required regression passes: backup_restores_capture_provenance
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F6.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -11640,12 +11648,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -11654,7 +11662,16 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-047` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #144. Implementation/verification PR: #145.
+
+### Completion evidence
+
+- PR #145 added browser and backend acceptance coverage for capture lifecycle separation, hostile title handling, popup fallback, duplicate warnings, source-row deletion preservation, capture provenance backup/restore, and bounded five-job synthetic timing evidence.
+- Backend regressions include `capture_visit_apply_counts_separate`, `source_delete_preserves_captured_application_history`, and `backup_restores_capture_provenance`.
+- CI run #335 passed the full Chromium Playwright suite together with backend pytest, frontend production build, and backend compile checks.
+- The earlier `login_preserves_valid_draft` E2E failure was corrected to match the implemented unauthenticated `/capture` routing contract, and the complete rerun passed.
+- PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
+- External staging/deployment is not claimed by this local completion marker.
 
 #### Ticket intake result
 
@@ -11688,7 +11705,7 @@ Set a tomorrow deadline and see it enter Today only in its due window. Test a sy
 <a id="jg-049"></a>
 ### JG-049 — Model explicit deadlines and availability evidence
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED — validated in PR #145 and CI run #335  
 **Priority:** Feature rank 7  
 **Type:** schema/contract  
 **Execution position:** 49/64; group step 1/4
@@ -11865,13 +11882,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-049 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: user_closed_not_overwritten_by_reachable
-- [ ] Required regression passes: date_only_conversion_visible_and_dst_safe
-- [ ] Required regression passes: source_delete_preserves_availability
-- [ ] Required regression passes: backup_keeps_deadline_source
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-049 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: user_closed_not_overwritten_by_reachable
+- [x] Required regression passes: date_only_conversion_visible_and_dst_safe
+- [x] Required regression passes: source_delete_preserves_availability
+- [x] Required regression passes: backup_keeps_deadline_source
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -11889,12 +11906,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -11903,7 +11920,16 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-048` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue: GitHub #144. Implementation/verification PR: #145.
+
+### Completion evidence
+
+- PR #145 added `JobAvailability` and `JobCheckRequest`, additive Alembic revision `015`, owner/URL uniqueness and version constraints, conservative checker precedence, DST-safe deadline conversion, Today deadline eligibility/action identity helpers, seven-day transient request retention, and portable backup schema revision 2.11 support.
+- Required regressions are present and passed: `user_closed_not_overwritten_by_reachable`, `date_only_conversion_visible_and_dst_safe`, `source_delete_preserves_availability`, and `backup_keeps_deadline_source`.
+- Backup coverage preserves durable URL-scoped availability/deadline state while excluding transient `JobCheckRequest` operational metadata.
+- CI run #335 passed PostgreSQL-backed backend tests/migrations, frontend build, backend compile, and Chromium Playwright.
+- PR #145 was merged to `main` as `beaaaf4e917fc43c758ec610006cd2a4a4fbb873`.
+- JG-050 outbound URL checking and JG-051 freshness UI remain out of scope and are not presented as shipped.
 
 #### Ticket intake result
 
