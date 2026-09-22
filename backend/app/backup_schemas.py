@@ -17,9 +17,10 @@ from .evidence_schemas import (
     validate_confirmation_url,
     validate_correction_reason,
 )
+from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.6.0"
+BACKUP_SCHEMA_REVISION = "2.7.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -30,6 +31,8 @@ BACKUP_V2_SECTIONS = (
     "work_items",
     "work_item_overrides",
     "lifecycle_events",
+    "reminder_preferences",
+    "reminder_deliveries",
     "saved_views",
     "sessions",
     "audit_events",
@@ -349,6 +352,44 @@ class JobLifecycleEventBackupV2(BackupRecordBase):
         return self
 
 
+class ReminderPreferenceBackupV2(BackupRecordBase):
+    enabled: bool
+    channel: Literal["in_app", "email"]
+    local_time: str
+    quiet_start: str
+    quiet_end: str
+
+    @model_validator(mode="after")
+    def validate_reminder_times(self):
+        for value in (self.local_time, self.quiet_start, self.quiet_end):
+            if HHMM_RE.fullmatch(value) is None:
+                raise ValueError("Reminder times must use 24-hour HH:MM format.")
+        return self
+
+
+class ReminderDeliveryBackupV2(BackupRecordBase):
+    track_ref: str | None
+    occurrence_key: str = Field(min_length=1, max_length=255)
+    channel: Literal["in_app", "email"]
+    status: Literal["pending", "sending", "sent", "failed", "unknown", "cancelled"]
+    scheduled_at: str
+    attempt_count: int = Field(ge=0)
+    next_attempt_at: str | None
+    sent_at: str | None
+    last_error_code: str | None = Field(default=None, max_length=64)
+    version: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_delivery_history(self):
+        if OCCURRENCE_RE.fullmatch(self.occurrence_key) is None:
+            raise ValueError("Reminder occurrence key does not match the frozen F4 format.")
+        if self.status == "sent" and self.sent_at is None:
+            raise ValueError("Sent reminder delivery requires sent_at.")
+        if self.status != "sent" and self.sent_at is not None:
+            raise ValueError("Only sent reminder delivery may carry sent_at.")
+        return self
+
+
 class SavedViewBackupV2(BackupRecordBase):
     name: str
     view_type: str
@@ -429,6 +470,8 @@ class BackupSectionsV2(StrictBackupModel):
     work_items: list[WorkItemBackupV2] = Field(default_factory=list)
     work_item_overrides: list[WorkItemOverrideBackupV2] = Field(default_factory=list)
     lifecycle_events: list[JobLifecycleEventBackupV2] = Field(default_factory=list)
+    reminder_preferences: list[ReminderPreferenceBackupV2] = Field(default_factory=list, max_length=1)
+    reminder_deliveries: list[ReminderDeliveryBackupV2] = Field(default_factory=list)
     saved_views: list[SavedViewBackupV2]
     sessions: list[SearchSessionBackupV2]
     audit_events: list[AuditEventBackupV2]
@@ -448,6 +491,8 @@ class BackupCountsV2(StrictBackupModel):
     work_items: int = Field(default=0, ge=0)
     work_item_overrides: int = Field(default=0, ge=0)
     lifecycle_events: int = Field(default=0, ge=0)
+    reminder_preferences: int = Field(default=0, ge=0)
+    reminder_deliveries: int = Field(default=0, ge=0)
     saved_views: int = Field(ge=0)
     sessions: int = Field(ge=0)
     audit_events: int = Field(ge=0)
@@ -580,6 +625,44 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             ["event_key", "job_url", "kind", "occurred_at", "recorded_at", "source", "payload"],
             "exported",
             "Durable lifecycle facts are portable user data and preserve original occurrence time.",
+        ),
+    },
+    "ReminderPreference": {
+        **_entries(
+            ["user_id"],
+            "reconstructed",
+            "Ownership is always the authenticated destination user.",
+        ),
+        **_entries(
+            ["enabled", "channel", "local_time", "quiet_start", "quiet_end"],
+            "exported",
+            "Reminder opt-in and local scheduling preferences are portable; restore forces enabled=false until explicit re-enable.",
+        ),
+    },
+    "ReminderDelivery": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Destination identity/ownership is allocated from backup_ref and authenticated user.",
+        ),
+        **_entries(
+            ["track_id"],
+            "reconstructed",
+            "Application identity is represented as track_ref and remapped on restore.",
+        ),
+        **_entries(
+            [
+                "occurrence_key", "channel", "status", "scheduled_at",
+                "attempt_count", "next_attempt_at", "sent_at",
+                "last_error_code", "version",
+            ],
+            "exported",
+            "Durable delivery history is portable; occurrence keys are remapped to destination track IDs and retry timing is paused on restore.",
+        ),
+        **_entries(
+            ["lease_until"],
+            "excluded",
+            "Worker leases are environment-local operational claim state and are cleared on restore.",
         ),
     },
     "SavedView": {
@@ -933,6 +1016,12 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
                 backup_ref=event.backup_ref,
             )
 
+    for delivery in document.sections.reminder_deliveries:
+        _require_target(
+            refs, "job_tracks", delivery.track_ref,
+            source_section="reminder_deliveries", source_ref=delivery.backup_ref,
+        )
+
     for event in document.sections.audit_events:
         _require_target(refs, "sessions", event.session_ref, source_section="audit_events", source_ref=event.backup_ref)
         if event.entity_ref is not None:
@@ -1011,6 +1100,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     has_user_profile_section = (
         isinstance(raw_sections, Mapping) and "user_profile" in raw_sections
     )
+    has_reminder_preferences_section = (
+        isinstance(raw_sections, Mapping) and "reminder_preferences" in raw_sections
+    )
+    has_reminder_deliveries_section = (
+        isinstance(raw_sections, Mapping) and "reminder_deliveries" in raw_sections
+    )
     try:
         document = BackupDocumentV2.model_validate(payload)
     except ValidationError as exc:
@@ -1048,6 +1143,12 @@ def validate_backup_v2(raw: bytes | str | Mapping[str, Any]) -> BackupDocumentV2
     if not has_user_profile_section:
         # Revisions 2.0.0 and 2.1.0 predate portable account timezone.
         checksum_sections.pop("user_profile", None)
+    if not has_reminder_preferences_section:
+        # Revisions before JG-037 predate durable reminder preferences.
+        checksum_sections.pop("reminder_preferences", None)
+    if not has_reminder_deliveries_section:
+        # Revisions before JG-037 predate durable reminder delivery history.
+        checksum_sections.pop("reminder_deliveries", None)
 
     # Preserve the exact canonical shape of older v2 documents. Pydantic fills
     # the new nullable JG-012 fields with None for runtime compatibility, but
@@ -1128,6 +1229,8 @@ SECTION_RECORD_MODELS: dict[str, type[BaseModel]] = {
     "work_items": WorkItemBackupV2,
     "work_item_overrides": WorkItemOverrideBackupV2,
     "lifecycle_events": JobLifecycleEventBackupV2,
+    "reminder_preferences": ReminderPreferenceBackupV2,
+    "reminder_deliveries": ReminderDeliveryBackupV2,
     "saved_views": SavedViewBackupV2,
     "sessions": SearchSessionBackupV2,
     "audit_events": AuditEventBackupV2,

@@ -75,6 +75,10 @@ JOB_TRACK_STATUS_VALUES = [
     "opened", "applied", "follow_up", "interview",
     "rejected", "offer", "not_applying",
 ]
+REMINDER_CHANNEL_VALUES = ["in_app", "email"]
+REMINDER_DELIVERY_STATUS_VALUES = [
+    "pending", "sending", "sent", "failed", "unknown", "cancelled",
+]
 
 
 class User(Base):
@@ -128,6 +132,13 @@ class User(Base):
     )
     work_item_overrides = relationship(
         "WorkItemOverride", back_populates="user", cascade="all, delete-orphan"
+    )
+    reminder_preference = relationship(
+        "ReminderPreference", back_populates="user", uselist=False,
+        cascade="all, delete-orphan",
+    )
+    reminder_deliveries = relationship(
+        "ReminderDelivery", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -307,12 +318,122 @@ class JobTrack(Base):
     application_evidence = relationship(
         "ApplicationEvidence", back_populates="track"
     )
+    reminder_deliveries = relationship(
+        "ReminderDelivery", back_populates="track"
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "url", name="uq_user_job_track_url"),
         Index(
             "ix_job_tracks_user_canonical_hash",
             "user_id", "canonical_url_hash",
+        ),
+    )
+
+
+class ReminderPreference(Base):
+    """Owner-scoped reminder opt-in and local scheduling preferences."""
+
+    __tablename__ = "reminder_preferences"
+
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    enabled = Column(Boolean, default=False, nullable=False)
+    channel = Column(String(16), default="in_app", nullable=False)
+    local_time = Column(String(5), default="09:00", nullable=False)
+    quiet_start = Column(String(5), default="21:00", nullable=False)
+    quiet_end = Column(String(5), default="08:00", nullable=False)
+
+    user = relationship("User", back_populates="reminder_preference")
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('in_app', 'email')",
+            name="ck_reminder_preferences_channel",
+        ),
+        CheckConstraint(
+            "length(local_time) = 5 AND substr(local_time, 3, 1) = ':' AND "
+            "substr(local_time, 1, 2) BETWEEN '00' AND '23' AND "
+            "substr(local_time, 4, 2) BETWEEN '00' AND '59'",
+            name="ck_reminder_preferences_local_time_shape",
+        ),
+        CheckConstraint(
+            "length(quiet_start) = 5 AND substr(quiet_start, 3, 1) = ':' AND "
+            "substr(quiet_start, 1, 2) BETWEEN '00' AND '23' AND "
+            "substr(quiet_start, 4, 2) BETWEEN '00' AND '59'",
+            name="ck_reminder_preferences_quiet_start_shape",
+        ),
+        CheckConstraint(
+            "length(quiet_end) = 5 AND substr(quiet_end, 3, 1) = ':' AND "
+            "substr(quiet_end, 1, 2) BETWEEN '00' AND '23' AND "
+            "substr(quiet_end, 4, 2) BETWEEN '00' AND '59'",
+            name="ck_reminder_preferences_quiet_end_shape",
+        ),
+    )
+
+
+class ReminderDelivery(Base):
+    """Durable reminder occurrence and delivery accounting state."""
+
+    __tablename__ = "reminder_deliveries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    track_id = Column(
+        Integer, ForeignKey("job_tracks.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    occurrence_key = Column(String(255), nullable=False)
+    channel = Column(String(16), nullable=False)
+    status = Column(String(16), default="pending", nullable=False, index=True)
+    scheduled_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True, index=True)
+    attempt_count = Column(Integer, default=0, nullable=False)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    last_error_code = Column(String(64), nullable=True)
+    version = Column(Integer, default=1, nullable=False)
+
+    user = relationship("User", back_populates="reminder_deliveries")
+    track = relationship("JobTrack", back_populates="reminder_deliveries")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "occurrence_key", "channel",
+            name="uq_reminder_delivery_occurrence_channel",
+        ),
+        CheckConstraint(
+            "channel IN ('in_app', 'email')",
+            name="ck_reminder_deliveries_channel",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'sending', 'sent', 'failed', 'unknown', 'cancelled')",
+            name="ck_reminder_deliveries_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_reminder_deliveries_attempt_count",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_reminder_deliveries_version",
+        ),
+        CheckConstraint(
+            "(status = 'sent' AND sent_at IS NOT NULL) OR "
+            "(status != 'sent' AND sent_at IS NULL)",
+            name="ck_reminder_deliveries_sent_at_state",
+        ),
+        Index(
+            "ix_reminder_deliveries_user_schedule",
+            "user_id", "scheduled_at",
+        ),
+        Index(
+            "ix_reminder_deliveries_user_status_retry",
+            "user_id", "status", "next_attempt_at",
         ),
     )
 

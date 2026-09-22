@@ -1,6 +1,6 @@
 import importlib.util
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,6 +23,8 @@ from app.models import (
     CsvRow,
     JobTrack,
     JobLifecycleEvent,
+    ReminderDelivery,
+    ReminderPreference,
     SavedView,
     SearchSession,
     UrlHistory,
@@ -32,6 +34,7 @@ from app.models import (
     WorkItemOverride,
 )
 from app.today_schemas import manual_action_key
+from app.reminder_schemas import reminder_occurrence_key
 
 
 def _login_and_seed(client, db, email):
@@ -105,6 +108,30 @@ def _seed_complete_fixture(db, email):
     )
     db.add_all([track, view, history, preference, goal, batch, alias])
     db.flush()
+
+    reminder_preference = ReminderPreference(
+        user_id=user.id,
+        enabled=False,
+        channel="in_app",
+        local_time="09:00",
+        quiet_start="21:00",
+        quiet_end="08:00",
+    )
+    reminder_delivery = ReminderDelivery(
+        user_id=user.id,
+        track_id=track.id,
+        occurrence_key=reminder_occurrence_key(
+            track_id=track.id,
+            due_at=datetime(2026, 9, 20, 10, 0, 0, tzinfo=timezone.utc),
+            notification_local_date=datetime(2026, 9, 20).date(),
+        ),
+        channel="in_app",
+        status="pending",
+        scheduled_at=datetime(2026, 9, 20, 9, 0, 0, tzinfo=timezone.utc),
+        attempt_count=0,
+        version=1,
+    )
+    db.add_all([reminder_preference, reminder_delivery])
 
     evidence = ApplicationEvidence(
         user_id=user.id,
@@ -232,6 +259,7 @@ def test_export_reference_graph(auth_client, db_session):
     assert document.sections.work_item_overrides[0].work_item_ref in refs["work_items"]
     assert document.sections.lifecycle_events[0].csv_row_ref in refs["csv_rows"]
     assert document.sections.lifecycle_events[0].job_track_ref in refs["job_tracks"]
+    assert document.sections.reminder_deliveries[0].track_ref in refs["job_tracks"]
     assert document.sections.audit_events[0].session_ref in refs["sessions"]
     assert document.sections.audit_events[0].entity_ref in refs["job_tracks"]
     assert document.sections.applypilot_batches[0].session_ref in refs["sessions"]

@@ -23,6 +23,8 @@ from app.models import (
     EvidenceCreateReceipt,
     JobLifecycleEvent,
     MaintenanceStatus,
+    ReminderDelivery,
+    ReminderPreference,
     WorkItem,
     WorkItemOverride,
 )
@@ -49,6 +51,8 @@ def test_models_are_bound_to_metadata():
     assert CompanyAlias.__tablename__ in Base.metadata.tables
     assert ApplicationEvidence.__tablename__ in Base.metadata.tables
     assert EvidenceCreateReceipt.__tablename__ in Base.metadata.tables
+    assert ReminderPreference.__tablename__ in Base.metadata.tables
+    assert ReminderDelivery.__tablename__ in Base.metadata.tables
 
 
 def test_csv_columns_are_covered_by_migrations():
@@ -65,7 +69,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["010"]
+    assert script.get_heads() == ["011"]
 
 
 def test_legacy_schema_patch_module_removed():
@@ -371,5 +375,28 @@ def test_evidence_migration_upgrade_and_downgrade(migrated_postgres_database):
     finally:
         _run_alembic_upgrade(database_url)
 
-    assert _current_revision(engine) == "010"
+    assert _current_revision(engine) == "011"
+    _assert_postgres_matches_metadata(engine)
+
+
+@pytest.mark.postgresql
+def test_reminder_migration_upgrade_and_downgrade(migrated_postgres_database):
+    database_url, engine = migrated_postgres_database
+
+    try:
+        _run_alembic_downgrade(database_url, "010")
+        inspector = inspect(engine)
+        assert _current_revision(engine) == "010"
+        assert "reminder_preferences" not in inspector.get_table_names()
+        assert "reminder_deliveries" not in inspector.get_table_names()
+
+        _run_alembic_upgrade(database_url)
+        inspector = inspect(engine)
+        assert _current_revision(engine) == "011"
+        assert "reminder_preferences" in inspector.get_table_names()
+        assert "reminder_deliveries" in inspector.get_table_names()
+    finally:
+        if _current_revision(engine) != "011":
+            _run_alembic_upgrade(database_url)
+
     _assert_postgres_matches_metadata(engine)
