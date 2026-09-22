@@ -271,6 +271,16 @@ class Settings:
     # the rest of JobGrid stays healthy until a durable private volume is configured.
     DOCUMENT_STORAGE_DIR = os.getenv("DOCUMENT_STORAGE_DIR", "")
 
+    # F7 job-link checks are user-invoked only and remain disabled unless an
+    # operator explicitly enables the pinned-destination transport. Manual
+    # deadline/close/reopen behavior does not depend on this flag.
+    JOB_URL_CHECKS_ENABLED = (
+        os.getenv("JOB_URL_CHECKS_ENABLED", "false").lower() == "true"
+    )
+    JOB_URL_CHECK_LEASE_SECONDS = max(
+        30, min(600, int(os.getenv("JOB_URL_CHECK_LEASE_SECONDS", "120")))
+    )
+
     # Sentry
     SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 
