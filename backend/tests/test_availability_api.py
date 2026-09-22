@@ -18,6 +18,7 @@ from app.models import (
     ReminderPreference,
     User,
     WorkItem,
+    WorkItemOverride,
 )
 from app.services.availability import (
     AvailabilityServiceError,
@@ -457,16 +458,27 @@ def test_restore_preserves_user_confirmation(db_session):
     destination = _user(db_session, "closed-backup-destination")
     confirmed_at = datetime(2026, 9, 22, 10, 30)
     url = f"https://closed-backup.example/jobs/{uuid4()}"
+    source_availability = JobAvailability(
+        user_id=source.id,
+        job_url=url,
+        deadline_at=datetime(2026, 10, 1, 23, 59, 59),
+        deadline_source="user",
+        state="closed",
+        confirmed_closed_at=confirmed_at,
+        check_reason="user_confirmed_closed",
+        version=5,
+    )
+    db_session.add(source_availability)
+    db_session.flush()
     db_session.add(
-        JobAvailability(
+        WorkItemOverride(
             user_id=source.id,
-            job_url=url,
-            deadline_at=datetime(2026, 10, 1, 23, 59, 59),
-            deadline_source="user",
-            state="closed",
-            confirmed_closed_at=confirmed_at,
-            check_reason="user_confirmed_closed",
-            version=5,
+            action_key=deadline_action_key(
+                source_availability.id,
+                source_availability.deadline_at,
+            ),
+            snoozed_until=datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc),
+            version=2,
         )
     )
     db_session.commit()
@@ -490,6 +502,17 @@ def test_restore_preserves_user_confirmation(db_session):
     assert restored.confirmed_closed_at == confirmed_at
     assert restored.check_reason == "user_confirmed_closed"
     assert restored.version == 5
+
+    restored_override = (
+        db_session.query(WorkItemOverride)
+        .filter_by(
+            user_id=destination.id,
+            action_key=deadline_action_key(restored.id, restored.deadline_at),
+        )
+        .one()
+    )
+    assert restored_override.version == 2
+    assert restored_override.snoozed_until == datetime(2026, 9, 30, 12, 0)
 
 
 def test_deadline_action_snooze_is_owner_scoped(auth_client, db_session):
