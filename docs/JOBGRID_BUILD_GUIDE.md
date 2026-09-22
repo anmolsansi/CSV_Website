@@ -2418,3 +2418,84 @@ Repository CI remains the integration gate for the PostgreSQL backend suite, mig
 ### Rollback
 
 JG-031 adds no migration. To disable the feature, remove/hide the applied-before warning and alias controls and stop registering the alias route. Keep the JG-030 canonical fields, alias table, original URLs, JobTracks, lifecycle history, statuses, dates, and notes. No destructive data rewrite or database downgrade is required.
+
+## JG-032 false-positive acceptance for applied-before warnings
+
+JG-032 is the F2 acceptance gate. It adds no schema, route, writer, matching rule, or automatic merge behavior. It verifies the JG-029–JG-031 implementation with labeled synthetic data and keeps the existing conservative confidence levels unchanged.
+
+### Labeled acceptance matrix
+
+The backend acceptance fixture uses isolated companies and requisitions so each expected classification is explicit:
+
+| Case | Candidate change | Expected result |
+|---|---|---|
+| Exact prior role | Original URL unchanged | `exact / same_original_url` |
+| Tracking variant | Same path and nontracking query, only `utm_*` values change | `canonical / same_canonical_url` |
+| Same company, new role | New requisition URL and different title | No match |
+| Unrelated company, similar title | Different URL and company with a similar title | No match |
+
+A separate new-requisition regression keeps the title the same while changing the requisition path. That case is allowed to return only `possible / company_title_only`; it must never be promoted to `exact` or `canonical`. This is the intentional false-positive boundary: company/title evidence can prompt review, but it is not duplicate identity.
+
+Every matrix lookup is read-only. The fixture compares JobTrack IDs/counts before and after matching to prove the matcher does not merge, delete, or rewrite applications.
+
+### Source deletion and URL-change behavior
+
+The URL-change acceptance case is a re-imported tracking-parameter variant. JG-032 does not add a JobTrack URL-edit path because F2 deliberately preserves original persisted URLs.
+
+The source-deletion regression creates an application through the existing row-to-application writer, marks it applied through the existing application mutation route, then hard-deletes the source CSV row through `DELETE /rows`. The JobTrack must remain applied with `csv_row_id = null`, and an unsaved application-match request for the preserved original URL must still return `exact / same_original_url`.
+
+### Alias grouping boundary
+
+The alias regression creates two distinct applied JobTracks under two company labels, groups them with the public alias API, verifies cross-label `possible` evidence, removes the alias, and verifies the grouping changes while both JobTracks, URLs, statuses, and applied dates remain unchanged. Alias removal is therefore a grouping change only, never an application-history mutation.
+
+### Bounded matching evidence
+
+The large-fixture regression creates `APPLICATION_MATCH_SCAN_LIMIT + 40` applied records for one company. It instruments SQL with the repository's existing `before_cursor_execute` pattern and asserts:
+
+- the scan limit remains 100;
+- the response limit remains 20;
+- the candidate JobTrack query contains a SQL `LIMIT`;
+- matching performs exactly one bounded candidate select plus one company-history count over JobTrack; and
+- the complete request uses a constant small number of SELECT statements rather than one query per candidate.
+
+### Synthetic precision metric
+
+For JG-032, “duplicate-grade” means only `exact` or `canonical`. The four-case labeled matrix has two positive duplicate-grade cases and two negative cases. A passing fixture therefore records duplicate-grade precision as **2 correct duplicate-grade warnings / 2 duplicate-grade warnings = 100% on this synthetic matrix**, with **0 exact/canonical warnings across the two negative matrix cases**.
+
+This number is an acceptance-fixture measurement only. It is not a claim about real-world matching accuracy or production precision. Real-world accuracy requires reviewed production-like labeled data before any such claim can be made.
+
+### Verification
+
+Focused backend acceptance:
+
+```sh
+cd backend
+python -m pytest tests/test_application_matches.py -q
+```
+
+JG-032 adds or strengthens these required regressions:
+
+- `test_jg032_labeled_false_positive_matrix`
+- `test_new_requisition_not_exact_duplicate`
+- `test_source_delete_retains_warning`
+- `test_alias_remove_changes_grouping_only`
+- `test_matching_query_bounded_for_large_fixture`
+
+Focused browser acceptance:
+
+```sh
+cd frontend
+npm run test:e2e -- tests/applied-before.spec.ts --project=chromium
+npm run build
+```
+
+The browser case `tracking_variant_warning_and_continue` uploads a tracking variant, opens RowDrawer, verifies the canonical warning, explicitly continues through the existing Mark applied writer, and then proves the prior application and the new reapplication both remain present.
+
+Repository CI remains the final integration gate for PostgreSQL-backed backend tests, migration application, backend compile, frontend production build, and the full Chromium Playwright suite.
+
+### Rollback and release state
+
+JG-032 is test/documentation-only and adds no migration. Reverting JG-032 itself removes only acceptance coverage/documentation. Runtime rollback of the underlying F2 feature remains the JG-031 procedure: hide warning/alias controls while retaining canonical fields, aliases, original URLs, JobTracks, lifecycle history, statuses, dates, and notes.
+
+A green local/CI acceptance result is recorded separately from staging acceptance or production release.
+
