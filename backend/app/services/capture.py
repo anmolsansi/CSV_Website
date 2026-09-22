@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -145,7 +144,6 @@ def _capture_matches(
         session.query(JobTrack)
         .filter(
             JobTrack.user_id == user_id,
-            JobTrack.applied_at.isnot(None),
             or_(
                 JobTrack.url == payload.job_url,
                 JobTrack.canonical_url_hash == identity.canonical_url_hash,
@@ -205,7 +203,6 @@ def _capture_matches(
         session.query(func.count(JobTrack.id))
         .filter(
             JobTrack.user_id == user_id,
-            JobTrack.applied_at.isnot(None),
             func.lower(func.trim(JobTrack.company)) == company_key,
         )
         .scalar()
