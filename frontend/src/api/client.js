@@ -217,6 +217,23 @@ export const api = {
       request_id: createOperationId(),
     }).then((r) => r.data),
 
+  // CRM - Reminders
+  getReminderPreferences: () =>
+    client.get('/crm/reminders/preferences').then((r) => r.data),
+  updateReminderPreferences: (payload) =>
+    client.patch('/crm/reminders/preferences', payload).then((r) => r.data),
+  getReminders: (params = {}) =>
+    client.get('/crm/reminders', { params }).then((r) => r.data),
+  retryReminder: (deliveryId, version) =>
+    client.post(`/crm/reminders/${deliveryId}/retry`, {
+      version,
+      confirm_possible_duplicate: true,
+    }, {
+      headers: { 'X-Operation-ID': createOperationId() },
+    }).then((r) => r.data),
+  markReminderRead: (deliveryId, version) =>
+    client.post(`/crm/reminders/${deliveryId}/read`, { version }).then((r) => r.data),
+
   // CRM - Saved Views
   getViews: (viewType) =>
     client.get('/crm/views', { params: viewType ? { view_type: viewType } : {} }).then((r) => r.data),
