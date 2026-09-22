@@ -26,40 +26,68 @@ def _source_fixture(client, db_session):
     login = client.post("/auth/dev-login", json={"email": email})
     assert login.status_code == 200
     user = db_session.query(User).filter_by(email=email).one()
-    row = CsvRow(
-        user_id=user.id,
-        upload_batch_id=str(uuid4()),
-        url=f"https://bundle.example/jobs/{uuid4()}",
-        company_guess="Bundle Corp",
-        title="Backend Engineer",
-    )
-    db_session.add(row)
-    db_session.flush()
-    track = JobTrack(
-        user_id=user.id,
-        csv_row_id=row.id,
-        url=row.url,
-        company="Bundle Corp",
-        title="Backend Engineer",
-        status="applied",
-    )
-    db_session.add(track)
+
+    tracks = []
+    urls = []
+    for suffix in ("v1", "v2"):
+        row = CsvRow(
+            user_id=user.id,
+            upload_batch_id=str(uuid4()),
+            url=f"https://bundle.example/jobs/{suffix}-{uuid4()}",
+            company_guess="Bundle Corp",
+            title=f"Backend Engineer {suffix}",
+        )
+        db_session.add(row)
+        db_session.flush()
+        track = JobTrack(
+            user_id=user.id,
+            csv_row_id=row.id,
+            url=row.url,
+            company="Bundle Corp",
+            title=row.title,
+            status="applied",
+        )
+        db_session.add(track)
+        db_session.flush()
+        tracks.append(track)
+        urls.append(row.url)
     db_session.commit()
 
-    uploaded = client.post(
+    uploaded_v1 = client.post(
         "/crm/documents",
         data={"kind": "resume", "label": "Recovery resume"},
-        files={"file": ("resume.pdf", PDF_BYTES, "application/pdf")},
+        files={"file": ("resume-v1.pdf", PDF_BYTES_V1, "application/pdf")},
         headers={"Idempotency-Key": str(uuid4())},
     )
-    assert uploaded.status_code == 201, uploaded.text
-    document = uploaded.json()
-    linked = client.post(
-        f"/crm/tracks/{track.id}/documents",
-        json={"document_version_id": document["id"], "usage": "used"},
+    assert uploaded_v1.status_code == 201, uploaded_v1.text
+    document_v1 = uploaded_v1.json()
+
+    uploaded_v2 = client.post(
+        "/crm/documents",
+        data={
+            "kind": "resume",
+            "label": "Recovery resume",
+            "document_family_id": document_v1["document_family_id"],
+        },
+        files={"file": ("resume-v2.pdf", PDF_BYTES_V2, "application/pdf")},
+        headers={"Idempotency-Key": str(uuid4())},
     )
-    assert linked.status_code == 200, linked.text
-    return row.url, document
+    assert uploaded_v2.status_code == 201, uploaded_v2.text
+    document_v2 = uploaded_v2.json()
+    assert document_v2["version_number"] == 2
+
+    for track, document in zip(tracks, (document_v1, document_v2), strict=True):
+        linked = client.post(
+            f"/crm/tracks/{track.id}/documents",
+            json={"document_version_id": document["id"], "usage": "used"},
+        )
+        assert linked.status_code == 200, linked.text
+
+    return {
+        "urls": urls,
+        "family_id": document_v1["document_family_id"],
+        "documents": [document_v1, document_v2],
+    }
 
 
 def _login_destination(client):
@@ -103,7 +131,7 @@ def _corrupt_document_member(raw: bytes) -> bytes:
 
 
 def test_bundle_restores_bytes_and_links(auth_client, db_session):
-    source_url, source_document = _source_fixture(auth_client, db_session)
+    source = _source_fixture(auth_client, db_session)
     exported = auth_client.get("/crm/backup/export/bundle")
     assert exported.status_code == 200, exported.text
     assert exported.headers["content-type"].startswith("application/zip")
@@ -115,28 +143,37 @@ def test_bundle_restores_bytes_and_links(auth_client, db_session):
     )
     assert restored.status_code == 200, restored.text
     assert restored.json()["document_bytes_included"] is True
-    assert restored.json()["counts"]["document_versions"]["created"] == 1
-    assert restored.json()["counts"]["application_documents"]["created"] == 1
+    assert restored.json()["counts"]["document_versions"]["created"] == 2
+    assert restored.json()["counts"]["application_documents"]["created"] == 2
 
     destination = db_session.query(User).filter_by(email=destination_email).one()
-    document = db_session.query(DocumentVersion).filter_by(
-        user_id=destination.id,
-        document_family_id=source_document["document_family_id"],
-        version_number=1,
-    ).one()
-    track = db_session.query(JobTrack).filter_by(
-        user_id=destination.id,
-        url=source_url,
-    ).one()
+    versions = (
+        db_session.query(DocumentVersion)
+        .filter_by(
+            user_id=destination.id,
+            document_family_id=source["family_id"],
+        )
+        .order_by(DocumentVersion.version_number.asc())
+        .all()
+    )
+    assert [item.version_number for item in versions] == [1, 2]
 
-    download = auth_client.get(f"/crm/documents/{document.id}/download")
-    assert download.status_code == 200
-    assert download.content == PDF_BYTES
+    for version, expected_bytes in zip(
+        versions, (PDF_BYTES_V1, PDF_BYTES_V2), strict=True
+    ):
+        download = auth_client.get(f"/crm/documents/{version.id}/download")
+        assert download.status_code == 200
+        assert download.content == expected_bytes
 
-    links = auth_client.get(f"/crm/tracks/{track.id}/documents")
-    assert links.status_code == 200
-    assert links.json()["items"][0]["document"]["id"] == document.id
-    assert links.json()["items"][0]["usage"] == "used"
+    for url, expected_version in zip(source["urls"], versions, strict=True):
+        track = db_session.query(JobTrack).filter_by(
+            user_id=destination.id,
+            url=url,
+        ).one()
+        links = auth_client.get(f"/crm/tracks/{track.id}/documents")
+        assert links.status_code == 200
+        assert links.json()["items"][0]["document"]["id"] == expected_version.id
+        assert links.json()["items"][0]["usage"] == "used"
 
 
 def test_zip_slip_symlink_and_zip_bomb_rejected(
