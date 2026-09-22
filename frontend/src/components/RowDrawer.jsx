@@ -151,6 +151,12 @@ export default function RowDrawer({ row, onClose }) {
     }
   }
 
+  const timelineHref = (match) => {
+    const params = new URLSearchParams({ track_id: String(match.track_id) })
+    if (match.company) params.set('company', match.company)
+    return `/applications?${params.toString()}`
+  }
+
   const priorApplicationHref = (match) => {
     if (!match?.company) return '/applications'
     const params = new URLSearchParams({
@@ -246,8 +252,9 @@ export default function RowDrawer({ row, onClose }) {
                     {' · '}{match.reason}
                     {' · '}{match.status}
                     {match.applied_at && <> · applied {formatDate(match.applied_at)}</>}
-                    <div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <a href={priorApplicationHref(match)}>View prior application</a>
+                      <a href={timelineHref(match)}>History & evidence</a>
                     </div>
                   </div>
                 ))}

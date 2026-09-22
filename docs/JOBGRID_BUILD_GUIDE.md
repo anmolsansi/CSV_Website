@@ -2601,3 +2601,18 @@ pytest tests/test_evidence_models.py tests/test_evidence_api.py tests/test_backu
 Repository CI remains the release gate for PostgreSQL migration parity, the complete backend suite, backend compilation, the production frontend build, and Chromium regressions.
 
 Rollback is data-preserving. Disable future evidence consumers first. Do not remove evidence rows, lifecycle events, or application history to roll back application code. Older code can ignore the additive evidence tables and optional v2 evidence sections.
+
+
+### Application timeline and evidence interface
+
+JG-035 exposes the existing F3 evidence and lifecycle contracts from the Applications screen. Expand **History & evidence** on an application, or follow a RowDrawer **History & evidence** link, to load the owner-scoped merged timeline from `GET /crm/tracks/{track_id}/timeline`.
+
+The interface keeps occurrence time and recording time separate. Evidence without `occurred_at` displays **Unknown** rather than treating `created_at` as the submission date. Imported lifecycle entries are labeled as imports and explicitly state that their recorded/import time is not assumed to be an application date. The **Recorded** hint exposes the immutable ledger/evidence recording timestamp in its tooltip.
+
+Evidence entry supports confirmation URLs, confirmation text, and notes. User-provided text is rendered as React text only, never injected as HTML. Confirmation URLs must be credential-free HTTP(S). Create requests use an idempotency UUID. Edits send the evidence version and preserve the local draft when the server returns 409 for a stale version. Deletes are soft deletes. Their body disappears from ordinary reads immediately and recovery data may retain it for at most 30 days.
+
+An existing applied date is read-only in the applications table. Corrections happen in the timeline interface, require a reason, preview the old and new metric dates, and append an `applied_date_corrected` lifecycle event. The latest status can be compensated only when the displayed `status_changed` event is still latest. A 409 is shown as a newer-change conflict and does not discard the correction reason.
+
+Timeline pagination uses the server `next_before` cursor. Loading older pages prepends older records while preserving chronological display. Network failures keep evidence/correction drafts and expose retry/reload actions. Successful mutations refresh the persisted timeline and application snapshot.
+
+**Rollback:** remove or disable the JG-035 interface controls only. Do not delete application evidence, evidence receipts, or lifecycle events. Existing application status, notes, and the JG-034 APIs remain compatible.
