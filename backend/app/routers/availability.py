@@ -210,6 +210,10 @@ def _enqueue_for_url(
             "Automatic link checks are disabled. Manual freshness controls remain available.",
         )
 
+    # Lock the account before first-time availability creation so two app
+    # processes cannot both pass the durable rate check for the same owner.
+    db.query(User).filter(User.id == user.id).with_for_update().one()
+
     availability = get_job_availability(
         db,
         user_id=user.id,
