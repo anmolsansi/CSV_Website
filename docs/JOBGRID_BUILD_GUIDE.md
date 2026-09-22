@@ -2660,7 +2660,7 @@ The legal state contract is intentionally narrow: pending deliveries can be clai
 
 Occurrence keys are deterministic and contain the destination application track ID, canonical UTC due timestamp, and notification-local date. Backup restore remaps that track ID to the destination account.
 
-Portable v2 backup revision `2.7.0` adds `reminder_preferences` and `reminder_deliveries`. Worker leases are intentionally excluded because they are process-local operational claim state. Restore never resumes sending automatically: restored preferences are disabled, `pending` or `sending` deliveries become `cancelled` with no lease or retry timestamp, and sent/failed/unknown/cancelled history remains historical. Sent records retain their accepted `sent_at`; pending mail is not replayed.
+Portable v2 backup revision `2.7.0` adds `reminder_preferences` and `reminder_deliveries`. Worker leases are intentionally excluded because they are process-local operational claim state. Restore never resumes sending automatically: restored preferences are disabled, `pending` deliveries remain pending but paused with no lease or retry timestamp, and restored in-flight `sending` deliveries become `unknown` so they cannot retry automatically. Sent/failed/unknown/cancelled history remains historical. Sent records retain their accepted `sent_at`; pending mail cannot run until the user explicitly re-enables reminders.
 
 **Focused verification:**
 
