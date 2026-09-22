@@ -51,7 +51,7 @@ from ..models import (
     WorkItem,
     WorkItemOverride,
 )
-from ..today_schemas import followup_action_key, manual_action_key
+from ..today_schemas import deadline_action_key, followup_action_key, manual_action_key
 from ..reminder_schemas import remap_reminder_occurrence_key
 from ..evidence_schemas import (
     evidence_body_is_recoverable,
@@ -193,12 +193,18 @@ def _serialize_override_target(
             "kind": "manual",
             "work_item_ref": refs["work_items"][int(raw_id)],
             "track_ref": None,
+            "availability_ref": None,
             "follow_up_due_at": None,
+            "deadline_due_at": None,
         }
 
     if item.action_key.startswith("followup:"):
         parts = item.action_key.split(":", 2)
-        if len(parts) != 3 or not parts[1].isdigit() or int(parts[1]) not in refs["job_tracks"]:
+        if (
+            len(parts) != 3
+            or not parts[1].isdigit()
+            or int(parts[1]) not in refs["job_tracks"]
+        ):
             raise BackupContractError(
                 "conflicting_reference_graph",
                 409,
@@ -209,7 +215,31 @@ def _serialize_override_target(
             "kind": "followup",
             "work_item_ref": None,
             "track_ref": refs["job_tracks"][int(parts[1])],
+            "availability_ref": None,
             "follow_up_due_at": parts[2],
+            "deadline_due_at": None,
+        }
+
+    if item.action_key.startswith("deadline:"):
+        parts = item.action_key.split(":", 2)
+        if (
+            len(parts) != 3
+            or not parts[1].isdigit()
+            or int(parts[1]) not in refs["job_availability"]
+        ):
+            raise BackupContractError(
+                "conflicting_reference_graph",
+                409,
+                "Today override references an unavailable deadline action.",
+                section="work_item_overrides",
+            )
+        return {
+            "kind": "deadline",
+            "work_item_ref": None,
+            "track_ref": None,
+            "availability_ref": refs["job_availability"][int(parts[1])],
+            "follow_up_due_at": None,
+            "deadline_due_at": parts[2],
         }
 
     raise BackupContractError(
@@ -793,12 +823,24 @@ def _override_action_key_from_refs(
             "work_item_overrides", record.backup_ref,
         )
         return manual_action_key(work_item_id)
-    track_id = _target_id(
-        refs, "job_tracks", record.track_ref,
+    if record.kind == "followup":
+        track_id = _target_id(
+            refs, "job_tracks", record.track_ref,
+            "work_item_overrides", record.backup_ref,
+        )
+        due_at = datetime.fromisoformat(
+            record.follow_up_due_at.replace("Z", "+00:00")
+        )
+        return followup_action_key(track_id, due_at)
+
+    availability_id = _target_id(
+        refs, "job_availability", record.availability_ref,
         "work_item_overrides", record.backup_ref,
     )
-    due_at = datetime.fromisoformat(record.follow_up_due_at.replace("Z", "+00:00"))
-    return followup_action_key(track_id, due_at)
+    due_at = datetime.fromisoformat(
+        record.deadline_due_at.replace("Z", "+00:00")
+    )
+    return deadline_action_key(availability_id, due_at)
 
 
 def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) -> dict[str, dict[str, int]]:
@@ -1019,15 +1061,29 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
                 session, user_id, backup_id, "work_items", record.work_item_ref
             )
             action_key = manual_action_key(target_id) if target_id is not None else None
-        else:
+        elif record.kind == "followup":
             target_id = _mapped_ref_target(
                 session, user_id, backup_id, "job_tracks", record.track_ref
             )
             if target_id is None:
                 action_key = None
             else:
-                due_at = datetime.fromisoformat(record.follow_up_due_at.replace("Z", "+00:00"))
+                due_at = datetime.fromisoformat(
+                    record.follow_up_due_at.replace("Z", "+00:00")
+                )
                 action_key = followup_action_key(target_id, due_at)
+        else:
+            target_id = _mapped_ref_target(
+                session, user_id, backup_id,
+                "job_availability", record.availability_ref,
+            )
+            if target_id is None:
+                action_key = None
+            else:
+                due_at = datetime.fromisoformat(
+                    record.deadline_due_at.replace("Z", "+00:00")
+                )
+                action_key = deadline_action_key(target_id, due_at)
         existing = (
             session.query(WorkItemOverride).filter_by(user_id=user_id, action_key=action_key).first()
             if action_key is not None
