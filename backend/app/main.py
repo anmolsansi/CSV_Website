@@ -21,7 +21,7 @@ from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, crm, email, rows, today, upload
+from .routers import auth_router, backup, company_aliases, crm, email, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -155,6 +155,7 @@ app.include_router(auth_router.router)
 app.include_router(upload.router)
 app.include_router(rows.router)
 app.include_router(backup.router)
+app.include_router(company_aliases.router)
 app.include_router(crm.router)
 app.include_router(today.router)
 app.include_router(email.router)

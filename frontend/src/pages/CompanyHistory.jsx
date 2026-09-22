@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, formatApiError } from '../api/client'
 
 const STATUS_COLORS = {
   opened: { bg: '#dbeafe', color: '#1e40af' },
@@ -12,7 +12,10 @@ const STATUS_COLORS = {
 }
 
 export default function CompanyHistory() {
-  const [company, setCompany] = useState('')
+  const initialParams = new URLSearchParams(window.location.search)
+  const initialCompany = initialParams.get('company') || ''
+  const focusTrackId = Number(initialParams.get('track_id') || 0)
+  const [company, setCompany] = useState(initialCompany)
   const [searchInput, setSearchInput] = useState('')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -21,6 +24,13 @@ export default function CompanyHistory() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
+  const [aliases, setAliases] = useState(null)
+  const [aliasDraft, setAliasDraft] = useState('')
+  const [aliasLoading, setAliasLoading] = useState(false)
+  const [aliasPending, setAliasPending] = useState(false)
+  const [aliasError, setAliasError] = useState('')
+  const [aliasMessage, setAliasMessage] = useState('')
+  const [aliasRetry, setAliasRetry] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -47,6 +57,38 @@ export default function CompanyHistory() {
     return () => { active = false }
   }, [company, retry])
 
+  useEffect(() => {
+    if (!company) {
+      setAliases(null)
+      return undefined
+    }
+    let active = true
+    setAliasLoading(true)
+    setAliasError('')
+    api.getCompanyAliases(company)
+      .then((data) => {
+        if (active) setAliases(data)
+      })
+      .catch((requestError) => {
+        if (active) {
+          setAliasError(formatApiError(requestError, 'Could not load company aliases. Please retry.').message)
+        }
+      })
+      .finally(() => {
+        if (active) setAliasLoading(false)
+      })
+    return () => { active = false }
+  }, [company, retry, aliasRetry])
+
+  useEffect(() => {
+    if (!history || !focusTrackId) return
+    const element = document.getElementById(`application-${focusTrackId}`)
+    if (element) {
+      element.scrollIntoView({ block: 'center' })
+      element.focus({ preventScroll: true })
+    }
+  }, [history, focusTrackId])
+
   const search = () => {
     setQuery(searchInput.trim())
     setPage(1)
@@ -54,6 +96,62 @@ export default function CompanyHistory() {
     setHistory(null)
   }
   const handleKeyDown = (e) => { if (e.key === 'Enter') search() }
+
+  const refreshCompanyContext = () => {
+    setRetry((value) => value + 1)
+    setAliasRetry((value) => value + 1)
+  }
+
+  const addAlias = async () => {
+    const proposed = aliasDraft.trim()
+    if (!company || !proposed || aliasPending) return
+    setAliasPending(true)
+    setAliasError('')
+    setAliasMessage('')
+    try {
+      const proposedHistory = await api.getCompanyHistory(proposed)
+      const currentCount = history?.total || 0
+      const proposedCount = proposedHistory?.total || 0
+      const confirmed = window.confirm(
+        `Group "${proposed}" with "${company}"? This affects company-history grouping for ${currentCount} current and ${proposedCount} proposed-label roles. Applications, statuses, dates, and notes will not be changed.`
+      )
+      if (!confirmed) return
+
+      const result = await api.createCompanyAlias(company, proposed)
+      setAliasDraft('')
+      setAliasMessage(
+        result.created
+          ? `Alias added. ${result.group_history_count} remembered roles are now in this company group.`
+          : 'That alias was already in this company group.'
+      )
+      refreshCompanyContext()
+    } catch (requestError) {
+      setAliasError(formatApiError(requestError, 'Could not add that alias. Your label is still here so you can retry.').message)
+    } finally {
+      setAliasPending(false)
+    }
+  }
+
+  const removeAlias = async (alias) => {
+    if (aliasPending) return
+    const confirmed = window.confirm(
+      `Remove alias "${alias.display_name}"? This changes grouping for ${alias.history_count} remembered roles. Applications and their history will remain unchanged.`
+    )
+    if (!confirmed) return
+
+    setAliasPending(true)
+    setAliasError('')
+    setAliasMessage('')
+    try {
+      await api.deleteCompanyAlias(alias.id)
+      setAliasMessage(`Removed alias "${alias.display_name}". Application history was not deleted.`)
+      refreshCompanyContext()
+    } catch (requestError) {
+      setAliasError(formatApiError(requestError, 'Could not remove that alias. Please refresh and retry.').message)
+    } finally {
+      setAliasPending(false)
+    }
+  }
 
   return (
     <div className="container">
@@ -107,6 +205,54 @@ export default function CompanyHistory() {
             <div className="stat-card"><span>Rejected</span><strong>{history.rejected}</strong></div>
           </div>
 
+          <section aria-label="Company aliases" style={{ marginBottom: 20, padding: 14, border: '1px solid #e5e7eb', borderRadius: 8 }}>
+            <h3 style={{ marginTop: 0 }}>Company aliases</h3>
+            <p style={{ fontSize: 13, color: '#6b7280' }}>
+              Group explicit company-name variants. This changes history grouping only and never merges or deletes applications.
+            </p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label htmlFor="company-alias-input">Alias label</label>
+              <input
+                id="company-alias-input"
+                value={aliasDraft}
+                onChange={(event) => setAliasDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') addAlias()
+                }}
+                placeholder="e.g. Acme Corporation"
+                maxLength={320}
+                disabled={aliasPending}
+                style={{ minWidth: 240, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6 }}
+              />
+              <button className="btn btn-blue" onClick={addAlias} disabled={aliasPending || !aliasDraft.trim()}>
+                {aliasPending ? 'Saving…' : 'Add alias'}
+              </button>
+            </div>
+            {aliasLoading && <p role="status">Loading aliases…</p>}
+            {aliasMessage && <p role="status">{aliasMessage}</p>}
+            {aliasError && (
+              <div role="alert">
+                {aliasError}{' '}
+                <button className="btn btn-grey btn-sm" onClick={() => setAliasRetry((value) => value + 1)}>Refresh aliases</button>
+              </div>
+            )}
+            {aliases && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  Grouped history: {aliases.group_history_count} remembered roles
+                </div>
+                {(aliases.aliases || [])
+                  .filter((alias) => alias.display_name.trim().toLowerCase() !== company.trim().toLowerCase())
+                  .map((alias) => (
+                    <div key={alias.id} data-testid="company-alias-row" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                      <span><strong>{alias.display_name}</strong> · {alias.history_count} roles</span>
+                      <button className="btn btn-grey btn-sm" disabled={aliasPending} onClick={() => removeAlias(alias)}>Remove alias</button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
+
           {history.roles.length === 0 ? (
             <div className="empty-state">
               <h3>No roles found for "{history.company}"</h3>
@@ -117,7 +263,20 @@ export default function CompanyHistory() {
               {history.roles.map((role) => {
                 const style = STATUS_COLORS[role.status] || STATUS_COLORS.opened
                 return (
-                  <div key={role.track_id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div
+                    key={role.track_id}
+                    id={`application-${role.track_id}`}
+                    tabIndex={-1}
+                    style={{
+                      background: '#fff',
+                      border: focusTrackId === role.track_id ? '2px solid #2563eb' : '1px solid #e5e7eb',
+                      borderRadius: 8,
+                      padding: 14,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{role.title || role.url}</div>
                       {/^(https?):\/\//i.test(role.url) && <a href={role.url} target="_blank" rel="noopener noreferrer">View job</a>}

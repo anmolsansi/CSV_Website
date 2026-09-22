@@ -16,12 +16,17 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..config import settings
 from ..database import get_db
-from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, ApplyPilotBatch, AuditEvent, CsvRow, JobLifecycleEvent, JobTrack, SavedView, SearchSession, User, UserGoal
+from ..models import CSV_COLUMNS, JOB_TRACK_STATUS_VALUES, ApplyPilotBatch, AuditEvent, CompanyAlias, CsvRow, JobLifecycleEvent, JobTrack, SavedView, SearchSession, User, UserGoal
 from ..scoring import _parse_score, priority_score as scoring_priority_score, improved_triage as scoring_triage, skills_extraction
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
-from ..services.job_identity import apply_persisted_job_identity
+from ..services.job_identity import (
+    JobIdentityError,
+    apply_persisted_job_identity,
+    canonicalize_job_url,
+    normalize_company_alias_key,
+)
 from ..services.lifecycle import (
     LifecycleEventError,
     apply_job_track_changes,
@@ -415,7 +420,16 @@ def create_from_row(
             affected=1,
             started=started,
         )
-        return to_out(item)
+        response = to_out(item)
+        warning_context = _find_application_matches(
+            db,
+            user_id=user.id,
+            url=row.url,
+            company=row.company_guess,
+            title=row.title,
+        )
+        response["warning_candidates"] = warning_context["matches"]
+        return response
     except ValidationContractError as exc:
         _raise_validation_http(
             db, exc, action="from_row", operation_id=operation_id, started=started
@@ -1782,6 +1796,241 @@ def merge_duplicates(primary_id: int, duplicate_ids: list[int], db: Session = De
     return {"merged": len(duplicate_ids), "primary_id": primary_id}
 
 
+# ─── Application identity matching ───────────────────────────────────
+
+APPLICATION_MATCH_LIMIT = 20
+APPLICATION_MATCH_SCAN_LIMIT = 100
+APPLICATION_ALIAS_LIMIT = 100
+
+
+def _normalized_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.strip().casefold().split())
+    return normalized or None
+
+
+def _company_alias_group(
+    db: Session,
+    *,
+    user_id: int,
+    company: str | None,
+) -> tuple[str | None, list[str], set[str]]:
+    company_key = _normalized_text(company)
+    if company_key is None:
+        return None, [], set()
+
+    try:
+        alias_key = normalize_company_alias_key(company)
+    except JobIdentityError:
+        return company_key, [company.strip()], {company_key}
+
+    anchor = (
+        db.query(CompanyAlias)
+        .filter(
+            CompanyAlias.user_id == user_id,
+            CompanyAlias.alias_key == alias_key,
+        )
+        .first()
+    )
+    if anchor is None:
+        return alias_key, [company.strip()], {alias_key}
+
+    aliases = (
+        db.query(CompanyAlias)
+        .filter(
+            CompanyAlias.user_id == user_id,
+            CompanyAlias.company_key == anchor.company_key,
+        )
+        .order_by(CompanyAlias.alias_key.asc())
+        .limit(APPLICATION_ALIAS_LIMIT)
+        .all()
+    )
+    names = list(dict.fromkeys([company.strip()] + [alias.display_name for alias in aliases]))
+    keys = {alias.alias_key for alias in aliases}
+    keys.add(alias_key)
+    return alias_key, names, keys
+
+
+def _find_application_matches(
+    db: Session,
+    *,
+    user_id: int,
+    url: str,
+    company: str | None,
+    title: str | None,
+) -> dict:
+    try:
+        identity = canonicalize_job_url(url)
+    except JobIdentityError as exc:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "invalid_job_url",
+                "fields": [{"field": "url", "message": str(exc)}],
+            },
+        ) from exc
+
+    candidate_company_key, company_names, company_alias_keys = _company_alias_group(
+        db,
+        user_id=user_id,
+        company=company,
+    )
+    company_sql_keys = sorted(
+        {name.strip().lower() for name in company_names if name and name.strip()}
+    )
+
+    candidate_filters = [
+        JobTrack.url == url,
+        JobTrack.canonical_url_hash == identity.canonical_url_hash,
+    ]
+    if company_sql_keys:
+        candidate_filters.append(
+            func.lower(func.trim(JobTrack.company)).in_(company_sql_keys)
+        )
+
+    candidates = (
+        db.query(JobTrack)
+        .filter(
+            JobTrack.user_id == user_id,
+            JobTrack.applied_at.isnot(None),
+            or_(*candidate_filters),
+        )
+        .order_by(JobTrack.applied_at.desc(), JobTrack.id.desc())
+        .limit(APPLICATION_MATCH_SCAN_LIMIT)
+        .all()
+    )
+
+    candidate_title = _normalized_text(title)
+    matches = []
+    rank = {"exact": 0, "canonical": 1, "possible": 2}
+    for item in candidates:
+        confidence = None
+        reason = None
+        if item.url == url:
+            confidence = "exact"
+            reason = "same_original_url"
+        elif (
+            item.canonical_url_hash
+            and item.canonical_url_hash == identity.canonical_url_hash
+        ):
+            confidence = "canonical"
+            reason = "same_canonical_url"
+        else:
+            existing_company_key = _normalized_text(item.company)
+            existing_title = _normalized_text(item.title)
+            same_company = (
+                candidate_company_key is not None
+                and existing_company_key is not None
+                and (
+                    existing_company_key == candidate_company_key
+                    or existing_company_key in company_alias_keys
+                )
+            )
+            if same_company and candidate_title is not None and candidate_title == existing_title:
+                confidence = "possible"
+                reason = (
+                    "company_title_only"
+                    if existing_company_key == candidate_company_key
+                    else "company_alias_title"
+                )
+
+        if confidence is None:
+            continue
+        matches.append(
+            {
+                "track_id": item.id,
+                "confidence": confidence,
+                "reason": reason,
+                "company": item.company,
+                "title": item.title,
+                "status": item.status,
+                "applied_at": item.applied_at,
+            }
+        )
+
+    matches.sort(
+        key=lambda item: (
+            rank[item["confidence"]],
+            -(item["applied_at"].timestamp() if item["applied_at"] else 0),
+            -item["track_id"],
+        )
+    )
+
+    history_count = 0
+    if company_sql_keys:
+        history_count = (
+            db.query(func.count(JobTrack.id))
+            .filter(
+                JobTrack.user_id == user_id,
+                JobTrack.applied_at.isnot(None),
+                func.lower(func.trim(JobTrack.company)).in_(company_sql_keys),
+            )
+            .scalar()
+            or 0
+        )
+
+    return {
+        "matches": matches[:APPLICATION_MATCH_LIMIT],
+        "company_history_count": int(history_count),
+    }
+
+
+@router.get("/application-matches")
+def application_matches_for_row(
+    row_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(CsvRow)
+        .filter(CsvRow.id == row_id, CsvRow.user_id == user.id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(404, "Row not found")
+    return _find_application_matches(
+        db,
+        user_id=user.id,
+        url=row.url,
+        company=row.company_guess,
+        title=row.title,
+    )
+
+
+@router.post("/application-matches")
+def application_matches_for_capture(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    allowed = {"url", "company", "title"}
+    if not isinstance(payload, dict) or not set(payload).issubset(allowed) or "url" not in payload:
+        raise HTTPException(
+            422,
+            "Request body must contain url and may contain company and title.",
+        )
+
+    url = payload.get("url")
+    company = payload.get("company")
+    title = payload.get("title")
+    if not isinstance(url, str):
+        raise HTTPException(422, "url must be a string.")
+    for field, value, limit in (("company", company, 320), ("title", title, 500)):
+        if value is not None and not isinstance(value, str):
+            raise HTTPException(422, f"{field} must be a string.")
+        if isinstance(value, str) and len(value) > limit:
+            raise HTTPException(422, f"{field} must be at most {limit} characters.")
+
+    return _find_application_matches(
+        db,
+        user_id=user.id,
+        url=url,
+        company=company,
+        title=title,
+    )
+
+
 # ─── Company History ──────────────────────────────────────────────────
 
 @router.get("/companies")
@@ -1804,7 +2053,27 @@ def list_companies(q: str = Query(""), page: int = Query(1, ge=1),
 
 @router.get("/companies/{company:path}")
 def company_history(company: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    tracks = db.query(JobTrack).filter(JobTrack.user_id == user.id, func.lower(func.coalesce(func.nullif(func.trim(JobTrack.company), ""), "Unknown company")) == company.strip().lower()).all()
+    _, company_names, _ = _company_alias_group(
+        db,
+        user_id=user.id,
+        company=company,
+    )
+    normalized_names = sorted(
+        {name.strip().lower() for name in company_names if name and name.strip()}
+    ) or [company.strip().lower()]
+    company_expr = func.lower(
+        func.coalesce(func.nullif(func.trim(JobTrack.company), ""), "Unknown company")
+    )
+    tracks = (
+        db.query(JobTrack)
+        .filter(
+            JobTrack.user_id == user.id,
+            company_expr.in_(normalized_names),
+        )
+        .order_by(JobTrack.created_at.desc(), JobTrack.id.desc())
+        .limit(500)
+        .all()
+    )
     rows = []
     for t in tracks:
         rows.append({

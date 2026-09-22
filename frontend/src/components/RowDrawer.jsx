@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, formatApiError } from '../api/client'
 
 const CSV_FIELD_LABELS = {
   ats_group: 'ATS Group', location_group: 'Location Group', search_bucket: 'Search Bucket',
@@ -58,6 +58,13 @@ export default function RowDrawer({ row, onClose }) {
   const [loadingIntel, setLoadingIntel] = useState(false)
   const [todayPending, setTodayPending] = useState(false)
   const [todayMessage, setTodayMessage] = useState('')
+  const [matchContext, setMatchContext] = useState(null)
+  const [matchLoading, setMatchLoading] = useState(false)
+  const [matchError, setMatchError] = useState('')
+  const [matchRetry, setMatchRetry] = useState(0)
+  const [markAppliedPending, setMarkAppliedPending] = useState(false)
+  const [applicationMessage, setApplicationMessage] = useState('')
+  const [localStatus, setLocalStatus] = useState(row?.app_status || null)
 
   useEffect(() => {
     if (!row?.id) return
@@ -72,6 +79,28 @@ export default function RowDrawer({ row, onClose }) {
       setChecklist(check?.checklist || null)
     }).finally(() => setLoadingIntel(false))
   }, [row?.id])
+
+  useEffect(() => {
+    if (!row?.id) return undefined
+    let active = true
+    setLocalStatus(row.app_status || null)
+    setApplicationMessage('')
+    setMatchLoading(true)
+    setMatchError('')
+    api.getApplicationMatches(row.id)
+      .then((data) => {
+        if (active) setMatchContext(data)
+      })
+      .catch((error) => {
+        if (!active) return
+        setMatchContext(null)
+        setMatchError(formatApiError(error, 'Could not check prior applications. Please retry.').message)
+      })
+      .finally(() => {
+        if (active) setMatchLoading(false)
+      })
+    return () => { active = false }
+  }, [row?.id, row?.app_status, matchRetry])
 
   const addToToday = async () => {
     if (todayPending || !row?.id) return
@@ -92,6 +121,43 @@ export default function RowDrawer({ row, onClose }) {
     } finally {
       setTodayPending(false)
     }
+  }
+
+  const markApplied = async () => {
+    if (markAppliedPending || !row?.id || localStatus === 'applied') return
+    const matches = matchContext?.matches || []
+    if (matches.length > 0) {
+      const first = matches[0]
+      const appliedDate = first.applied_at ? new Date(first.applied_at).toLocaleDateString() : 'an earlier date'
+      const confirmed = window.confirm(
+        `You have prior applied history for this job/company. The strongest match is ${first.confidence} (${first.reason}) from ${appliedDate}. Continue and mark this row applied?`
+      )
+      if (!confirmed) return
+    }
+
+    setMarkAppliedPending(true)
+    setApplicationMessage('')
+    try {
+      await api.markRowApplied(row.id)
+      setLocalStatus('applied')
+      setApplicationMessage('Marked applied. Your prior application history was kept unchanged.')
+      const refreshed = await api.getApplicationMatches(row.id)
+      setMatchContext(refreshed)
+      setMatchError('')
+    } catch (error) {
+      setApplicationMessage(formatApiError(error, 'Could not mark this job applied. Please retry.').message)
+    } finally {
+      setMarkAppliedPending(false)
+    }
+  }
+
+  const priorApplicationHref = (match) => {
+    if (!match?.company) return '/applications'
+    const params = new URLSearchParams({
+      company: match.company,
+      track_id: String(match.track_id),
+    })
+    return `/companies?${params.toString()}#application-${match.track_id}`
   }
 
   if (!row) return null
@@ -140,11 +206,59 @@ export default function RowDrawer({ row, onClose }) {
 
         <div className="drawer-section">
           <h4>Application Status</h4>
-          <button className="btn btn-green btn-sm" disabled={todayPending} onClick={addToToday}>
-            {todayPending ? 'Adding...' : 'Add to Today'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-green btn-sm" disabled={todayPending} onClick={addToToday}>
+              {todayPending ? 'Adding...' : 'Add to Today'}
+            </button>
+            <button
+              className="btn btn-green btn-sm"
+              disabled={markAppliedPending || localStatus === 'applied' || matchLoading}
+              onClick={markApplied}
+            >
+              {markAppliedPending ? 'Marking applied...' : localStatus === 'applied' ? 'Applied' : 'Mark applied'}
+            </button>
+          </div>
           {todayMessage && <p role="status" style={{ margin: '8px 0' }}>{todayMessage}</p>}
-          {row.app_status && <span className={`app-status-badge ${row.app_status}`}>{row.app_status}</span>}
+          {applicationMessage && <p role="status" style={{ margin: '8px 0' }}>{applicationMessage}</p>}
+          {localStatus && <span className={`app-status-badge ${localStatus}`}>{localStatus}</span>}
+
+          {matchLoading && <p role="status" style={{ fontSize: 12, color: '#6b7280' }}>Checking prior application history…</p>}
+          {matchError && (
+            <div role="alert" style={{ marginTop: 10 }}>
+              {matchError}{' '}
+              <button className="btn btn-grey btn-sm" onClick={() => setMatchRetry((value) => value + 1)}>Retry check</button>
+            </div>
+          )}
+          {!matchLoading && !matchError && matchContext?.matches?.length > 0 && (
+            <div
+              role="alert"
+              data-testid="applied-before-warning"
+              style={{ marginTop: 10, padding: 10, border: '1px solid #f59e0b', borderRadius: 6, background: '#fffbeb' }}
+            >
+              <strong>Applied before</strong>
+              <div style={{ fontSize: 12, marginTop: 4 }}>
+                {matchContext.company_history_count} prior applied {matchContext.company_history_count === 1 ? 'role' : 'roles'} found for this company group.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                {matchContext.matches.slice(0, 3).map((match) => (
+                  <div key={match.track_id} data-testid={`prior-match-${match.confidence}`} style={{ fontSize: 12 }}>
+                    <strong style={{ textTransform: 'capitalize' }}>{match.confidence}</strong>
+                    {' · '}{match.reason}
+                    {' · '}{match.status}
+                    {match.applied_at && <> · applied {formatDate(match.applied_at)}</>}
+                    <div>
+                      <a href={priorApplicationHref(match)}>View prior application</a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, marginTop: 8 }}>This warning does not block a legitimate reapplication.</div>
+            </div>
+          )}
+          {!matchLoading && !matchError && matchContext && matchContext.matches.length === 0 && (
+            <p style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>No prior applied match found.</p>
+          )}
+
           {row.applied_at && <div className="drawer-field"><span className="drawer-field-label">Applied</span><span className="drawer-field-value">{formatDate(row.applied_at)}</span></div>}
           {row.follow_up_at && <div className="drawer-field"><span className="drawer-field-label">Follow-up</span><span className="drawer-field-value">{formatDate(row.follow_up_at)}</span></div>}
           {row.app_notes && <div className="drawer-field"><span className="drawer-field-label">Notes</span><span className="drawer-field-value">{row.app_notes}</span></div>}

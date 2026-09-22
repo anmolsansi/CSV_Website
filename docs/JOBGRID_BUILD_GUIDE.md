@@ -2289,3 +2289,132 @@ The required JG-030 regressions prove idempotent retry, collision preservation, 
 Revision 009 is additive. Normal application rollback can leave the nullable canonical columns and `company_aliases` table in place while older code ignores them.
 
 Stop any backfill before rolling application code back. Do not resolve rollback by deleting canonical-collision records, original URLs, aliases, application status/notes, or lifecycle history. A schema downgrade is appropriate only when the new alias/derived data is intentionally disposable and the deployment has confirmed no newer code is using it.
+
+
+## JG-031 applied-before matching and explicit company aliases
+
+JG-031 exposes the persisted identity foundation from JG-029/JG-030 without changing schema or automatically merging jobs. The feature is advisory. A prior application can warn the user, but it does not block a legitimate reapplication.
+
+### Application-match API
+
+Authenticated callers can check a saved CSV row:
+
+```http
+GET /crm/application-matches?row_id=123
+```
+
+Unsaved capture flows can provide the same evidence directly:
+
+```http
+POST /crm/application-matches
+Content-Type: application/json
+
+{
+  "url": "https://jobs.example.com/role/42?utm_source=linkedin",
+  "company": "Acme Corp",
+  "title": "Backend Engineer"
+}
+```
+
+The response is bounded to 20 matches:
+
+```json
+{
+  "matches": [
+    {
+      "track_id": 77,
+      "confidence": "canonical",
+      "reason": "same_canonical_url",
+      "company": "Acme Corp",
+      "title": "Backend Engineer",
+      "status": "applied",
+      "applied_at": "2026-09-18T09:45:00"
+    }
+  ],
+  "company_history_count": 3
+}
+```
+
+Only `JobTrack` rows with a known `applied_at` participate. A visited/opened-only job is not an applied-before warning. Evidence remains separate:
+
+- `exact`: unchanged original URL.
+- `canonical`: the conservative `ccr-identity-1` canonical hash matches.
+- `possible`: the company or an explicit owner-local alias group matches and the normalized title matches.
+
+The candidate scan is capped at 100 owner-scoped applied records and the returned list is capped at 20. Alias lookup, candidate retrieval, and history counting use a constant number of SQL queries rather than one query per match.
+
+`GET /crm/application-matches` returns 404 when the requested CSV row does not belong to the authenticated account. Invalid URL/input returns 422. No match response includes another account's rows, aliases, or applications.
+
+`POST /crm/from-row/{row_id}` keeps its existing application response and now adds `warning_candidates`. This is additive and does not change the existing unique `(user_id, url)` application contract.
+
+### RowDrawer behavior
+
+Opening a Dashboard row checks applied-before context. The drawer shows loading, empty, loaded-warning, and recoverable-error states. Exact, canonical, and possible evidence are labeled separately and include the prior status/date.
+
+The **Mark applied** action uses the existing bulk row-to-application writer. If applied history exists, the user must explicitly confirm before continuing. Confirmation does not modify the old application or the current CSV row. The action is locked while the request is pending, and the drawer refreshes its match context after server success.
+
+Each warning includes a **View prior application** link. It opens Company History with encoded `company` and `track_id` query parameters and focuses the matching role card.
+
+### Company-alias API
+
+Aliases are explicit, owner-local grouping metadata:
+
+```http
+GET /crm/company-aliases?company=Acme%20Corp
+POST /crm/company-aliases
+DELETE /crm/company-aliases/{alias_id}
+```
+
+Create payload:
+
+```json
+{
+  "company": "Acme Corp",
+  "alias": "Acme Incorporated"
+}
+```
+
+When a company has no alias group yet, creation stores the selected company name and proposed alias under one stable owner-local UUID `company_key`. If the selected company already belongs to a group, the new label joins that group. Repeating an alias already in the same group is idempotent.
+
+If a proposed alias already belongs to a different group, the server returns 409 with code `alias_conflict` and echoes `proposed_label` in the error detail. The UI keeps the draft text so the user can refresh and retry.
+
+Delete is owner-scoped. A foreign alias ID returns 404. Removing an alias deletes only that `CompanyAlias` row. It never deletes or edits `JobTrack`, application status, dates, notes, or source CSV data.
+
+Alias responses include per-label history counts and a group history count so the UI can explain the impact before confirmation. Company History resolves explicit alias groups when loading roles, while the underlying application records remain separate.
+
+### Slash-containing company names
+
+The backend company-history route remains `/crm/companies/{company:path}`. The frontend always sends the company using `encodeURIComponent`, so names such as `Research/AI Labs` remain navigable. Prior-application links use encoded query parameters and a track-specific fragment.
+
+### Verification
+
+Focused backend coverage:
+
+```sh
+cd backend
+python -m pytest tests/test_application_matches.py -q
+```
+
+The file includes the required JG-031 regressions:
+
+- `visited_only_has_no_applied_warning`
+- `exact_match_returns_prior_application_date`
+- `canonical_warning_does_not_block_reapply`
+- `slash_company_navigation_works`
+- `foreign_alias_cannot_be_deleted`
+
+It also checks 409 alias conflicts and proves alias grouping/removal preserves application rows.
+
+Focused browser coverage:
+
+```sh
+cd frontend
+npm run test:e2e -- tests/applied-before.spec.ts --project=chromium
+npm run build
+```
+
+Repository CI remains the integration gate for the PostgreSQL backend suite, migration application, backend compile, frontend production build, and Chromium Playwright suite.
+
+### Rollback
+
+JG-031 adds no migration. To disable the feature, remove/hide the applied-before warning and alias controls and stop registering the alias route. Keep the JG-030 canonical fields, alias table, original URLs, JobTracks, lifecycle history, statuses, dates, and notes. No destructive data rewrite or database downgrade is required.
