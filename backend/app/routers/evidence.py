@@ -8,13 +8,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..evidence_schemas import EvidenceCreateData
+from ..evidence_schemas import EvidenceCreateData, EvidenceKind
 from ..models import User
 from ..services.evidence import (
     DEFAULT_TIMELINE_LIMIT,
@@ -29,18 +29,27 @@ from ..services.evidence import (
     serialize_evidence,
 )
 from ..services.lifecycle import LifecycleEventError, coerce_operation_id
+from ..services.validation import ValidationContractError, parse_timestamp
 
 
 router = APIRouter(prefix="/crm/tracks", tags=["evidence"])
 logger = logging.getLogger(__name__)
 
 
+class EvidenceCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: EvidenceKind
+    body: str = Field(min_length=1, max_length=20_000)
+    occurred_at: str | None = None
+
+
 class EvidenceEditIn(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
 
     version: int = Field(ge=1)
     body: str | None = Field(default=None, max_length=20_000)
-    occurred_at: datetime | None = None
+    occurred_at: str | None = None
 
     @model_validator(mode="after")
     def require_change(self):
@@ -53,14 +62,14 @@ class EvidenceEditIn(BaseModel):
 
 
 class AppliedDateCorrectionIn(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
 
-    applied_at: datetime
+    applied_at: str
     reason: str = Field(min_length=1, max_length=500)
 
 
 class StatusCorrectionIn(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
 
     expected_event_id: int = Field(gt=0)
     restore_status: str
@@ -195,6 +204,54 @@ def _raise_integrity_error(
     )
 
 
+def _parse_timestamp_for_user(
+    value: str | None,
+    *,
+    user: User,
+    field: str,
+    allow_clear: bool = True,
+) -> datetime | None:
+    try:
+        return parse_timestamp(
+            value,
+            timezone_name=user.timezone,
+            field=field,
+            allow_clear=allow_clear,
+        )
+    except ValidationContractError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.to_detail(),
+        ) from exc
+
+
+def _create_data(payload: EvidenceCreateIn, *, user: User) -> EvidenceCreateData:
+    occurred_at = _parse_timestamp_for_user(
+        payload.occurred_at,
+        user=user,
+        field="occurred_at",
+    ) if payload.occurred_at is not None else None
+    try:
+        return EvidenceCreateData(
+            kind=payload.kind,
+            body=payload.body,
+            occurred_at=occurred_at,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_evidence",
+                "fields": [
+                    {
+                        "field": "body",
+                        "message": "Evidence input is invalid for its evidence kind.",
+                    }
+                ],
+            },
+        ) from exc
+
+
 def _track_response(track) -> dict[str, Any]:
     return {
         "track_id": track.id,
@@ -250,7 +307,7 @@ def track_timeline(
 @router.post("/{track_id}/evidence")
 def add_evidence(
     track_id: int,
-    payload: EvidenceCreateData,
+    payload: EvidenceCreateIn,
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -273,11 +330,12 @@ def add_evidence(
         ) from exc
 
     try:
+        data = _create_data(payload, user=user)
         result = create_evidence(
             db,
             user_id=user.id,
             track_id=track_id,
-            data=payload,
+            data=data,
             request_key=request_id,
             now=datetime.utcnow(),
         )
@@ -320,7 +378,7 @@ def add_evidence(
                 db,
                 user_id=user.id,
                 track_id=track_id,
-                data=payload,
+                data=data,
                 request_key=request_id,
                 now=datetime.utcnow(),
             )
@@ -369,7 +427,11 @@ def patch_evidence(
     if "body" in supplied:
         kwargs["body"] = payload.body
     if "occurred_at" in supplied:
-        kwargs["occurred_at"] = payload.occurred_at
+        kwargs["occurred_at"] = _parse_timestamp_for_user(
+            payload.occurred_at,
+            user=user,
+            field="occurred_at",
+        )
     try:
         evidence = edit_evidence(
             db,
@@ -477,7 +539,12 @@ def correct_track_applied_date(
             db,
             user_id=user.id,
             track_id=track_id,
-            applied_at=payload.applied_at,
+            applied_at=_parse_timestamp_for_user(
+                payload.applied_at,
+                user=user,
+                field="applied_at",
+                allow_clear=False,
+            ),
             reason=payload.reason,
             operation_id=operation_id,
             now=datetime.utcnow(),
