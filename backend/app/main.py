@@ -22,7 +22,7 @@ from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, backup, company_aliases, crm, email, evidence, rows, today, upload
+from .routers import auth_router, backup, company_aliases, crm, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -200,6 +200,7 @@ app.include_router(company_aliases.router)
 app.include_router(evidence.router)
 app.include_router(crm.router)
 app.include_router(today.router)
+app.include_router(reminders.router)
 app.include_router(email.router)
 
 
