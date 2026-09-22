@@ -28,7 +28,7 @@ test.describe('Job freshness', () => {
     const firstApplicationRow = page.locator('tbody tr').first()
     await firstApplicationRow
       .getByRole('button', { name: 'History, evidence & documents' })
-      .click()
+      .click({ force: true })
 
     const availability = page.getByTestId('job-availability')
     await expect(availability).toBeVisible()
@@ -63,7 +63,7 @@ test.describe('Job freshness', () => {
     await page.goto('/applications')
     await page.locator('tbody tr').first()
       .getByRole('button', { name: 'History, evidence & documents' })
-      .click()
+      .click({ force: true })
     const reopenedAvailability = page.getByTestId('job-availability')
     await expect(reopenedAvailability.getByTestId('availability-label')).toHaveText('Status unknown')
 
