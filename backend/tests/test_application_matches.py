@@ -28,7 +28,7 @@ def _row(
 ) -> CsvRow:
     row = CsvRow(
         user_id=user.id,
-        upload_batch_id=f"jg031-{uuid4()}",
+        upload_batch_id=str(uuid4()),
         url=url,
         company_guess=company,
         title=title,
