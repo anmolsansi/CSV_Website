@@ -2646,3 +2646,28 @@ npm run build
 ```
 
 **Rollback:** JG-036 changes only verification coverage and documentation. Removing those tests/docs does not authorize deleting evidence, lifecycle events, correction history, or recovery data.
+
+
+### Reminder persistence and delivery state contract
+
+JG-037 establishes durable reminder storage without activating a scheduler or sending external messages. The additive Alembic revision is `011_reminders`, because `010_application_evidence` is already the migration head.
+
+`ReminderPreference` is owner-scoped and opt-out by default. If no row exists, reminders are disabled. A newly created row also defaults to `enabled=false`, `channel=in_app`, local delivery time `09:00`, quiet start `21:00`, and quiet end `08:00`. Reminder times use 24-hour `HH:MM`; account timezones must be valid IANA names. Equal quiet start and end means there is no quiet period.
+
+`ReminderDelivery` records one durable occurrence per owner, occurrence key, and channel. The database enforces the unique occurrence/channel tuple, valid channels, valid statuses, nonnegative attempt counts, positive versions, and that only `sent` rows carry `sent_at`. Owner/schedule and owner/status/retry indexes support the later worker ticket without adding a worker here.
+
+The legal state contract is intentionally narrow: pending deliveries can be claimed or cancelled; sending can become sent, failed, unknown, or cancelled; failed can be claimed again or cancelled; sent and cancelled are terminal; unknown never retries automatically. A future deliberate unknown retry must use the explicit override path. Once provider acceptance records `sent_at`, the transition helper treats it as immutable.
+
+Occurrence keys are deterministic and contain the destination application track ID, canonical UTC due timestamp, and notification-local date. Backup restore remaps that track ID to the destination account.
+
+Portable v2 backup revision `2.7.0` adds `reminder_preferences` and `reminder_deliveries`. Worker leases are intentionally excluded because they are process-local operational claim state. Restore never resumes sending automatically: restored preferences are disabled, `pending` or `sending` deliveries become `cancelled` with no lease or retry timestamp, and sent/failed/unknown/cancelled history remains historical. Sent records retain their accepted `sent_at`; pending mail is not replayed.
+
+**Focused verification:**
+
+```sh
+cd backend
+python -m pytest tests/test_reminder_models.py tests/test_backup_contract.py tests/test_backup_export.py -q
+python -m alembic upgrade head
+```
+
+**Rollback:** stop before any later reminder worker is enabled, downgrade revision `011` only when no dependent reminder code is active, and preserve existing manual follow-up dates. Never reinterpret sent or unknown history as pending work.
