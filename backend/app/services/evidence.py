@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -468,7 +469,7 @@ def decode_timeline_cursor(value: str) -> TimelineCursor:
             raise ValueError
         parsed = datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00"))
         timestamp = _normalize_utc(parsed)
-    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
+    except (ValueError, TypeError, UnicodeError, binascii.Error, json.JSONDecodeError) as exc:
         raise EvidenceServiceError(
             "invalid_timeline_cursor", "Timeline cursor is invalid."
         ) from exc
