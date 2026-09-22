@@ -8091,7 +8091,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-034"></a>
 ### JG-034 — Build evidence mutations and merged timeline API
 
-**Status:** COMPLETED — merged implementation pending final PR merge  
+**Status:** COMPLETED — merged to `main` via PR #122  
 **Priority:** Feature rank 3  
 **Type:** API/service  
 **Execution position:** 34/64; group step 2/4
@@ -8312,7 +8312,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 #### Completion evidence
 
 - JG-033 dependency was merged on `main` before implementation.
-- GitHub issue #121 and PR #122 track this ticket.
+- GitHub issue #121 and PR #122 track this ticket. PR #122 merged to `main` as `4e39794716f8e6e2f7f67ae337d8c8ecfa92f70f`.
 - CI run #261 on the implementation head passed all repository gates: backend compile, frontend production build, 416 PostgreSQL-backed backend tests, and 144 Chromium E2E tests.
 - Required JG-034 regressions pass, including create replay/idempotency, equal-timestamp cursor stability, deleted-body redaction, foreign-account 404 behavior, and immutable correction history/metric preservation.
 - A pre-existing Today browser fixture used a hardcoded snooze date that expired on September 22, 2026. The test-only fixture was changed to a relative future value; no JG-034 product behavior was altered by that repair.
