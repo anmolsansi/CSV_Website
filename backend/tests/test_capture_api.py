@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from app.models import CsvRow, JobTrack, User
+from app.models import CsvRow, JobLifecycleEvent, JobTrack, User
 from app.services import capture as capture_service
 
 
@@ -180,3 +180,108 @@ def test_capture_returns_owned_application_identity_warning(
     assert body["matches"][0]["track_id"] == track.id
     assert body["matches"][0]["confidence"] == "exact"
     assert body["company_history_count"] >= 1
+
+
+def test_capture_visit_apply_counts_separate(auth_client, db_session):
+    url = f"https://capture-lifecycle.example/jobs/{uuid4()}"
+    captured = _capture(auth_client, url=url)
+    assert captured.status_code == 201, captured.text
+    row_id = captured.json()["row_id"]
+    user = db_session.query(User).filter_by(email="test@jobgrid.dev").one()
+
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=user.id, job_url=url
+    ).count() == 0
+
+    first_visit = auth_client.post(f"/rows/{row_id}/click")
+    assert first_visit.status_code == 200, first_visit.text
+    repeat_visit = auth_client.post(f"/rows/{row_id}/click")
+    assert repeat_visit.status_code == 200, repeat_visit.text
+
+    created = auth_client.post(f"/crm/from-row/{row_id}")
+    assert created.status_code == 200, created.text
+    track_id = created.json()["id"]
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=user.id, job_url=url, kind="first_applied"
+    ).count() == 0
+
+    applied = auth_client.patch(
+        f"/crm/applications/{track_id}",
+        json={"mark_applied": True},
+    )
+    assert applied.status_code == 200, applied.text
+    repeated = auth_client.patch(
+        f"/crm/applications/{track_id}",
+        json={"mark_applied": True},
+    )
+    assert repeated.status_code == 200, repeated.text
+
+    events = db_session.query(JobLifecycleEvent).filter_by(
+        user_id=user.id, job_url=url
+    ).all()
+    assert sum(event.kind == "first_visited" for event in events) == 1
+    assert sum(event.kind == "first_applied" for event in events) == 1
+    assert sum(event.kind == "status_changed" for event in events) == 1
+
+
+def test_source_delete_preserves_captured_application_history(auth_client, db_session):
+    url = f"https://capture-delete.example/jobs/{uuid4()}"
+    captured = _capture(auth_client, url=url)
+    assert captured.status_code == 201
+    row_id = captured.json()["row_id"]
+
+    created = auth_client.post(f"/crm/from-row/{row_id}")
+    assert created.status_code == 200, created.text
+    track_id = created.json()["id"]
+    applied = auth_client.patch(
+        f"/crm/applications/{track_id}",
+        json={"mark_applied": True},
+    )
+    assert applied.status_code == 200
+
+    deleted = auth_client.request(
+        "DELETE",
+        "/rows",
+        json={"row_ids": [row_id], "mode": "delete"},
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] == 1
+    assert db_session.get(CsvRow, row_id) is None
+
+    track = db_session.get(JobTrack, track_id)
+    assert track is not None
+    assert track.csv_row_id is None
+    assert track.url == url
+    assert track.applied_at is not None
+    assert track.status == "applied"
+
+
+def test_backup_restores_capture_provenance(auth_client, db_session):
+    url = f"https://capture-backup.example/jobs/{uuid4()}"
+    captured = _capture(
+        auth_client,
+        url=url,
+        title="Backup Capture Engineer",
+        company="Backup Capture Co",
+        notes="Capture provenance note",
+    )
+    assert captured.status_code == 201
+
+    exported = auth_client.get("/crm/backup/export?version=2")
+    assert exported.status_code == 200, exported.text
+
+    auth_client.post("/auth/logout")
+    destination_email = f"capture-backup-{uuid4()}@example.test"
+    login = auth_client.post("/auth/dev-login", json={"email": destination_email})
+    assert login.status_code == 200
+    restored = auth_client.post(
+        "/crm/backup/import?mode=merge_missing",
+        files={"file": ("backup.json", exported.content, "application/json")},
+    )
+    assert restored.status_code == 200, restored.text
+
+    destination = db_session.query(User).filter_by(email=destination_email).one()
+    row = db_session.query(CsvRow).filter_by(user_id=destination.id, url=url).one()
+    assert row.capture_source == "manual"
+    assert row.capture_notes == "Capture provenance note"
+    assert row.captured_at is not None

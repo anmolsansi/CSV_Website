@@ -14,12 +14,14 @@ import ApplyPilotBatches from './pages/ApplyPilotBatches'
 import Duplicates from './pages/Duplicates'
 import CompanyHistory from './pages/CompanyHistory'
 import ImportExternal from './pages/ImportExternal'
+import Capture from './pages/Capture'
 import Navigation from './components/Navigation'
 import ActiveSessionBar from './components/ActiveSessionBar'
 import CommandPalette from './components/CommandPalette'
 import DarkModeToggle from './components/DarkModeToggle'
 import SkipToContent from './components/SkipToContent'
 import ErrorBoundary from './components/ErrorBoundary'
+import { ingestCaptureFragment, isSafeCaptureReturnPath } from './utils/captureDraft'
 
 const ToastContext = createContext(null)
 
@@ -92,6 +94,7 @@ function AuthenticatedApp({ user, onLogout }) {
                 <Route path="/applypilot" element={<ApplyPilotBatches />} />
                 <Route path="/duplicates" element={<Duplicates />} />
                 <Route path="/companies" element={<CompanyHistory />} />
+                <Route path="/capture" element={<Capture />} />
                 <Route path="/import" element={<ImportExternal />} />
               </Routes>
             </ErrorBoundary>
@@ -119,6 +122,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (window.location.pathname === '/capture') {
+      ingestCaptureFragment()
+    }
+  }, [])
+
+  useEffect(() => {
     api
       .me()
       .then(setUser)
@@ -127,6 +136,12 @@ export default function App() {
   }, [])
 
   if (loading) return <div className="loading-screen"><div className="loading-spinner" /><span>Loading JobGrid...</span></div>
-  if (!user) return <Login />
+  if (!user) {
+    const params = new URLSearchParams(window.location.search)
+    const returnTo = window.location.pathname === '/capture'
+      ? '/capture'
+      : isSafeCaptureReturnPath(params.get('return_to'))
+    return <Login returnTo={returnTo} />
+  }
   return <AuthenticatedApp user={user} onLogout={() => setUser(null)} />
 }

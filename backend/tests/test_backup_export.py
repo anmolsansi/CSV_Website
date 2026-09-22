@@ -23,6 +23,7 @@ from app.models import (
     CompanyAlias,
     CsvRow,
     DocumentVersion,
+    JobAvailability,
     JobTrack,
     JobLifecycleEvent,
     ReminderDelivery,
@@ -108,7 +109,15 @@ def _seed_complete_fixture(db, email):
         display_name="Example Co",
         company_key=str(uuid4()),
     )
-    db.add_all([track, view, history, preference, goal, batch, alias])
+    availability = JobAvailability(
+        user_id=user.id,
+        job_url=row1.url,
+        deadline_at=datetime(2026, 9, 30, 23, 59, 59),
+        deadline_source="user",
+        state="unknown",
+        version=1,
+    )
+    db.add_all([track, view, history, preference, goal, batch, alias, availability])
     db.flush()
 
     document = DocumentVersion(

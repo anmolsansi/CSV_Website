@@ -38,6 +38,7 @@ from ..models import (
     CompanyAlias,
     CsvRow,
     DocumentVersion,
+    JobAvailability,
     JobTrack,
     JobLifecycleEvent,
     ReminderDelivery,
@@ -117,6 +118,7 @@ def _query_snapshot(session: Session, user_id: int) -> dict[str, list[Any]]:
         "csv_rows": session.query(CsvRow).filter(CsvRow.user_id == user_id).order_by(CsvRow.id.asc()).all(),
         "url_history": session.query(UrlHistory).filter(UrlHistory.user_id == user_id).order_by(UrlHistory.id.asc()).all(),
         "job_tracks": session.query(JobTrack).filter(JobTrack.user_id == user_id).order_by(JobTrack.id.asc()).all(),
+        "job_availability": session.query(JobAvailability).filter(JobAvailability.user_id == user_id).order_by(JobAvailability.id.asc()).all(),
         "document_versions": session.query(DocumentVersion).filter(DocumentVersion.user_id == user_id).order_by(DocumentVersion.created_at.asc(), DocumentVersion.id.asc()).all(),
         "application_documents": session.query(ApplicationDocument).filter(ApplicationDocument.user_id == user_id).order_by(ApplicationDocument.id.asc()).all(),
         "application_evidence": evidence,
@@ -278,6 +280,20 @@ def _serialize_sections(
             "last_opened_at": _utc_iso(item.last_opened_at),
             "created_at": _utc_iso(item.created_at),
             "updated_at": _utc_iso(item.updated_at),
+        })
+
+
+    for item in snapshot["job_availability"]:
+        sections["job_availability"].append({
+            "backup_ref": refs["job_availability"][item.id],
+            "job_url": item.job_url,
+            "deadline_at": _utc_iso(item.deadline_at),
+            "deadline_source": item.deadline_source,
+            "state": item.state,
+            "last_checked_at": _utc_iso(item.last_checked_at),
+            "check_reason": item.check_reason,
+            "confirmed_closed_at": _utc_iso(item.confirmed_closed_at),
+            "version": item.version,
         })
 
     for item in snapshot["document_versions"]:
@@ -904,6 +920,28 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             )
             counts["job_tracks"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
+
+    for record in document.sections.job_availability:
+        mapping = _lookup_import_map(
+            session, user_id, backup_id, "job_availability", record.backup_ref
+        )
+        if mapping:
+            counts["job_availability"]["skipped"] += 1
+            continue
+        existing = session.query(JobAvailability).filter_by(
+            user_id=user_id, job_url=record.job_url
+        ).first()
+        if existing is None:
+            counts["job_availability"]["created"] += 1
+        else:
+            fields = (
+                "job_url", "deadline_at", "deadline_source", "state",
+                "last_checked_at", "check_reason", "confirmed_closed_at", "version",
+            )
+            counts["job_availability"][
+                _classify_existing(_record_equal(existing, record, fields))
+            ] += 1
+
     # JSON v2.9 carries document metadata/checksums only. JG-044 owns the
     # byte bundle; without bytes, restore must never publish a ready file row.
     for record in document.sections.document_versions:
@@ -1095,6 +1133,60 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
     backup_id = document.backup_id
 
     session.query(User).filter(User.id == user_id).with_for_update().one()
+
+
+    for record in document.sections.job_availability:
+        mapped = _mapped_target(
+            session, user_id, backup_id,
+            "job_availability", record.backup_ref, JobAvailability,
+        )
+        if mapped is not None:
+            refs["job_availability"][record.backup_ref] = mapped.id
+            counts["job_availability"]["skipped"] += 1
+            continue
+
+        existing = session.query(JobAvailability).filter_by(
+            user_id=user_id, job_url=record.job_url
+        ).first()
+        fields = (
+            "job_url", "deadline_at", "deadline_source", "state",
+            "last_checked_at", "check_reason", "confirmed_closed_at", "version",
+        )
+        if existing is not None:
+            outcome = _classify_existing(_record_equal(existing, record, fields))
+            refs["job_availability"][record.backup_ref] = existing.id
+            _persist_import_map(
+                session, user_id, backup_id,
+                "job_availability", record.backup_ref, existing.id,
+            )
+            counts["job_availability"][outcome] += 1
+            if outcome == "conflicts":
+                warnings.append(_restore_warning(
+                    "destination_record_preserved",
+                    section="job_availability",
+                    backup_ref=record.backup_ref,
+                ))
+            continue
+
+        item = JobAvailability(
+            user_id=user_id,
+            job_url=record.job_url,
+            deadline_at=_parse_backup_datetime(record.deadline_at),
+            deadline_source=record.deadline_source,
+            state=record.state,
+            last_checked_at=_parse_backup_datetime(record.last_checked_at),
+            check_reason=record.check_reason,
+            confirmed_closed_at=_parse_backup_datetime(record.confirmed_closed_at),
+            version=record.version,
+        )
+        session.add(item)
+        session.flush()
+        refs["job_availability"][record.backup_ref] = item.id
+        _persist_import_map(
+            session, user_id, backup_id,
+            "job_availability", record.backup_ref, item.id,
+        )
+        counts["job_availability"]["created"] += 1
 
     for record in document.sections.sessions:
         mapped = _mapped_target(session, user_id, backup_id, "sessions", record.backup_ref, SearchSession)

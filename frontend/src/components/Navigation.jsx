@@ -12,6 +12,7 @@ const TABS = [
   { to: '/applypilot', label: 'ApplyPilot' },
   { to: '/duplicates', label: 'Duplicates' },
   { to: '/companies', label: 'Companies' },
+  { to: '/capture', label: 'Capture' },
   { to: '/import', label: 'Import' },
 ]
 

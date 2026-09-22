@@ -79,6 +79,9 @@ JOB_TRACK_STATUS_VALUES = [
     "opened", "applied", "follow_up", "interview",
     "rejected", "offer", "not_applying",
 ]
+JOB_AVAILABILITY_STATE_VALUES = ["unknown", "available", "unavailable", "closed"]
+JOB_DEADLINE_SOURCE_VALUES = ["user", "import"]
+JOB_CHECK_REQUEST_STATUS_VALUES = ["pending", "running", "done", "failed"]
 REMINDER_CHANNEL_VALUES = ["in_app", "email"]
 REMINDER_DELIVERY_STATUS_VALUES = [
     "pending", "sending", "sent", "failed", "unknown", "cancelled",
@@ -162,6 +165,12 @@ class User(Base):
     )
     request_window_counters = relationship(
         "RequestWindowCounter", back_populates="user", cascade="all, delete-orphan"
+    )
+    job_availability = relationship(
+        "JobAvailability", back_populates="user", cascade="all, delete-orphan"
+    )
+    job_check_requests = relationship(
+        "JobCheckRequest", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -419,6 +428,98 @@ class RequestWindowCounter(Base):
         UniqueConstraint(
             "user_id", "scope", "window_start",
             name="uq_request_window_counter_user_scope_window",
+        ),
+    )
+
+
+class JobAvailability(Base):
+    """Owner-scoped freshness and deadline evidence keyed by original job URL."""
+
+    __tablename__ = "job_availability"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    job_url = Column(Text, nullable=False)
+    deadline_at = Column(DateTime, nullable=True, index=True)
+    deadline_source = Column(String(16), nullable=True)
+    state = Column(String(16), nullable=False, default="unknown", index=True)
+    last_checked_at = Column(DateTime, nullable=True)
+    check_reason = Column(String(64), nullable=True)
+    confirmed_closed_at = Column(DateTime, nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("User", back_populates="job_availability")
+    check_requests = relationship(
+        "JobCheckRequest", back_populates="availability", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "job_url",
+            name="uq_job_availability_user_url",
+        ),
+        CheckConstraint(
+            "state IN ('unknown', 'available', 'unavailable', 'closed')",
+            name="ck_job_availability_state",
+        ),
+        CheckConstraint(
+            "deadline_source IS NULL OR deadline_source IN ('user', 'import')",
+            name="ck_job_availability_deadline_source",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_job_availability_version",
+        ),
+        CheckConstraint(
+            "(state = 'closed' AND confirmed_closed_at IS NOT NULL) OR "
+            "(state <> 'closed' AND confirmed_closed_at IS NULL)",
+            name="ck_job_availability_closed_confirmation",
+        ),
+        Index(
+            "ix_job_availability_user_deadline",
+            "user_id", "deadline_at",
+        ),
+    )
+
+
+class JobCheckRequest(Base):
+    """Durable, bounded metadata for an explicit future link-check attempt."""
+
+    __tablename__ = "job_check_requests"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    availability_id = Column(
+        Integer, ForeignKey("job_availability.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    requested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    status = Column(String(16), nullable=False, default="pending")
+    lease_until = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error_code = Column(String(64), nullable=True)
+
+    user = relationship("User", back_populates="job_check_requests")
+    availability = relationship("JobAvailability", back_populates="check_requests")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'done', 'failed')",
+            name="ck_job_check_requests_status",
+        ),
+        Index(
+            "ix_job_check_requests_user_requested",
+            "user_id", "requested_at",
+        ),
+        Index(
+            "ix_job_check_requests_status_lease",
+            "status", "lease_until",
         ),
     )
 

@@ -1611,3 +1611,26 @@ textarea:focus-visible {
   .document-card-main,
   .document-link-row { flex-direction: column; }
 }
+
+
+/* JG-047 manual/bookmarklet capture */
+.capture-page { max-width: 1180px; }
+.capture-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.capture-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+.capture-card h3 { margin: 0 0 12px; }
+.capture-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.capture-field label { font-size: 13px; font-weight: 700; color: #374151; }
+.capture-field input, .capture-field textarea { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px; padding: 9px 10px; font: inherit; background: #fff; color: #111827; }
+.capture-field input:focus, .capture-field textarea:focus { outline: 2px solid #bfdbfe; border-color: #2563eb; }
+.capture-muted { color: #6b7280; font-size: 13px; }
+.capture-status { color: #166534; font-size: 13px; margin-top: 10px; }
+.capture-match { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; border-top: 1px solid #e5e7eb; font-size: 13px; }
+.capture-match span { color: #6b7280; }
+.capture-actions, .bookmarklet-card { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.bookmarklet-card h3, .bookmarklet-card p { flex-basis: 100%; }
+.capture-result { border-color: #bbf7d0; }
+.capture-card a.btn { text-decoration: none; display: inline-block; }
+
+@media (max-width: 800px) {
+  .capture-layout { grid-template-columns: 1fr; }
+}

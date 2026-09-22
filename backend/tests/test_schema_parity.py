@@ -21,6 +21,8 @@ from app.models import (
     CompanyAlias,
     CsvRow,
     EvidenceCreateReceipt,
+    JobAvailability,
+    JobCheckRequest,
     JobLifecycleEvent,
     MaintenanceStatus,
     ReminderDelivery,
@@ -44,6 +46,8 @@ def test_models_are_bound_to_metadata():
     assert "job_tracks" in Base.metadata.tables
     assert "saved_views" in Base.metadata.tables
     assert BackupImportMap.__tablename__ in Base.metadata.tables
+    assert JobAvailability.__tablename__ in Base.metadata.tables
+    assert JobCheckRequest.__tablename__ in Base.metadata.tables
     assert JobLifecycleEvent.__tablename__ in Base.metadata.tables
     assert MaintenanceStatus.__tablename__ in Base.metadata.tables
     assert WorkItem.__tablename__ in Base.metadata.tables
@@ -69,7 +73,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["014"]
+    assert script.get_heads() == ["015"]
 
 
 def test_legacy_schema_patch_module_removed():
@@ -375,7 +379,7 @@ def test_evidence_migration_upgrade_and_downgrade(migrated_postgres_database):
     finally:
         _run_alembic_upgrade(database_url)
 
-    assert _current_revision(engine) == "014"
+    assert _current_revision(engine) == "015"
     _assert_postgres_matches_metadata(engine)
 
 
@@ -392,7 +396,7 @@ def test_reminder_migration_upgrade_and_downgrade(migrated_postgres_database):
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "014"
+        assert _current_revision(engine) == "015"
         assert "reminder_preferences" in inspector.get_table_names()
         assert "reminder_deliveries" in inspector.get_table_names()
         assert "read_at" in {
@@ -400,7 +404,7 @@ def test_reminder_migration_upgrade_and_downgrade(migrated_postgres_database):
             for column in inspector.get_columns("reminder_deliveries")
         }
     finally:
-        if _current_revision(engine) != "014":
+        if _current_revision(engine) != "015":
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -423,13 +427,13 @@ def test_reminder_read_state_migration_upgrade_and_downgrade(
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "014"
+        assert _current_revision(engine) == "015"
         assert "read_at" in {
             column["name"]
             for column in inspector.get_columns("reminder_deliveries")
         }
     finally:
-        if _current_revision(engine) != "014":
+        if _current_revision(engine) != "015":
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -450,12 +454,12 @@ def test_document_migration_upgrade_and_downgrade(migrated_postgres_database):
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "014"
+        assert _current_revision(engine) == "015"
         assert "document_versions" in inspector.get_table_names()
         assert "application_documents" in inspector.get_table_names()
         assert "document_create_receipts" in inspector.get_table_names()
     finally:
-        if _current_revision(engine) != "014":
+        if _current_revision(engine) != "015":
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -481,7 +485,7 @@ def test_capture_migration_upgrade_and_downgrade(migrated_postgres_database):
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "014"
+        assert _current_revision(engine) == "015"
         csv_columns = {
             column["name"] for column in inspector.get_columns("csv_rows")
         }
@@ -489,7 +493,57 @@ def test_capture_migration_upgrade_and_downgrade(migrated_postgres_database):
         assert "capture_requests" in inspector.get_table_names()
         assert "request_window_counters" in inspector.get_table_names()
     finally:
-        if _current_revision(engine) != "014":
+        if _current_revision(engine) != "015":
+            _run_alembic_upgrade(database_url)
+
+    _assert_postgres_matches_metadata(engine)
+
+
+@pytest.mark.postgresql
+def test_availability_migration_upgrade_and_downgrade(migrated_postgres_database):
+    database_url, engine = migrated_postgres_database
+
+    try:
+        _run_alembic_downgrade(database_url, "014")
+        inspector = inspect(engine)
+        assert _current_revision(engine) == "014"
+        assert "job_availability" not in inspector.get_table_names()
+        assert "job_check_requests" not in inspector.get_table_names()
+
+        _run_alembic_upgrade(database_url)
+        inspector = inspect(engine)
+        assert _current_revision(engine) == "015"
+        assert "job_availability" in inspector.get_table_names()
+        assert "job_check_requests" in inspector.get_table_names()
+
+        availability_columns = {
+            column["name"] for column in inspector.get_columns("job_availability")
+        }
+        assert {
+            "id",
+            "user_id",
+            "job_url",
+            "deadline_at",
+            "deadline_source",
+            "state",
+            "last_checked_at",
+            "check_reason",
+            "confirmed_closed_at",
+            "version",
+        } == availability_columns
+
+        availability_indexes = {
+            item["name"] for item in inspector.get_indexes("job_availability")
+        }
+        assert "ix_job_availability_user_deadline" in availability_indexes
+
+        request_indexes = {
+            item["name"] for item in inspector.get_indexes("job_check_requests")
+        }
+        assert "ix_job_check_requests_user_requested" in request_indexes
+        assert "ix_job_check_requests_status_lease" in request_indexes
+    finally:
+        if _current_revision(engine) != "015":
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)

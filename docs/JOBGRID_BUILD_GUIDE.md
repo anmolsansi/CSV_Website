@@ -21,8 +21,8 @@ JG-041 extends backup schema revision **2.9.0** with immutable document metadata
 SHA-256 checksums, and application/document references. The ordinary JSON backup
 sets `document_bytes_included=false`. It does **not** contain the private file bytes,
 so importing this JSON intentionally skips document metadata/links instead of creating
-a misleading `ready` document row without its bytes. JG-044 owns the future ZIP
-bundle and byte-level restore proof.
+a misleading `ready` document row without its bytes. JG-044 provides the authenticated
+ZIP bundle and byte-level restore proof described below.
 
 ## Private document versions (JG-041–JG-043)
 
@@ -3012,9 +3012,9 @@ Repository CI remains the full PostgreSQL migration, backend, production-build, 
 Disable new uploads/link creation first. Preserve document metadata and private bytes. Do not rewrite historical application links to a newer file. Older application code may ignore the additive revision 013 tables. If the schema itself must be downgraded, do so only after dependent code is disabled and document data has been preserved. Never use public or ephemeral storage as a rollback fallback.
 
 
-## F6 manual job capture, JG-045 and JG-046
+## F6 manual job capture, JG-045 through JG-048
 
-JG-045 and JG-046 add a backend capture path for jobs found outside CSV upload. This is intentionally not an application action and not a visit event. JG-047/JG-048 own later UI/bookmarklet surfaces.
+JG-045 and JG-046 add the backend capture path for jobs found outside CSV upload. JG-047 adds the authenticated quick-add UI and bookmarklet, and JG-048 locks the full browser/lifecycle flow down with regressions. Capture is intentionally not an application action and not a visit event.
 
 ### Persistence and migration
 
@@ -3058,6 +3058,31 @@ Creating a capture writes only `CsvRow` plus its idempotency receipt. It keeps `
 
 When a captured row is deliberately sent to Applications through `POST /crm/from-rows/bulk`, capture notes copy into an empty application note. Existing application notes are preserved by default. The optional `capture_notes_mode="append"` deliberately appends the draft after existing notes. Capture notes never silently overwrite application notes.
 
+
+
+### Quick-add page, bookmarklet, and login recovery
+
+The authenticated `/capture` page provides short URL, title, company, and optional notes fields. It checks `POST /crm/application-matches` after a valid URL is entered and renders exact/canonical/possible prior-application context as ordinary escaped React text. A warning is informational and never merges rows or changes application state.
+
+The generated bookmarklet reads only the current page's `location.href` and `document.title` when the user invokes it. It opens:
+
+`/capture#payload=<encoded JSON>`
+
+The browser fragment is used instead of a server query parameter so the source URL is not sent in the initial HTTP request. The app validates a bounded 32 KiB fragment payload, accepts only the documented draft fields, strips the fragment from browser history immediately, and stores a valid draft in `sessionStorage` for at most one hour. Malformed, oversized, or expired drafts are discarded.
+
+If authentication is required, only the exact same-origin application path `/capture` is accepted as an OAuth return destination. External URLs and arbitrary internal paths are rejected. The signed server session carries the safe return path while the editable capture draft stays browser-local in `sessionStorage`.
+
+Saving uses one stable idempotency key across recoverable retries. Network/API failures leave the user's edits in place. Success distinguishes a newly created row from an already-existing owned row and links back to Job Links plus matching application history when available.
+
+Browser popup behavior is not under JobGrid's control. The bookmarklet opens in the browser where it was clicked and does not claim it can force Chrome. If a popup is blocked, it exposes the generated capture link in a copy prompt for manual navigation.
+
+### Capture lifecycle and timing evidence
+
+The browser and backend regressions prove that capture, visit, and apply stay separate lifecycle actions. A capture alone creates no visit/application lifecycle event. Repeating the real row-open action creates only one `first_visited`, and repeating the apply action creates only one `first_applied`. Deleting a source CSV row detaches the application snapshot rather than deleting its application history. Portable backup/restore preserves capture provenance.
+
+`frontend/tests/capture.spec.ts` also runs five sequential saves through the actual Chromium capture form and records each elapsed duration in the CI log and Playwright annotation. The regression requires every automated browser capture to complete in under 60 seconds. These are automated browser timings, not fabricated human stopwatch measurements.
+
+
 ### F6 verification
 
 Focused backend checks:
@@ -3067,10 +3092,19 @@ cd backend
 python -m pytest \
   tests/test_capture_models.py \
   tests/test_capture_api.py \
+  tests/test_availability_models.py \
   tests/test_backup_contract.py \
   tests/test_schema_parity.py -q
 python -m compileall app
 python -m alembic upgrade head
+```
+
+Focused frontend checks:
+
+```sh
+cd frontend
+npm run build
+npm run test:e2e -- tests/capture.spec.ts --project=chromium
 ```
 
 Repository CI remains the authoritative full PostgreSQL migration, backend, production frontend build, and Chromium integration gate.
@@ -3078,3 +3112,56 @@ Repository CI remains the authoritative full PostgreSQL migration, backend, prod
 ### F6 rollback
 
 Stop callers from using `POST /crm/jobs/capture` first. Existing captured rows remain ordinary CSV rows and can continue to be viewed safely. Application and visit semantics require no rollback because capture never writes those facts. Revision 014 is additive and can remain deployed while older code ignores its columns/tables. Downgrade from 014 to 013 only after capture traffic has stopped and any capture provenance that must be retained has been exported.
+
+
+## F7 availability and deadline persistence foundation, JG-049
+
+JG-049 adds the persistence and deterministic domain rules required by the later outbound checker and freshness UI. It does **not** make network requests, schedule automatic checks, or add freshness/deadline controls to Today. Those behaviors remain owned by JG-050 and JG-051.
+
+### Storage and migration
+
+Alembic revision `015_job_availability` follows the current revision `014`. It creates:
+
+- `job_availability`, uniquely keyed by `(user_id, job_url)`, with nullable UTC `deadline_at`, nullable `deadline_source=user|import`, `state=unknown|available|unavailable|closed`, last-check evidence, user-confirmed closure time, and a positive optimistic `version`.
+- `job_check_requests`, which contains only bounded operational request metadata: UUID request ID, owner, availability ID, request/completion times, `pending|running|done|failed` status, lease time, and a bounded error code.
+
+Availability belongs to the owner and original job URL, not to a CSV row. Deleting a CSV source row therefore cannot delete the deadline or availability fact. The request table has indexes for owner/rate-window reads and status/lease recovery. `prune_job_check_requests()` removes request metadata older than seven days. No response bodies, redirect chains, page contents, credentials, or fetched URLs are stored there.
+
+### Availability precedence
+
+A user-confirmed `closed` state is authoritative. The shared checker-result function will not reopen it even if a later observation is HTTP 2xx. For non-closed records, the conservative evidence mapping is:
+
+- HTTP 2xx → `available`
+- HTTP 404 or 410 → `unavailable`
+- HTTP 403 or 429 → `unknown`
+- timeout, transport failure, or no usable response → `unknown`
+
+Only explicit user confirmation creates `state=closed` and `confirmed_closed_at`. This prevents bot blocking or transient provider errors from becoming false closure facts.
+
+### Deadline timezone and Today contract
+
+Timestamp deadlines must include an explicit timezone and are stored as UTC. A date-only value such as `2026-11-01` is interpreted as **23:59:59.999999 in the account's validated IANA timezone** and then converted to UTC. The conversion uses `zoneinfo`, so daylight-saving transitions use the correct offset. `DeadlineConversion.interpretation` keeps the exact local interpretation available for a future UI confirmation.
+
+A deadline is eligible for the future Today deadline action when it exists and is before the account's next local midnight. That includes overdue deadlines. It excludes:
+
+- user-confirmed `closed` jobs
+- applications in terminal `rejected`, `offer`, or `not_applying` state
+
+It does not hide unrelated manual Today work. Stable deadline identity is `deadline:{availability_id}:{deadline_at_utc}`; JG-051 owns rendering and mutation UX for that action.
+
+### Backup and rollback
+
+Portable backup schema revision `2.11.0` adds optional `job_availability` records. Restore maps ownership to the authenticated destination user and reconciles availability by owner plus original job URL. Older valid v2 backups that omit the section retain their original checksum shape and restore with an empty availability section.
+
+`job_check_requests` are deliberately excluded from portable backup because they are short-lived operational lease/rate metadata rather than user content.
+
+Normal code rollback should leave revision 015 in place so deadlines and user-confirmed closure facts are preserved while older application code ignores them. Downgrade from 015 to 014 only when the availability/deadline data is intentionally disposable or has been preserved elsewhere.
+
+Focused verification:
+
+```sh
+cd backend
+python -m pytest tests/test_availability_models.py tests/test_backup_contract.py tests/test_schema_parity.py -q
+python -m compileall app
+python -m alembic upgrade head
+```
