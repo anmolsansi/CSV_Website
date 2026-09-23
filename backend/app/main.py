@@ -21,10 +21,14 @@ from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
 from .services.today_f8 import build_today_queue_with_interviews, snooze_action_with_interviews
+from .services.import_backups import (
+    export_backup_v2_with_import_mappings,
+    restore_backup_payload_with_import_mappings,
+)
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from . import contact_models
-from .routers import auth_router, availability, backup, capture, company_aliases, contacts, crm, documents, email, evidence, reminders, rows, today, upload
+from . import contact_models, import_models
+from .routers import auth_router, availability, backup, capture, company_aliases, contacts, crm, documents, email, evidence, imports, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 # F8 extends the established Today route without replacing its request contract.
@@ -32,6 +36,12 @@ from .sentry_init import init_sentry
 # continues to own auth/error handling while the service gains interview actions.
 today.build_today_queue = build_today_queue_with_interviews
 today.snooze_action = snooze_action_with_interviews
+
+# F9 extends the already-versioned portable v2 backup without changing the
+# legacy v1 route or transient-preview storage contract. Only saved mappings are
+# added; uploaded preview/raw/rejected payloads remain intentionally transient.
+backup.export_backup_v2_with_contacts = export_backup_v2_with_import_mappings
+backup.restore_backup_payload_with_contacts = restore_backup_payload_with_import_mappings
 
 if "sqlite" not in settings.DATABASE_URL:
     alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
@@ -196,6 +206,7 @@ app.include_router(upload.router)
 app.include_router(availability.router)
 app.include_router(rows.router)
 app.include_router(backup.router)
+app.include_router(imports.router)
 app.include_router(capture.router)
 app.include_router(company_aliases.router)
 app.include_router(evidence.router)
@@ -248,11 +259,14 @@ if settings.TEST_AUTH:
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
         from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobAvailability, JobCheckRequest, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
         from .contact_models import ApplicationContact, Contact, Interview, MutationReceipt
+        from .import_models import ImportMapping, ImportPreview
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
+        db.query(ImportPreview).filter_by(user_id=user.id).delete()
+        db.query(ImportMapping).filter_by(user_id=user.id).delete()
         db.query(RequestWindowCounter).filter_by(user_id=user.id).delete()
         db.query(CaptureRequest).filter_by(user_id=user.id).delete()
         db.query(JobCheckRequest).filter_by(user_id=user.id).delete()
