@@ -12,7 +12,13 @@ from pydantic import BaseModel, ConfigDict
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import CSV_COLUMNS, ColumnPreference, CsvRow, JobTrack, User
-from ..schemas import ColumnPrefIn, RowDeleteIn
+from ..schemas import ColumnPrefIn, PermanentDeletePreviewIn, RowDeleteIn, RowRestoreIn
+from ..services.bulk_actions import (
+    archive_rows,
+    permanent_delete_preview,
+    permanent_delete_rows,
+    restore_archived_rows,
+)
 from ..services.lifecycle import LifecycleEventError, record_visit
 from ..services.row_queries import (
     RowQuery,
@@ -20,6 +26,7 @@ from ..services.row_queries import (
     order_row_query,
     resolve_row_sort_column,
 )
+from ..undo_schemas import UndoContractError
 from .crm import emit_event, calculate_priority_score, calculate_triage
 
 router = APIRouter(tags=["rows"])
@@ -30,6 +37,10 @@ class RetentionPreferenceIn(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     retention_days: int | None
+
+
+def _raise_undo_contract(exc: UndoContractError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
 
 
 def _validate_retention_days(value: int | None) -> int | None:
@@ -50,9 +61,8 @@ def _clean_columns(columns: list[str]) -> list[str]:
             seen.add(col)
     return cleaned
 
-def _safe_sort_column(sort_by: str):
-    """Compatibility wrapper around the shared row sort contract."""
 
+def _safe_sort_column(sort_by: str):
     try:
         return resolve_row_sort_column(sort_by)
     except ValueError as exc:
@@ -82,6 +92,9 @@ def _row_stats(
     clicked_today_start: str | None,
     clicked_today_end: str | None,
 ) -> dict:
+    # Existing dashboard totals intentionally include archived source rows. This
+    # preserves the long-standing "clean table only, numbers stay the same"
+    # contract while Archive becomes recoverable.
     query = _base_user_query(db, user_id, ats_group)
     today_start = _parse_utc_naive(clicked_today_start)
     today_end = _parse_utc_naive(clicked_today_end)
@@ -100,15 +113,24 @@ def _row_stats(
     }
 
 
-def _ats_group_values(db: Session, user_id: int) -> list[str]:
+def _scope_filter(query, archive_scope: str):
+    if archive_scope == "active":
+        return query.filter(CsvRow.archived.is_(False))
+    if archive_scope == "archived":
+        return query.filter(CsvRow.archived.is_(True))
+    if archive_scope == "all":
+        return query
+    raise HTTPException(422, "Invalid archive_scope")
+
+
+def _ats_group_values(db: Session, user_id: int, archive_scope: str) -> list[str]:
+    query = db.query(CsvRow.ats_group).filter(
+        CsvRow.user_id == user_id,
+        CsvRow.ats_group.isnot(None),
+        CsvRow.ats_group != "",
+    )
     values = (
-        db.query(CsvRow.ats_group)
-        .filter(
-            CsvRow.user_id == user_id,
-            CsvRow.archived.is_(False),
-            CsvRow.ats_group.isnot(None),
-            CsvRow.ats_group != "",
-        )
+        _scope_filter(query, archive_scope)
         .distinct()
         .order_by(CsvRow.ats_group.asc())
         .all()
@@ -116,15 +138,14 @@ def _ats_group_values(db: Session, user_id: int) -> list[str]:
     return [value for (value,) in values if value]
 
 
-def _filter_option_values(db: Session, user_id: int, column) -> list[str]:
+def _filter_option_values(db: Session, user_id: int, column, archive_scope: str) -> list[str]:
+    query = db.query(column).filter(
+        CsvRow.user_id == user_id,
+        column.isnot(None),
+        column != "",
+    )
     values = (
-        db.query(column)
-        .filter(
-            CsvRow.user_id == user_id,
-            CsvRow.archived.is_(False),
-            column.isnot(None),
-            column != "",
-        )
+        _scope_filter(query, archive_scope)
         .distinct()
         .order_by(column.asc())
         .all()
@@ -136,6 +157,7 @@ def _filter_option_values(db: Session, user_id: int, column) -> list[str]:
 def list_rows(
     sort_by: str = Query("created_at"),
     sort_dir: Literal["asc", "desc"] = Query("desc"),
+    archive_scope: Literal["active", "archived", "all"] = Query("active"),
     ats_group: str | None = Query(None),
     location_group: str | None = Query(None),
     search_bucket: str | None = Query(None),
@@ -163,6 +185,7 @@ def list_rows(
     query_params = RowQuery(
         sort_by=sort_by,
         sort_dir=sort_dir,
+        archive_scope=archive_scope,
         ats_group=ats_group,
         location_group=location_group,
         search_bucket=search_bucket,
@@ -201,17 +224,18 @@ def list_rows(
         "columns": CSV_COLUMNS,
         "sort_by": sort_by,
         "sort_dir": sort_dir,
+        "archive_scope": archive_scope,
         "filters": {"ats_group": ats_group or ""},
         "filter_options": {
-            "ats_groups": _ats_group_values(db, user.id),
-            "location_groups": _filter_option_values(db, user.id, CsvRow.location_group),
-            "search_buckets": _filter_option_values(db, user.id, CsvRow.search_bucket),
-            "decisions": _filter_option_values(db, user.id, CsvRow.decision),
-            "sponsorship_statuses": _filter_option_values(db, user.id, CsvRow.sponsorship_status),
-            "fit_categories": _filter_option_values(db, user.id, CsvRow.fit_category),
-            "seniority_levels": _filter_option_values(db, user.id, CsvRow.seniority_level),
-            "work_models": _filter_option_values(db, user.id, CsvRow.work_model_extracted),
-            "role_families": _filter_option_values(db, user.id, CsvRow.role_family),
+            "ats_groups": _ats_group_values(db, user.id, archive_scope),
+            "location_groups": _filter_option_values(db, user.id, CsvRow.location_group, archive_scope),
+            "search_buckets": _filter_option_values(db, user.id, CsvRow.search_bucket, archive_scope),
+            "decisions": _filter_option_values(db, user.id, CsvRow.decision, archive_scope),
+            "sponsorship_statuses": _filter_option_values(db, user.id, CsvRow.sponsorship_status, archive_scope),
+            "fit_categories": _filter_option_values(db, user.id, CsvRow.fit_category, archive_scope),
+            "seniority_levels": _filter_option_values(db, user.id, CsvRow.seniority_level, archive_scope),
+            "work_models": _filter_option_values(db, user.id, CsvRow.work_model_extracted, archive_scope),
+            "role_families": _filter_option_values(db, user.id, CsvRow.role_family, archive_scope),
         },
         "stats": _row_stats(
             db,
@@ -223,6 +247,9 @@ def list_rows(
         "rows": [
             {
                 "id": row.id,
+                "version": int(row.version),
+                "archived": bool(row.archived),
+                "archived_at": row.archived_at,
                 "clicked": row.clicked,
                 "clicked_at": row.clicked_at,
                 "is_duplicate": row.is_duplicate,
@@ -298,6 +325,45 @@ def record_click(
     return {"id": row.id, "clicked": row.clicked, "clicked_at": row.clicked_at}
 
 
+@router.post("/rows/restore")
+def restore_rows(
+    payload: RowRestoreIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        result = restore_archived_rows(
+            db,
+            user_id=user.id,
+            row_ids=payload.row_ids,
+            expected_versions=payload.expected_versions,
+            mode=payload.mode,
+        )
+        db.commit()
+        return result
+    except UndoContractError as exc:
+        db.rollback()
+        _raise_undo_contract(exc)
+
+
+@router.post("/rows/permanent-delete/preview")
+def preview_permanent_delete(
+    payload: PermanentDeletePreviewIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        return permanent_delete_preview(
+            db,
+            user_id=user.id,
+            row_ids=payload.row_ids,
+            expected_versions=payload.expected_versions,
+        )
+    except UndoContractError as exc:
+        db.rollback()
+        _raise_undo_contract(exc)
+
+
 @router.delete("/rows")
 def delete_rows(
     payload: RowDeleteIn,
@@ -307,43 +373,33 @@ def delete_rows(
     if not payload.row_ids:
         raise HTTPException(400, "No rows selected")
 
-    query = db.query(CsvRow).filter(
-        CsvRow.user_id == user.id,
-        CsvRow.id.in_(payload.row_ids),
-    )
+    try:
+        if payload.mode == "archive":
+            result = archive_rows(
+                db,
+                user_id=user.id,
+                row_ids=payload.row_ids,
+                request_key=payload.request_key,
+                expected_versions=payload.expected_versions,
+            )
+            db.commit()
+            return result
 
-    if payload.mode == "archive":
-        # Bulk SQL bypasses ORM before_update events, so version is incremented
-        # explicitly in the same statement as the archive transition.
-        archive_now = datetime.utcnow()
-        updated = query.filter(CsvRow.archived.is_(False)).update(
-            {
-                CsvRow.archived: True,
-                CsvRow.archived_at: archive_now,
-                CsvRow.version: CsvRow.version + 1,
-            },
-            synchronize_session=False,
+        result = permanent_delete_rows(
+            db,
+            user_id=user.id,
+            row_ids=payload.row_ids,
+            confirmation_token=payload.confirmation_token,
+            expected_versions=payload.expected_versions,
         )
         db.commit()
-        return {"archived": updated, "deleted": 0}
-
-    # Application snapshots outlive their source CSV rows. Detach operations are
-    # real JobTrack/CsvRow mutations and therefore advance optimistic versions.
-    db.query(JobTrack).filter(
-        JobTrack.user_id == user.id, JobTrack.csv_row_id.in_(payload.row_ids),
-    ).update(
-        {JobTrack.csv_row_id: None, JobTrack.version: JobTrack.version + 1},
-        synchronize_session=False,
-    )
-    db.query(CsvRow).filter(
-        CsvRow.user_id == user.id, CsvRow.duplicate_of_id.in_(payload.row_ids),
-    ).update(
-        {CsvRow.duplicate_of_id: None, CsvRow.version: CsvRow.version + 1},
-        synchronize_session=False,
-    )
-    deleted = query.delete(synchronize_session=False)
-    db.commit()
-    return {"archived": 0, "deleted": deleted}
+        return result
+    except UndoContractError as exc:
+        db.rollback()
+        _raise_undo_contract(exc)
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/preferences")
