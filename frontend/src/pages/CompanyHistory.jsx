@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, formatApiError } from '../api/client'
+import ApplicationWorkspace from '../components/ApplicationWorkspace'
 
 const STATUS_COLORS = {
   opened: { bg: '#dbeafe', color: '#1e40af' },
@@ -31,6 +32,7 @@ export default function CompanyHistory() {
   const [aliasError, setAliasError] = useState('')
   const [aliasMessage, setAliasMessage] = useState('')
   const [aliasRetry, setAliasRetry] = useState(0)
+  const [expandedTrackId, setExpandedTrackId] = useState(focusTrackId || null)
 
   useEffect(() => {
     let active = true
@@ -86,6 +88,7 @@ export default function CompanyHistory() {
     if (element) {
       element.scrollIntoView({ block: 'center' })
       element.focus({ preventScroll: true })
+      setExpandedTrackId(focusTrackId)
     }
   }, [history, focusTrackId])
 
@@ -94,6 +97,7 @@ export default function CompanyHistory() {
     setPage(1)
     setCompany('')
     setHistory(null)
+    setExpandedTrackId(null)
   }
   const handleKeyDown = (e) => { if (e.key === 'Enter') search() }
 
@@ -181,7 +185,7 @@ export default function CompanyHistory() {
           {directory.companies.length === 0 && <p>No companies found. Select jobs on the Dashboard and mark them applied to remember them here.</p>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
             {directory.companies.map((item) => (
-              <button className="btn btn-grey" key={item.company} onClick={() => setCompany(item.company)}>
+              <button className="btn btn-grey" key={item.company} onClick={() => { setCompany(item.company); setExpandedTrackId(null) }}>
                 {item.company} · {item.total} jobs · {item.applied} applied
               </button>
             ))}
@@ -262,35 +266,53 @@ export default function CompanyHistory() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {history.roles.map((role) => {
                 const style = STATUS_COLORS[role.status] || STATUS_COLORS.opened
+                const expanded = expandedTrackId === role.track_id
                 return (
-                  <div
-                    key={role.track_id}
-                    id={`application-${role.track_id}`}
-                    tabIndex={-1}
-                    style={{
-                      background: '#fff',
-                      border: focusTrackId === role.track_id ? '2px solid #2563eb' : '1px solid #e5e7eb',
-                      borderRadius: 8,
-                      padding: 14,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{role.title || role.url}</div>
-                      {/^(https?):\/\//i.test(role.url) && <a href={role.url} target="_blank" rel="noopener noreferrer">View job</a>}
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        {role.ats_group && <span style={{ marginRight: 8 }}>{role.ats_group}</span>}
-                        {role.opened_at && <span style={{ marginRight: 8 }}>Opened: {new Date(role.opened_at).toLocaleDateString()}</span>}
-                        {role.applied_at && <span style={{ marginRight: 8 }}>Applied: {new Date(role.applied_at).toLocaleDateString()}</span>}
-                        {role.follow_up_at && <span>Follow-up: {new Date(role.follow_up_at).toLocaleDateString()}</span>}
+                  <div key={role.track_id}>
+                    <div
+                      id={`application-${role.track_id}`}
+                      tabIndex={-1}
+                      style={{
+                        background: '#fff',
+                        border: focusTrackId === role.track_id ? '2px solid #2563eb' : '1px solid #e5e7eb',
+                        borderRadius: 8,
+                        padding: 14,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{role.title || role.url}</div>
+                        {/^(https?):\/\//i.test(role.url) && <a href={role.url} target="_blank" rel="noopener noreferrer">View job</a>}
+                        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                          {role.ats_group && <span style={{ marginRight: 8 }}>{role.ats_group}</span>}
+                          {role.opened_at && <span style={{ marginRight: 8 }}>Opened: {new Date(role.opened_at).toLocaleDateString()}</span>}
+                          {role.applied_at && <span style={{ marginRight: 8 }}>Applied: {new Date(role.applied_at).toLocaleDateString()}</span>}
+                          {role.follow_up_at && <span>Follow-up: {new Date(role.follow_up_at).toLocaleDateString()}</span>}
+                        </div>
+                        {role.notes && <div style={{ fontSize: 12, color: '#374151', marginTop: 4, fontStyle: 'italic' }}>{role.notes}</div>}
                       </div>
-                      {role.notes && <div style={{ fontSize: 12, color: '#374151', marginTop: 4, fontStyle: 'italic' }}>{role.notes}</div>}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: style.bg, color: style.color, textTransform: 'capitalize' }}>
+                          {role.status}
+                        </span>
+                        <button
+                          className="btn btn-grey btn-sm"
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedTrackId((current) => current === role.track_id ? null : role.track_id)}
+                        >
+                          {expanded ? 'Hide people & interviews' : 'People & interviews'}
+                        </button>
+                      </div>
                     </div>
-                    <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: style.bg, color: style.color, textTransform: 'capitalize' }}>
-                      {role.status}
-                    </span>
+                    {expanded && (
+                      <div style={{ marginTop: 8 }}>
+                        <ApplicationWorkspace application={{ id: role.track_id, company: history.company, title: role.title }} />
+                      </div>
+                    )}
                   </div>
                 )
               })}
