@@ -58,7 +58,7 @@ Duplicate planning is conservative. Exact original-URL matches are the only reco
 - `invalid_policy`: `reject` or `skip`
 - `replace_empty` for deliberate empty replacement
 
-Defaults are insert-only and reject-invalid. Before mutation, commit rechecks owner, expiry, preview version, payload replay identity, and destination fingerprint. PostgreSQL uses an account-scoped advisory transaction lock. Non-PostgreSQL local/test execution relies on that database engine's transaction semantics; no process-local mutex is claimed.
+Defaults are insert-only and reject-invalid. Before mutation, commit rechecks owner, expiry, preview version, payload replay identity, and destination fingerprint. PostgreSQL uses an account-scoped advisory transaction lock. SQLite local/test mode serializes commit reconciliation by acquiring the database write lock with a no-op authenticated-owner row update inside the same transaction before the preview is read.
 
 If the destination changed since preview, commit returns `409 destination_changed`; it does not silently re-plan. Reusing the same idempotency key with the same payload returns the recorded final result. Reusing it with different content returns a conflict.
 
@@ -84,7 +84,8 @@ python -m pytest \
   tests/test_jg056_acceptance.py \
   tests/test_import_preview_models.py \
   tests/test_import_preview.py \
-  tests/test_import_commit.py -q
+  tests/test_import_commit.py \
+  tests/test_import_lock.py -q
 ```
 
 The required JG-058 regressions are named:
