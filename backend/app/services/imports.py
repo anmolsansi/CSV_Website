@@ -516,9 +516,21 @@ def get_owned_import_preview(db: Session, *, user_id: int, preview_id: str) -> I
 
 
 def _acquire_account_import_lock(db: Session, *, user_id: int) -> None:
-    if db.bind is not None and db.bind.dialect.name == "postgresql":
+    if db.bind is None:
+        return
+    dialect_name = db.bind.dialect.name
+    if dialect_name == "postgresql":
         lock_key = _IMPORT_LOCK_NAMESPACE + int(user_id)
         db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+        return
+    if dialect_name == "sqlite":
+        # SQLite has no row-level FOR UPDATE/advisory lock. A no-op write against
+        # the authenticated owner row acquires the database write lock inside
+        # the current transaction before preview state is read or reconciled.
+        db.execute(
+            text("UPDATE users SET id = id WHERE id = :user_id"),
+            {"user_id": int(user_id)},
+        )
 
 
 def _commit_payload_hash(payload: ImportCommitRequest) -> str:
