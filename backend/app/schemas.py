@@ -40,10 +40,6 @@ class RowDeleteIn(BaseModel):
     confirmation_token: Optional[str] = None
 
     def model_post_init(self, __context) -> None:
-        # Before F10, callers commonly sent mode="delete" explicitly. Keep that
-        # frozen source-delete contract when no F10 confirmation context is
-        # present. A permanent-delete confirmation token or expected-version
-        # map keeps mode explicit so the guarded archived-row path is used.
         if (
             self.mode == "delete"
             and self.confirmation_token is None
@@ -72,6 +68,11 @@ class JobTrackUpdateIn(BaseModel):
     applied_at: Optional[str] = None
     follow_up_at: Optional[str] = None
     mark_applied: bool = False
+
+    def model_post_init(self, __context) -> None:
+        if self.status == "applied" and "applied_at" not in self.__pydantic_fields_set__ and not self.mark_applied:
+            self.mark_applied = True
+            self.__pydantic_fields_set__.add("mark_applied")
 
 
 class BulkUpdateIn(BaseModel):
