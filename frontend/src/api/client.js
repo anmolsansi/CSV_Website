@@ -158,6 +158,20 @@ export const api = {
   markRowApplied: (rowId) =>
     client.post('/crm/from-rows/bulk', { row_ids: [rowId], status: 'applied' }).then((r) => r.data),
 
+  // CRM - Job freshness and deadlines
+  getJobAvailability: (rowId) =>
+    client.get(`/crm/jobs/${rowId}/availability`).then((r) => r.data),
+  updateJobAvailability: (rowId, payload) =>
+    client.patch(`/crm/jobs/${rowId}/availability`, payload).then((r) => r.data),
+  checkJobAvailability: (rowId) =>
+    client.post(`/crm/jobs/${rowId}/availability/check`).then((r) => r.data),
+  getTrackAvailability: (trackId) =>
+    client.get(`/crm/tracks/${trackId}/availability`).then((r) => r.data),
+  updateTrackAvailability: (trackId, payload) =>
+    client.patch(`/crm/tracks/${trackId}/availability`, payload).then((r) => r.data),
+  checkTrackAvailability: (trackId) =>
+    client.post(`/crm/tracks/${trackId}/availability/check`).then((r) => r.data),
+
   // CRM - Private document versions
   getDocuments: () => client.get('/crm/documents').then((r) => r.data),
   uploadDocument: (file, { kind, label, documentFamilyId, signal, onProgress, idempotencyKey } = {}) => {

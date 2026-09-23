@@ -834,11 +834,18 @@ def test_no_n_plus_one_queue_queries(db_session):
         event.remove(bind, "before_cursor_execute", capture_statement)
 
     assert len(result["items"]) == 12
-    assert len(statements) == 3
+    # Manual actions, follow-ups, deadline contexts, and overrides are loaded in
+    # four fixed queries regardless of queue size. Deadline metadata is joined
+    # in the source query instead of triggering per-action lookups.
+    assert len(statements) == 4
     source_query = statements[0].lower()
     assert "join job_tracks" in source_query
     assert "join csv_rows" in source_query
     assert "join saved_views" in source_query
+    deadline_query = statements[2].lower()
+    assert "job_availability" in deadline_query
+    assert "join job_tracks" in deadline_query
+    assert "join csv_rows" in deadline_query
 
 
 def test_today_postgres_query_plans_use_owner_due_indexes(db_session):

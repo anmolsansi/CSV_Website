@@ -180,7 +180,7 @@ def test_backup_keeps_deadline_source(db_session):
     db_session.commit()
 
     payload = export_backup_v2(db_session, source.id)
-    assert payload["schema_revision"] == "2.11.0"
+    assert payload["schema_revision"] == "2.12.0"
     assert len(payload["sections"]["job_availability"]) == 1
     exported = payload["sections"]["job_availability"][0]
     assert exported["job_url"] == url

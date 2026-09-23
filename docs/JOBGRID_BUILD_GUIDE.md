@@ -3165,3 +3165,132 @@ python -m pytest tests/test_availability_models.py tests/test_backup_contract.py
 python -m compileall app
 python -m alembic upgrade head
 ```
+
+
+## F7 job freshness and deadline workflow, JG-050 through JG-052
+
+JG-050 through JG-052 turn the revision-015 persistence foundation into a user-facing manual freshness workflow. The design keeps manual deadline and closure controls independent from outbound networking. A deployment can therefore ship the complete manual workflow while URL checking stays disabled.
+
+### Manual availability API
+
+Authenticated owners can read or mutate availability through either source shape:
+
+- `GET/PATCH /crm/jobs/{row_id}/availability` uses the owned CSV row URL.
+- `GET/PATCH /crm/tracks/{track_id}/availability` uses the owned application URL and works even when `csv_row_id` is null.
+- `POST .../availability/check` is available only when `JOB_URL_CHECKS_ENABLED=true`.
+
+GET is side-effect free. If no durable `JobAvailability` row exists yet, it returns the effective defaults with `state=unknown` and `version=1`. PATCH creates the row only when the user makes a manual change.
+
+PATCH requires the current positive `version`. A stale version returns HTTP 409 and does not write. `deadline_at` accepts either a timezone-aware ISO timestamp or a date-only value. Date-only input is stored as the last microsecond of that day in the user's account timezone. Sending `deadline_at: null` clears the deadline and its source.
+
+Manual state writes are intentionally narrower than checker states. The API accepts only `closed` and `unknown`, with `confirm_state_change=true`. Closing writes `confirmed_closed_at` and `check_reason=user_confirmed_closed`. Reopening clears the confirmation and returns the state to `unknown`. Users cannot manually forge `available` or `unavailable` checker evidence.
+
+### Safe URL-check capability
+
+The environment flag is disabled by default:
+
+```sh
+JOB_URL_CHECKS_ENABLED=false
+JOB_URL_CHECK_LEASE_SECONDS=120
+```
+
+No automatic URL-check scheduler is registered. When the flag is false, the UI does not render a Check link control and clearly states that deadline, close, and reopen controls still work. This is the supported manual-only release path.
+
+When explicitly enabled, each check is user-invoked and uses `SafeJobFetcher`. The safety boundary is enforced before every network hop:
+
+1. Accept only HTTP or HTTPS URLs and reject embedded credentials.
+2. Resolve the hostname and reject the whole target if any returned IPv4 or IPv6 address is not globally routable. Mixed public/private answer sets are rejected.
+3. Choose a validated address and pass that exact IP to the transport. The transport never performs its own DNS lookup.
+4. For HTTPS, connect to the pinned IP while keeping the original hostname for TLS certificate verification and the HTTP Host identity.
+5. Send only JobGrid-owned headers. Browser cookies, authorization headers, and other caller credentials are never forwarded.
+6. Revalidate every redirect destination, with at most three redirects.
+7. Enforce a maximum ten-second check budget and a 128 KiB GET body ceiling. HEAD is attempted first and bounded GET is used only when the server rejects HEAD.
+8. Store only status/timing metadata. Raw bodies, redirect bodies, cookies, and credentials are never persisted.
+
+Private, loopback, link-local, reserved, multicast, unspecified, and otherwise non-global targets fail before the transport is called. Redirects to such destinations also fail before a second request. DNS rebinding cannot replace the pinned destination because the transport receives the validated IP directly.
+
+Checker results remain conservative. HTTP 2xx records `available`; 404/410 records `unavailable`; 403/429, timeout, malformed/oversized response, redirect failure, DNS failure, and transport failure record `unknown`. No network result can set `closed`. A user-confirmed closed row stays closed even if a later check reaches HTTP 2xx.
+
+### Durable request limits and recovery
+
+`JobCheckRequest` supplies the cross-process request ledger. Before inserting a request, the service locks the authenticated account row and checks persisted request history:
+
+- at most one request per owner and job URL in a rolling hour;
+- at most 20 requests per owner in a rolling day.
+
+HTTP 429 includes `Retry-After`. The claim helper takes at most ten pending requests and uses database row locks with `SKIP LOCKED` where supported. Running rows receive a bounded lease. An expired lease becomes `failed` with `lease_expired`, which makes a later deliberate, rate-limited request recoverable instead of leaving a permanent running state.
+
+The API queues one durable request and runs only that user-requested check as a FastAPI background task. There is no periodic crawler. Transient check-request metadata is pruned after seven days and remains excluded from portable backups.
+
+### Freshness UI
+
+`frontend/src/components/JobAvailability.jsx` is shared by the dashboard job drawer and expanded application details. It shows:
+
+- the cautious state label: Status unknown, Link reachable, Link unavailable, or Closed by you;
+- last checked time and short evidence reason;
+- deadline source;
+- an account-timezone date editor with the end-of-day interpretation visible;
+- explicit Mark closed or Reopen confirmation controls;
+- Check link only when the server advertises the enabled capability;
+- loading, pending, success, conflict/failure, and manual-only fallback states.
+
+Deadline drafts are kept when a save fails. The UI never interprets an ambiguous network failure as closure.
+
+### Today deadline actions
+
+`GET /crm/today` now derives deadline actions in addition to manual actions and follow-ups. The stable key is:
+
+```text
+deadline:{availability_id}:{deadline_at_utc}
+```
+
+A deadline appears when it is before the account's next local midnight, including overdue deadlines. It is excluded when the user confirmed the job closed or the matching application is `rejected`, `offer`, or `not_applying`.
+
+Deadline filtering is source-specific. A closed job removes only its derived deadline action. An unrelated manual `WorkItem`, including one linked to the same row, remains visible until the user completes or snoozes that manual action.
+
+Deadline actions use the existing `WorkItemOverride` snooze mechanism, so no second snooze store exists. The UI intentionally does not offer a generic Complete button for deadline actions. The user opens details and resolves the source explicitly instead of accidentally turning task completion into a closure fact.
+
+### Reminder interaction
+
+After a manual availability mutation, JobGrid re-runs the existing follow-up reminder source rules for applications with the same owned URL. A user-confirmed closed state cancels only unsent `pending` or `failed` reminder deliveries. Sent history is immutable. Reopening can re-plan the ordinary follow-up reminder if the application and reminder preference are still eligible.
+
+This release does not invent a separate deadline-reminder lead time. Deadline edits trigger source revalidation, while F4 continues to own follow-up reminder scheduling.
+
+### Backup, restore, and rollback
+
+Portable backup schema revision `2.12.0` continues to include `job_availability` and exclude `job_check_requests`. It also represents deadline snoozes through portable availability references so restored action keys use destination IDs. A restored user-confirmed closed state retains `confirmed_closed_at`, `check_reason`, deadline metadata, and optimistic version.
+
+For operational rollback:
+
+1. Set `JOB_URL_CHECKS_ENABLED=false` first. This removes new outbound check entry points without affecting deadlines or manual closure state.
+2. Leave migration 015 and the `job_availability` data in place. Older code can ignore the additive tables.
+3. Keep manual deadline/close/reopen behavior available unless the application rollback itself removes those routes.
+4. Do not rewrite `closed`, `unknown`, sent reminder history, or application history during rollback.
+
+A URL-safety uncertainty is a reason to keep the checker disabled, not a reason to disable the manual freshness feature.
+
+### F7 verification
+
+Focused backend safety and integration checks:
+
+```sh
+cd backend
+python -m pytest \
+  tests/test_safe_job_fetch.py \
+  tests/test_availability_api.py \
+  tests/test_availability_models.py \
+  tests/test_today_api.py \
+  tests/test_reminder_api.py -q
+python -m compileall app
+```
+
+Frontend verification:
+
+```sh
+cd frontend
+npm ci
+npm run build
+npx playwright test tests/job-freshness.spec.ts --project=chromium
+```
+
+The complete release gate remains the repository GitHub Actions workflow, which applies migrations on PostgreSQL, runs the full backend suite and compile check, builds the production frontend, and runs the full Chromium collection.

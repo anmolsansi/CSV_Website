@@ -31,6 +31,13 @@ function formatDue(value, timeZone) {
   }).format(new Date(value))
 }
 
+function availabilityLabel(state) {
+  if (state === 'available') return 'Link reachable'
+  if (state === 'unavailable') return 'Link unavailable'
+  if (state === 'closed') return 'Closed by you'
+  return 'Status unknown'
+}
+
 function groupItems(items, asOf, timeZone) {
   const todayKey = localDateKey(asOf, timeZone)
   return items.reduce((groups, item) => {
@@ -271,13 +278,20 @@ export default function Today() {
                   <tr key={item.action_key}>
                     <td><strong>{item.description}</strong></td>
                     <td>{item.company || '—'}{item.role ? <><br /><span style={{ color: '#6b7280' }}>{item.role}</span></> : null}</td>
-                    <td>{item.origin_label || item.type}</td>
+                    <td>
+                      {item.origin_label || item.type}
+                      {item.type === 'deadline' && (
+                        <><br /><span style={{ color: '#6b7280' }}>{availabilityLabel(item.availability_state)}</span></>
+                      )}
+                    </td>
                     <td>{formatDue(item.due_at, queue.timezone || 'UTC')}</td>
                     <td>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        <button className="btn btn-green btn-sm" disabled={pending} onClick={() => complete(item)}>
-                          {pending ? 'Saving...' : 'Complete'}
-                        </button>
+                        {item.type !== 'deadline' && (
+                          <button className="btn btn-green btn-sm" disabled={pending} onClick={() => complete(item)}>
+                            {pending ? 'Saving...' : 'Complete'}
+                          </button>
+                        )}
                         <button className="btn btn-grey btn-sm" disabled={pending} onClick={(event) => openDialog('snooze', item, event)}>Snooze</button>
                         {item.type === 'followup' && (
                           <button className="btn btn-grey btn-sm" disabled={pending} onClick={(event) => openDialog('reschedule', item, event)}>Reschedule</button>

@@ -20,7 +20,7 @@ from .evidence_schemas import (
 from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.11.0"
+BACKUP_SCHEMA_REVISION = "2.12.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -296,10 +296,12 @@ class WorkItemBackupV2(BackupRecordBase):
 
 
 class WorkItemOverrideBackupV2(BackupRecordBase):
-    kind: Literal["manual", "followup"]
+    kind: Literal["manual", "followup", "deadline"]
     work_item_ref: str | None = None
     track_ref: str | None = None
+    availability_ref: str | None = None
     follow_up_due_at: str | None = None
+    deadline_due_at: str | None = None
     snoozed_until: str
     version: int = Field(gt=0)
 
@@ -310,14 +312,43 @@ class WorkItemOverrideBackupV2(BackupRecordBase):
             field_name="work_item_overrides.snoozed_until",
         )
         if self.kind == "manual":
-            if self.work_item_ref is None or self.track_ref is not None or self.follow_up_due_at is not None:
+            if (
+                self.work_item_ref is None
+                or self.track_ref is not None
+                or self.availability_ref is not None
+                or self.follow_up_due_at is not None
+                or self.deadline_due_at is not None
+            ):
                 raise ValueError("Manual override requires exactly work_item_ref.")
-        else:
-            if self.track_ref is None or self.work_item_ref is not None or self.follow_up_due_at is None:
-                raise ValueError("Follow-up override requires track_ref and follow_up_due_at.")
+        elif self.kind == "followup":
+            if (
+                self.track_ref is None
+                or self.work_item_ref is not None
+                or self.availability_ref is not None
+                or self.follow_up_due_at is None
+                or self.deadline_due_at is not None
+            ):
+                raise ValueError(
+                    "Follow-up override requires track_ref and follow_up_due_at."
+                )
             _validate_utc_timestamp(
                 self.follow_up_due_at,
                 field_name="work_item_overrides.follow_up_due_at",
+            )
+        else:
+            if (
+                self.availability_ref is None
+                or self.work_item_ref is not None
+                or self.track_ref is not None
+                or self.follow_up_due_at is not None
+                or self.deadline_due_at is None
+            ):
+                raise ValueError(
+                    "Deadline override requires availability_ref and deadline_due_at."
+                )
+            _validate_utc_timestamp(
+                self.deadline_due_at,
+                field_name="work_item_overrides.deadline_due_at",
             )
         return self
 
@@ -1129,9 +1160,14 @@ def _validate_reference_graph(document: BackupDocumentV2, refs: dict[str, set[st
                 refs, "work_items", override.work_item_ref,
                 source_section="work_item_overrides", source_ref=override.backup_ref,
             )
-        else:
+        elif override.kind == "followup":
             _require_target(
                 refs, "job_tracks", override.track_ref,
+                source_section="work_item_overrides", source_ref=override.backup_ref,
+            )
+        else:
+            _require_target(
+                refs, "job_availability", override.availability_ref,
                 source_section="work_item_overrides", source_ref=override.backup_ref,
             )
 
