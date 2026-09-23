@@ -21,8 +21,11 @@ function formatInZone(iso, timeZone) {
   try {
     return new Intl.DateTimeFormat(undefined, {
       timeZone,
-      dateStyle: 'medium',
-      timeStyle: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
       timeZoneName: 'short',
     }).format(new Date(iso))
   } catch {
