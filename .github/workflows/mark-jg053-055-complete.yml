@@ -42,7 +42,6 @@ jobs:
           }
 
           for ticket, (next_ticket, completion_text) in completions.items():
-              # Mark the ordered implementation checklist entry complete.
               checklist_pattern = rf"(?m)^- \[ \] (\[{re.escape(ticket)} —[^\n]+)$"
               text, count = re.subn(checklist_pattern, r"- [x] \1", text, count=1)
               if count != 1:
@@ -55,8 +54,8 @@ jobs:
               section = text[start:end]
 
               section, count = re.subn(
-                  r"\*\*Status:\*\* PROPOSED / unchecked",
-                  "**Status:** COMPLETED / checked",
+                  r"\*\*Status:\*\* PROPOSED / unchecked[ \t]*\n",
+                  "**Status:** COMPLETED / checked\n",
                   section,
                   count=1,
               )
