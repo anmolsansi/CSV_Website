@@ -17,9 +17,11 @@ from ..models import ApplyPilotBatch, AuditEvent, CsvRow, JobTrack, SavedView, S
 from ..services.backups import (
     MAX_BACKUP_BUNDLE_UPLOAD_BYTES,
     export_backup_bundle,
-    export_backup_v2,
     restore_backup_bundle,
-    restore_backup_payload,
+)
+from ..services.contact_backups import (
+    export_backup_v2_with_contacts,
+    restore_backup_payload_with_contacts,
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -34,7 +36,7 @@ def export_backup(
 ):
     """Export the legacy v1 document by default, or the complete v2 contract on request."""
     if version in {"2", "2.0"}:
-        backup = export_backup_v2(db, user.id)
+        backup = export_backup_v2_with_contacts(db, user.id)
         content = json.dumps(backup, indent=2, ensure_ascii=False, allow_nan=False).encode("utf-8")
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         return StreamingResponse(
@@ -147,7 +149,7 @@ async def import_backup(
                 413,
                 "Backup JSON exceeds the 20 MiB uncompressed limit.",
             )
-        result = restore_backup_payload(db, user.id, raw, mode)
+        result = restore_backup_payload_with_contacts(db, user.id, raw, mode)
         affected = sum(values["created"] for values in result["counts"].values())
         logger.info(
             "backup_restore operation_id=%s outcome=success mode=%s affected=%s elapsed_ms=%s",
@@ -179,7 +181,6 @@ async def import_backup(
         ) from exc
     finally:
         await file.close()
-
 
 
 @router.get("/backup/export/bundle")
