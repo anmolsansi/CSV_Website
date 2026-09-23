@@ -11946,7 +11946,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-050"></a>
 ### JG-050 — Implement manual freshness and a disabled-by-default safe check adapter
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** Feature rank 7  
 **Type:** API/service  
 **Execution position:** 50/64; group step 2/4
@@ -12128,15 +12128,15 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-050 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: ipv4_ipv6_private_and_mixed_dns_answers_blocked
-- [ ] Required regression passes: dns_rebinding_cannot_change_pinned_destination
-- [ ] Required regression passes: redirect_private_target_blocked
-- [ ] Required regression passes: timeout_and403_unknown
-- [ ] Required regression passes: 404_unavailable_not_closed
-- [ ] Required regression passes: body_limit_stops_read
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-050 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: ipv4_ipv6_private_and_mixed_dns_answers_blocked
+- [x] Required regression passes: dns_rebinding_cannot_change_pinned_destination
+- [x] Required regression passes: redirect_private_target_blocked
+- [x] Required regression passes: timeout_and403_unknown
+- [x] Required regression passes: 404_unavailable_not_closed
+- [x] Required regression passes: body_limit_stops_read
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -12154,12 +12154,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -12168,18 +12168,18 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-049` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #146; implementation PR: #147.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-049 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-050 was implemented and verified in PR #147. CI run #351 passed backend tests, backend compile, frontend build, and Chromium E2E. The outbound URL-check capability remains disabled by default unless `JOB_URL_CHECKS_ENABLED=true`; manual deadline, close, reopen, Today, reminder, backup, and restore behavior is available independently.
 
 ---
 
 <a id="jg-051"></a>
 ### JG-051 — Show deadlines freshness labels and Today actions
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** Feature rank 7  
 **Type:** interface integration  
 **Execution position:** 51/64; group step 3/4
@@ -12357,13 +12357,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-051 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: closed_job_deadline_excluded_but_manual_task_retained
-- [ ] Required regression passes: deadline_edit_updates_today_and_unsent_reminder
-- [ ] Required regression passes: disabled_check_capability_has_manual_fallback
-- [ ] Required regression passes: timezone_label_visible
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-051 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: closed_job_deadline_excluded_but_manual_task_retained
+- [x] Required regression passes: deadline_edit_updates_today_and_unsent_reminder
+- [x] Required regression passes: disabled_check_capability_has_manual_fallback
+- [x] Required regression passes: timezone_label_visible
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -12381,12 +12381,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -12395,18 +12395,18 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-050` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #146; implementation PR: #147.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-050 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-051 was implemented and verified in PR #147. CI run #351 passed backend tests, backend compile, frontend build, and Chromium E2E. The outbound URL-check capability remains disabled by default unless `JOB_URL_CHECKS_ENABLED=true`; manual deadline, close, reopen, Today, reminder, backup, and restore behavior is available independently.
 
 ---
 
 <a id="jg-052"></a>
 ### JG-052 — Validate freshness limits and false-closure resistance
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked  
 **Priority:** Feature rank 7  
 **Type:** verification/operations  
 **Execution position:** 52/64; group step 4/4
@@ -12580,14 +12580,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-052 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: job-freshness.spec.ts: manual_deadline_close_reopen
-- [ ] Required regression passes: ambiguous_network_response_never_closes
-- [ ] Required regression passes: concurrent_rate_limit_enforced
-- [ ] Required regression passes: restore_preserves_user_confirmation
-- [ ] Required regression passes: unsafe_request_count_zero
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-052 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: job-freshness.spec.ts: manual_deadline_close_reopen
+- [x] Required regression passes: ambiguous_network_response_never_closes
+- [x] Required regression passes: concurrent_rate_limit_enforced
+- [x] Required regression passes: restore_preserves_user_confirmation
+- [x] Required regression passes: unsafe_request_count_zero
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F7.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -12605,12 +12605,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -12619,11 +12619,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-051` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #146; implementation PR: #147.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-051 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-052 was implemented and verified in PR #147. CI run #351 passed backend tests, backend compile, frontend build, and Chromium E2E. The outbound URL-check capability remains disabled by default unless `JOB_URL_CHECKS_ENABLED=true`; manual deadline, close, reopen, Today, reminder, backup, and restore behavior is available independently.
 
 ---
 
