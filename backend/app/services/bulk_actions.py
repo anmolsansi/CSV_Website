@@ -23,7 +23,6 @@ def utc_now() -> datetime:
 
 
 def _db_utc(value: datetime) -> datetime:
-    """Compare SQLite-naive and PostgreSQL-aware timestamps as aware UTC values."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
@@ -109,14 +108,25 @@ def archive_rows(
     expected_versions: dict[int, int] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Archive rows and write their undo journal in the caller-owned transaction."""
+    """Archive rows and write their undo journal in the caller-owned transaction.
+
+    Historical callers omitted request_key and received exactly archived/deleted.
+    First-party F10 callers send a stable request_key and receive additive Undo
+    metadata. Both paths still journal the mutation transactionally.
+    """
     ids = _normalize_ids(row_ids)
+    legacy_response = request_key is None
     key = _canonical_request_key(request_key)
     existing = db.query(BulkAction).filter(
         BulkAction.user_id == user_id,
         BulkAction.request_key == key,
     ).first()
     if existing is not None:
+        if legacy_response:
+            return {
+                "archived": int((existing.result_json or {}).get("archived", 0)),
+                "deleted": int((existing.result_json or {}).get("deleted", 0)),
+            }
         return _action_result(existing)
 
     rows = _owned_rows(db, user_id=user_id, row_ids=ids)
@@ -142,6 +152,8 @@ def archive_rows(
         planned.append((row, before))
 
     if not planned:
+        if legacy_response:
+            return {"archived": 0, "deleted": 0}
         return {
             "archived": 0,
             "deleted": 0,
@@ -173,14 +185,16 @@ def archive_rows(
         result={"archived": len(effects), "deleted": 0},
         now=reference_now,
     )
-    result = _action_result(action)
-    result["replayed"] = replayed
     action.result_json = {
         **(action.result_json or {}),
         "archived": len(effects),
         "deleted": 0,
     }
     db.flush()
+    if legacy_response:
+        return {"archived": len(effects), "deleted": 0}
+    result = _action_result(action)
+    result["replayed"] = replayed
     return result
 
 
@@ -500,9 +514,6 @@ def permanent_delete_rows(
             field="confirmation_token",
         )
 
-    # These are the only database FKs to csv_rows. Durable application-owned
-    # evidence, documents, contacts, interviews, availability and reminders hang
-    # from JobTrack and therefore survive after its optional source pointer clears.
     tracks = db.query(JobTrack).filter(
         JobTrack.user_id == user_id,
         JobTrack.csv_row_id.in_(ids),
