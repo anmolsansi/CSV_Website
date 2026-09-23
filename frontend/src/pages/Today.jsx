@@ -249,16 +249,22 @@ export default function Today() {
     }
   }
 
-  const complete = (item) => mutateItem(item, () => (
-    item.type === 'manual'
-      ? api.updateWorkItem(item.id, { version: item.version, state: 'done' })
-      : api.resolveTodayFollowUp({ action_key: item.action_key, resolution: 'clear' })
-  ))
+  const complete = (item) => {
+    if (!['manual', 'followup'].includes(item.type)) return
+    return mutateItem(item, () => (
+      item.type === 'manual'
+        ? api.updateWorkItem(item.id, { version: item.version, state: 'done' })
+        : api.resolveTodayFollowUp({ action_key: item.action_key, resolution: 'clear' })
+    ))
+  }
 
   const openDetails = (item) => {
+    if (item.track_id) {
+      navigate(`/applications?track_id=${encodeURIComponent(item.track_id)}`)
+      return
+    }
     const q = [item.company, item.role].filter(Boolean).join(' ')
-    if (item.track_id) navigate(`/applications${q ? `?q=${encodeURIComponent(q)}` : ''}`)
-    else navigate(`/${q ? `?q=${encodeURIComponent(q)}` : ''}`)
+    navigate(`/${q ? `?q=${encodeURIComponent(q)}` : ''}`)
   }
 
   const renderGroup = (title, items) => (
@@ -283,11 +289,14 @@ export default function Today() {
                       {item.type === 'deadline' && (
                         <><br /><span style={{ color: '#6b7280' }}>{availabilityLabel(item.availability_state)}</span></>
                       )}
+                      {item.type === 'interview' && (
+                        <><br /><span style={{ color: '#6b7280' }}>{item.round_label || 'Interview'}{item.interview_timezone ? ` · ${item.interview_timezone}` : ''}</span></>
+                      )}
                     </td>
                     <td>{formatDue(item.due_at, queue.timezone || 'UTC')}</td>
                     <td>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {item.type !== 'deadline' && (
+                        {['manual', 'followup'].includes(item.type) && (
                           <button className="btn btn-green btn-sm" disabled={pending} onClick={() => complete(item)}>
                             {pending ? 'Saving...' : 'Complete'}
                           </button>
@@ -340,7 +349,11 @@ export default function Today() {
         <button className="btn btn-blue" onClick={() => loadToday()}>Refresh</button>
       </div>
 
-      {loadError && <div className="error-msg" role="alert">{loadError} <button className="btn btn-grey btn-sm" onClick={() => loadToday()}>Retry</button></div>}\n\n      <ReminderSettings />\n\n      <div className="stats-grid app-stats-grid">
+      {loadError && <div className="error-msg" role="alert">{loadError} <button className="btn btn-grey btn-sm" onClick={() => loadToday()}>Retry</button></div>}
+
+      <ReminderSettings />
+
+      <div className="stats-grid app-stats-grid">
         <div className="stat-card"><span>Overdue</span><strong>{queue.counts?.overdue ?? grouped.overdue.length}</strong></div>
         <div className="stat-card"><span>Due today</span><strong>{queue.counts?.due_today ?? grouped.dueToday.length}</strong></div>
         <div className="stat-card"><span>Undated</span><strong>{queue.counts?.undated ?? grouped.undated.length}</strong></div>
