@@ -203,9 +203,11 @@ def test_ics_injection_cannot_add_second_event(db_session):
     db_session.add(interview)
     db_session.flush()
     text = build_interview_ics(interview, track).decode("utf-8")
+    lines = text.split("\r\n")
 
-    assert text.count("BEGIN:VEVENT") == 1
-    assert text.count("END:VEVENT") == 1
+    assert lines.count("BEGIN:VEVENT") == 1
+    assert lines.count("END:VEVENT") == 1
+    assert "SUMMARY:Injected" not in lines
     assert "private notes" not in text
     assert "private prep" not in text
     assert "Room 1\\nEND:VEVENT\\nBEGIN:VEVENT\\nSUMMARY:Injected" in text
