@@ -83,6 +83,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md
           git rm .github/workflows/f10-roadmap-marker.yml
-          git diff --cached --check
           git commit -m "docs: mark JG-062 through JG-064 complete [roadmap-marker] (#156)"
           git push origin HEAD:jg-062-064-undo-archive-recovery
