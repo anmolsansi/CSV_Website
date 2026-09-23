@@ -104,7 +104,6 @@ class Interview(Base):
         CheckConstraint("kind IN ('phone', 'video', 'onsite', 'other')", name="ck_interviews_kind"),
         CheckConstraint("status IN ('scheduled', 'completed', 'cancelled')", name="ck_interviews_status"),
         CheckConstraint("ends_at > starts_at", name="ck_interviews_time_order"),
-        CheckConstraint("ends_at <= starts_at + INTERVAL '24 hours'", name="ck_interviews_max_duration_postgresql"),
         CheckConstraint("length(timezone) BETWEEN 1 AND 64", name="ck_interviews_timezone_length"),
         CheckConstraint("meeting_url IS NULL OR length(meeting_url) <= 2048", name="ck_interviews_meeting_url_length"),
         CheckConstraint("location IS NULL OR length(location) <= 500", name="ck_interviews_location_length"),
