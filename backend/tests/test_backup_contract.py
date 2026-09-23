@@ -89,6 +89,7 @@ def _complete_csv_row(**overrides):
             "is_duplicate": False,
             "duplicate_of_ref": None,
             "url": "https://example.com/job/1",
+            "version": 1,
         }
     )
     record.update(overrides)
@@ -106,6 +107,7 @@ def _complete_track(**overrides):
             "open_count": 0,
             "created_at": NOW,
             "updated_at": NOW,
+            "version": 1,
         }
     )
     record.update(overrides)
