@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import logging
+from datetime import datetime
 from time import perf_counter
 from uuid import uuid4
 
@@ -96,6 +97,14 @@ def _spreadsheet_safe_csv_value(value):
     return value
 
 
+def _safe_download_stem(filename: str) -> str:
+    stem = filename.rsplit(".", 1)[0]
+    cleaned = "".join(
+        char for char in stem if char.isalnum() or char in {"-", "_", " "}
+    ).strip()
+    return (cleaned[:100] or "import").replace(" ", "_")
+
+
 @router.post("/preview", status_code=201)
 async def post_import_preview(
     file: UploadFile = File(...),
@@ -159,7 +168,7 @@ def get_import_preview(
 ):
     try:
         preview = get_owned_import_preview(db, user_id=user.id, preview_id=preview_id)
-        if preview.status != "committed" and preview.expires_at.isoformat() <= __import__("datetime").datetime.utcnow().isoformat():
+        if preview.status != "committed" and preview.expires_at <= datetime.utcnow():
             raise ImportContractError(
                 "import_preview_expired",
                 "Import preview has expired. Create a new preview.",
@@ -208,8 +217,6 @@ def download_rejected_rows(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    from datetime import datetime
-
     try:
         preview = get_owned_import_preview(db, user_id=user.id, preview_id=preview_id)
         if preview.expires_at <= datetime.utcnow():
@@ -237,7 +244,7 @@ def download_rejected_rows(
             *original_values,
         ])
     content = output.getvalue().encode("utf-8-sig")
-    safe_stem = preview.source_filename.rsplit(".", 1)[0] or "import"
+    safe_stem = _safe_download_stem(preview.source_filename)
     return StreamingResponse(
         io.BytesIO(content),
         media_type="text/csv; charset=utf-8",
@@ -245,5 +252,6 @@ def download_rejected_rows(
             "Content-Disposition": f'attachment; filename="{safe_stem}_rejected.csv"',
             "Cache-Control": "no-store",
             "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
         },
     )
