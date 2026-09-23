@@ -86,7 +86,8 @@ def test_version_changes_on_each_mutation_path(auth_client, db_session):
 
     # Dashboard archive is raw bulk SQL and increments in the same statement.
     archive_row = _row(db_session, user, "archive")
-    archive_response = auth_client.delete(
+    archive_response = auth_client.request(
+        "DELETE",
         "/rows",
         json={"row_ids": [archive_row.id], "mode": "archive"},
     )
