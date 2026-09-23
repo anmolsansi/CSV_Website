@@ -58,7 +58,7 @@ Duplicate planning is conservative. Exact original-URL matches are the only reco
 - `invalid_policy`: `reject` or `skip`
 - `replace_empty` for deliberate empty replacement
 
-Defaults are insert-only and reject-invalid. Before mutation, commit rechecks owner, expiry, preview version, payload replay identity, and destination fingerprint. PostgreSQL uses an account-scoped advisory transaction lock. The process-local lock provides the equivalent single-process test/runtime boundary outside PostgreSQL.
+Defaults are insert-only and reject-invalid. Before mutation, commit rechecks owner, expiry, preview version, payload replay identity, and destination fingerprint. PostgreSQL uses an account-scoped advisory transaction lock. Non-PostgreSQL local/test execution relies on that database engine's transaction semantics; no process-local mutex is claimed.
 
 If the destination changed since preview, commit returns `409 destination_changed`; it does not silently re-plan. Reusing the same idempotency key with the same payload returns the recorded final result. Reusing it with different content returns a conflict.
 
