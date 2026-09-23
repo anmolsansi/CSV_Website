@@ -8,6 +8,8 @@ JG-059, JG-060, and JG-061 are locally verified on branch `jg-059-061-import-ui-
 
 The implementation gate passed in CI run #410 on commit `bb86f5f59db284e91334c0e226f78b9a53f375db`. That run completed successfully after correcting two stale backup-test expectations without weakening the production schema: generic backup fixtures now include the required optimistic `version`, and the availability backup regression expects schema revision `2.13.0`.
 
+The canonical roadmap completion state is part of this branch’s final documentation gate. The temporary automation used to edit the large roadmap file is removed before merge.
+
 This document records local implementation acceptance only. It does not claim staging acceptance or production release.
 
 ## Required CI
