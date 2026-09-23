@@ -188,13 +188,9 @@ def _legacy_delete_rows(db: Session, *, user_id: int, row_ids: list[int]) -> dic
     for row_id in unique_ids:
         db.delete(by_id[row_id])
     db.flush()
-    return {
-        "deleted": len(unique_ids),
-        "archived": 0,
-        "detached_applications": len(tracks),
-        "detached_duplicates": len(duplicates),
-        "legacy_compatibility": True,
-    }
+    # Historical callers compare the exact response shape. Detachment remains
+    # an internal preservation detail, not an additive response field.
+    return {"deleted": len(unique_ids), "archived": 0}
 
 
 @router.get("/rows")
@@ -291,11 +287,11 @@ def list_rows(
         "rows": [
             {
                 "id": row.id,
-                "version": int(row.version),
-                "archived": bool(row.archived),
-                "archived_at": row.archived_at,
                 "clicked": row.clicked,
                 "clicked_at": row.clicked_at,
+                "archived": row.archived,
+                "archived_at": row.archived_at,
+                "version": row.version,
                 "is_duplicate": row.is_duplicate,
                 "duplicate_of_id": row.duplicate_of_id,
                 "data": {col: getattr(row, col) for col in CSV_COLUMNS},
