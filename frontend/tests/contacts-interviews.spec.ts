@@ -14,9 +14,9 @@ async function resetAndLogin(request: APIRequestContext) {
   expect(login.ok()).toBeTruthy()
 }
 
-async function createApplication(request: APIRequestContext) {
+async function createApplication(request: APIRequestContext, rowPage = 1) {
   const rows = await request.get(`${API_URL}/rows`, {
-    params: { page: 1, page_size: 1, sort_by: 'created_at', sort_dir: 'asc' },
+    params: { page: rowPage, page_size: 1, sort_by: 'created_at', sort_dir: 'asc' },
   })
   expect(rows.ok()).toBeTruthy()
   const row = (await rows.json()).rows[0]
@@ -31,6 +31,33 @@ async function createApplication(request: APIRequestContext) {
   })
   expect(updated.ok()).toBeTruthy()
   return await updated.json()
+}
+
+async function createContact(request: APIRequestContext) {
+  const response = await request.post(`${API_URL}/crm/contacts`, {
+    headers: { 'Idempotency-Key': randomUUID() },
+    data: {
+      name: 'Casey Recruiter',
+      email: 'casey.recruiter@example.test',
+      company_display: 'F8 Recruiting',
+      notes: 'Private referral context',
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return await response.json()
+}
+
+async function linkRecruiter(request: APIRequestContext, trackId: number, contactId: number) {
+  const response = await request.post(`${API_URL}/crm/tracks/${trackId}/contacts`, {
+    headers: { 'Idempotency-Key': randomUUID() },
+    data: {
+      contact_id: contactId,
+      role: 'recruiter',
+      referral_source: 'Warm introduction',
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return await response.json()
 }
 
 function localHour(date: Date, timeZone: string) {
@@ -61,34 +88,15 @@ function safeTestTimezone(now = new Date()) {
   }) || 'UTC'
 }
 
-async function createContactAndInterviews(request: APIRequestContext, trackId: number) {
+async function createInterviewFixture(request: APIRequestContext, trackId: number) {
   const timezone = safeTestTimezone()
   const timezoneResponse = await request.patch(`${API_URL}/crm/profile/timezone`, {
     data: { timezone },
   })
   expect(timezoneResponse.ok()).toBeTruthy()
 
-  const contactResponse = await request.post(`${API_URL}/crm/contacts`, {
-    headers: { 'Idempotency-Key': randomUUID() },
-    data: {
-      name: 'Casey Recruiter',
-      email: 'casey.recruiter@example.test',
-      company_display: 'F8 Recruiting',
-      notes: 'Private referral context',
-    },
-  })
-  expect(contactResponse.ok()).toBeTruthy()
-  const contact = await contactResponse.json()
-
-  const link = await request.post(`${API_URL}/crm/tracks/${trackId}/contacts`, {
-    headers: { 'Idempotency-Key': randomUUID() },
-    data: {
-      contact_id: contact.id,
-      role: 'recruiter',
-      referral_source: 'Warm introduction',
-    },
-  })
-  expect(link.ok()).toBeTruthy()
+  const contact = await createContact(request)
+  await linkRecruiter(request, trackId, contact.id)
 
   const now = Date.now()
   const startsAt = new Date(now + 2 * 60 * 60 * 1000)
@@ -128,27 +136,93 @@ async function createContactAndInterviews(request: APIRequestContext, trackId: n
   return { contact, first, overlapping, timezone }
 }
 
+async function restoreTimezone(request: APIRequestContext) {
+  const restored = await request.patch(`${API_URL}/crm/profile/timezone`, {
+    data: { timezone: 'UTC' },
+  })
+  expect(restored.ok()).toBeTruthy()
+  const profile = await request.get(`${API_URL}/crm/profile/timezone`)
+  expect(profile.ok()).toBeTruthy()
+  expect((await profile.json()).timezone).toBe('UTC')
+}
+
 test.describe('JG-055 people and interview workspace', () => {
-  test('people_interviews_company_history_calendar_and_today', async ({ page, request }) => {
+  test('recruiter_reused_across_applications', async ({ page, request }) => {
     await resetAndLogin(request)
 
+    const firstApplication = await createApplication(request, 1)
+    const secondApplication = await createApplication(request, 2)
+    expect(secondApplication.id).not.toBe(firstApplication.id)
+
+    const contact = await createContact(request)
+    const firstLink = await linkRecruiter(request, firstApplication.id, contact.id)
+    const secondLink = await linkRecruiter(request, secondApplication.id, contact.id)
+
+    expect(firstLink.contact.id).toBe(contact.id)
+    expect(secondLink.contact.id).toBe(contact.id)
+    expect(secondLink.id).not.toBe(firstLink.id)
+
+    await page.goto(`/applications?track_id=${firstApplication.id}`)
+    const firstWorkspace = page.getByTestId('application-f8-workspace')
+    await expect(firstWorkspace).toBeVisible({ timeout: 15000 })
+    const firstPerson = firstWorkspace.getByTestId(`application-person-${firstLink.id}`)
+    await expect(firstPerson.getByText('Casey Recruiter', { exact: true })).toBeVisible()
+    await expect(firstPerson.getByText('casey.recruiter@example.test', { exact: true })).toBeVisible()
+
+    await page.goto(`/applications?track_id=${secondApplication.id}`)
+    const secondWorkspace = page.getByTestId('application-f8-workspace')
+    await expect(secondWorkspace).toBeVisible({ timeout: 15000 })
+    const secondPerson = secondWorkspace.getByTestId(`application-person-${secondLink.id}`)
+    await expect(secondPerson.getByText('Casey Recruiter', { exact: true })).toBeVisible()
+    await expect(secondPerson.getByText('Source: Warm introduction', { exact: true })).toBeVisible()
+
+    await page.goto(`/companies?company=${encodeURIComponent(firstApplication.company)}&track_id=${firstApplication.id}`)
+    const companyWorkspace = page.getByTestId('application-f8-workspace')
+    await expect(companyWorkspace).toBeVisible({ timeout: 15000 })
+    await expect(companyWorkspace.getByTestId(`application-person-${firstLink.id}`).getByText('Casey Recruiter', { exact: true })).toBeVisible()
+  })
+
+  test('interview_timezone_preview_matches_server', async ({ page, request }) => {
+    await resetAndLogin(request)
+    const application = await createApplication(request)
+
+    await page.goto(`/applications?track_id=${application.id}`)
+    const interviews = page.getByTestId('application-interviews')
+    await expect(interviews).toBeVisible({ timeout: 15000 })
+
+    await interviews.getByLabel('Timezone').fill('Asia/Kolkata')
+    await interviews.getByLabel('Starts').fill('2026-10-05T21:30')
+    await interviews.getByLabel('Ends').fill('2026-10-05T22:30')
+    await interviews.getByLabel('Round').fill('Timezone round')
+
+    const preview = interviews.getByTestId('interview-timezone-preview')
+    await expect(preview).toContainText('Chosen timezone:')
+    await expect(preview).toContainText('9:30')
+
+    await interviews.getByRole('button', { name: 'Schedule interview' }).click()
+    await expect(interviews.getByText('Timezone round', { exact: true })).toBeVisible({ timeout: 15000 })
+
+    const serverResponse = await request.get(`${API_URL}/crm/tracks/${application.id}/interviews`)
+    expect(serverResponse.ok()).toBeTruthy()
+    const serverInterview = (await serverResponse.json()).interviews.find((item: { round_label?: string }) => item.round_label === 'Timezone round')
+    expect(serverInterview).toBeTruthy()
+    expect(serverInterview.timezone).toBe('Asia/Kolkata')
+    expect(serverInterview.starts_at).toContain('2026-10-05T16:00:00')
+
+    const row = interviews.getByTestId(`application-interview-${serverInterview.id}`)
+    await expect(row).toContainText('9:30')
+    await expect(row).toContainText('(Asia/Kolkata)')
+  })
+
+  test('calendar_download_not_sent_message', async ({ page, request }) => {
+    await resetAndLogin(request)
+    const application = await createApplication(request)
+
     try {
-      const application = await createApplication(request)
-      const { contact, first, timezone } = await createContactAndInterviews(request, application.id)
-
+      const { first, timezone } = await createInterviewFixture(request, application.id)
       await page.goto(`/applications?track_id=${application.id}`)
-      const workspace = page.getByTestId('application-f8-workspace')
-      await expect(workspace).toBeVisible({ timeout: 15000 })
-
-      const people = workspace.getByTestId('application-people')
-      const person = people.getByTestId(`application-person-${contact.id}`)
-      await expect(person.getByText('Casey Recruiter', { exact: true })).toBeVisible()
-      await expect(person.getByText('casey.recruiter@example.test', { exact: true })).toBeVisible()
-      await expect(person.getByText('Source: Warm introduction', { exact: true })).toBeVisible()
-
-      const interviews = workspace.getByTestId('application-interviews')
-      await expect(interviews.getByText('Technical', { exact: true })).toBeVisible()
-      await expect(interviews.getByText('Panel', { exact: true })).toBeVisible()
+      const interviews = page.getByTestId('application-interviews')
+      await expect(interviews).toBeVisible({ timeout: 15000 })
       await expect(interviews.getByText(`(${timezone})`, { exact: false }).first()).toBeVisible()
       await expect(interviews.getByText(/Warning: overlaps 1 other scheduled interview/).first()).toBeVisible()
       await expect(interviews.getByText('Prep: Review system design tradeoffs', { exact: true })).toBeVisible()
@@ -160,13 +234,17 @@ test.describe('JG-055 people and interview workspace', () => {
       ])
       expect(download.suggestedFilename()).toBe(`jobgrid_interview_${first.id}.ics`)
       await expect(page.getByText('Calendar file downloaded. No invitation was sent.', { exact: true })).toBeVisible()
+    } finally {
+      await restoreTimezone(request)
+    }
+  })
 
-      await page.goto(`/companies?company=${encodeURIComponent(application.company)}&track_id=${application.id}`)
-      const companyWorkspace = page.getByTestId('application-f8-workspace')
-      await expect(companyWorkspace).toBeVisible({ timeout: 15000 })
-      const companyPerson = companyWorkspace.getByTestId(`application-person-${contact.id}`)
-      await expect(companyPerson.getByText('Casey Recruiter', { exact: true })).toBeVisible()
-      await expect(companyWorkspace.getByTestId(`application-interview-${first.id}`).getByText('Technical', { exact: true })).toBeVisible()
+  test('cancel_removes_today_interview_action', async ({ page, request }) => {
+    await resetAndLogin(request)
+    const application = await createApplication(request)
+
+    try {
+      const { first } = await createInterviewFixture(request, application.id)
 
       await page.goto('/today')
       const prepRow = page.locator('tr').filter({ hasText: 'Prepare for Technical interview' })
@@ -177,15 +255,21 @@ test.describe('JG-055 people and interview workspace', () => {
 
       await prepRow.getByRole('button', { name: 'Open details' }).click()
       await expect(page).toHaveURL(new RegExp(`/applications\\?track_id=${application.id}$`))
-      await expect(page.getByTestId('application-f8-workspace')).toBeVisible({ timeout: 15000 })
+
+      const interviewRow = page.getByTestId(`application-interview-${first.id}`)
+      await expect(interviewRow).toBeVisible({ timeout: 15000 })
+      await interviewRow.getByRole('button', { name: 'Cancel interview' }).click()
+      await expect(interviewRow).toContainText('cancelled')
+
+      const todayResponse = await request.get(`${API_URL}/crm/today`)
+      expect(todayResponse.ok()).toBeTruthy()
+      const todayItems = (await todayResponse.json()).items
+      expect(todayItems.some((item: { action_key: string }) => item.action_key.startsWith(`interview:${first.id}:`))).toBeFalsy()
+
+      await page.goto('/today')
+      await expect(page.locator('tr').filter({ hasText: 'Prepare for Technical interview' })).toHaveCount(0)
     } finally {
-      const restored = await request.patch(`${API_URL}/crm/profile/timezone`, {
-        data: { timezone: 'UTC' },
-      })
-      expect(restored.ok()).toBeTruthy()
-      const profile = await request.get(`${API_URL}/crm/profile/timezone`)
-      expect(profile.ok()).toBeTruthy()
-      expect((await profile.json()).timezone).toBe('UTC')
+      await restoreTimezone(request)
     }
   })
 })
