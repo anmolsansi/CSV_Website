@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
 import { api } from '../api/client'
+import { defaultImportMapping, readImportHeaders } from '../api/imports'
+import ImportPreview from './ImportPreview'
 
 function downloadInvalidRows(csvContent, filename) {
   if (!csvContent) return
@@ -12,89 +14,41 @@ function downloadInvalidRows(csvContent, filename) {
   URL.revokeObjectURL(url)
 }
 
-function UploadResult({ result }) {
+function ClassicUploadResult({ result }) {
   const [expanded, setExpanded] = useState(false)
   const missingOptionalColumns = result.missing_optional_columns || result.missing_expected_columns || []
   const missingRequiredColumns = result.missing_required_columns || []
   const unknownExtraColumns = result.unknown_extra_columns || []
 
-  const hasIssues =
-    result.duplicate_in_upload > 0 ||
-    result.duplicate_from_history > 0 ||
-    result.rows_missing_url > 0 ||
-    missingRequiredColumns.length > 0 ||
-    unknownExtraColumns.length > 0
-
   return (
-    <div className="upload-result" role="region" aria-label="Upload result details">
+    <div className="upload-result" role="region" aria-label="Classic upload result details">
       <div className="upload-result-header">
         <strong>{result.filename}</strong>
-        <span className="upload-result-summary">
-          {result.inserted} inserted
-          {result.duplicate_in_upload > 0 && (
-            <span className="upload-dup">{result.duplicate_in_upload} dup in file</span>
-          )}
-          {result.duplicate_from_history > 0 && (
-            <span className="upload-dup">{result.duplicate_from_history} already existed</span>
-          )}
-          {result.rows_missing_url > 0 && (
-            <span className="upload-warn">{result.rows_missing_url} missing URL</span>
-          )}
-        </span>
-        <button
-          className="btn btn-grey btn-sm"
-          onClick={() => setExpanded(!expanded)}
-          aria-expanded={expanded}
-        >
+        <span className="upload-result-summary">{result.inserted} inserted</span>
+        <button type="button" className="btn btn-grey btn-sm" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
           {expanded ? 'Less' : 'Details'}
         </button>
       </div>
-
       {expanded && (
         <div className="upload-result-details">
           <table className="upload-detail-table">
             <tbody>
-              <tr><td>Batch ID</td><td className="mono">{result.batch_id.slice(0, 8)}...</td></tr>
               <tr><td>Total rows received</td><td>{result.total_rows_received}</td></tr>
-              <tr><td>Unique URLs received</td><td>{result.unique_urls_received}</td></tr>
               <tr><td>Inserted</td><td className="positive">{result.inserted}</td></tr>
               <tr><td>Duplicates in same upload</td><td>{result.duplicate_in_upload}</td></tr>
               <tr><td>Duplicates from history</td><td>{result.duplicate_from_history}</td></tr>
-              <tr><td>Rows skipped (URL missing)</td><td className={result.rows_missing_url > 0 ? 'negative' : ''}>{result.rows_missing_url}</td></tr>
-              <tr><td>Columns detected</td><td>{result.columns_detected.length}</td></tr>
-              {missingRequiredColumns.length > 0 && (
-                <tr>
-                  <td>Missing required columns</td>
-                  <td className="negative">{missingRequiredColumns.join(', ')}</td>
-                </tr>
-              )}
-              {missingOptionalColumns.length > 0 && (
-                <tr>
-                  <td>Optional columns not included</td>
-                  <td className="muted">{missingOptionalColumns.join(', ')}</td>
-                </tr>
-              )}
-              {unknownExtraColumns.length > 0 && (
-                <tr>
-                  <td>Unknown extra columns</td>
-                  <td className="muted">{unknownExtraColumns.join(', ')}</td>
-                </tr>
-              )}
+              <tr><td>Rows skipped (URL missing)</td><td>{result.rows_missing_url}</td></tr>
+              {missingRequiredColumns.length > 0 && <tr><td>Missing required columns</td><td className="negative">{missingRequiredColumns.join(', ')}</td></tr>}
+              {missingOptionalColumns.length > 0 && <tr><td>Optional columns not included</td><td>{missingOptionalColumns.join(', ')}</td></tr>}
+              {unknownExtraColumns.length > 0 && <tr><td>Unknown extra columns</td><td>{unknownExtraColumns.join(', ')}</td></tr>}
             </tbody>
           </table>
           {result.invalid_rows_csv && (
-            <button
-              className="btn btn-grey btn-sm"
-              onClick={() => downloadInvalidRows(result.invalid_rows_csv, result.filename)}
-            >
+            <button type="button" className="btn btn-grey btn-sm" onClick={() => downloadInvalidRows(result.invalid_rows_csv, result.filename)}>
               Download skipped rows as CSV
             </button>
           )}
         </div>
-      )}
-
-      {!expanded && hasIssues && (
-        <span className="upload-result-hint">Click Details for breakdown</span>
       )}
     </div>
   )
@@ -102,59 +56,106 @@ function UploadResult({ result }) {
 
 export default function CsvUpload({ onUploaded }) {
   const inputRef = useRef()
-  const [uploading, setUploading] = useState(false)
-  const [result, setResult] = useState(null)
+  const [file, setFile] = useState(null)
+  const [headers, setHeaders] = useState([])
+  const [mapping, setMapping] = useState({})
+  const [preparing, setPreparing] = useState(false)
+  const [classicUploading, setClassicUploading] = useState(false)
+  const [classicResult, setClassicResult] = useState(null)
   const [error, setError] = useState('')
 
-  const handleChange = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setUploading(true)
-    setResult(null)
+  const reset = () => {
+    setFile(null)
+    setHeaders([])
+    setMapping({})
+    setClassicResult(null)
+    setError('')
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  const handleChange = async (event) => {
+    const nextFile = event.target.files?.[0]
+    if (!nextFile) return
+    setPreparing(true)
+    setClassicResult(null)
     setError('')
     try {
-      const res = await api.uploadCsv(file)
-      setResult(res)
-      onUploaded()
-    } catch (err) {
-      const detail = err.response?.data?.detail
-      if (typeof detail === 'object' && detail?.error) {
-        setError(detail.error)
-      } else {
-        setError(typeof detail === 'string' ? detail : 'Upload failed')
-      }
-    } finally {
-      setUploading(false)
+      const nextHeaders = await readImportHeaders(nextFile)
+      setFile(nextFile)
+      setHeaders(nextHeaders)
+      setMapping(defaultImportMapping(nextHeaders))
+    } catch (readError) {
+      setFile(null)
+      setHeaders([])
+      setMapping({})
+      setError(readError.message || 'Import file could not be read.')
       if (inputRef.current) inputRef.current.value = ''
+    } finally {
+      setPreparing(false)
+    }
+  }
+
+  const useClassicImport = async () => {
+    if (!file || !file.name.toLowerCase().endsWith('.csv')) return
+    setClassicUploading(true)
+    setError('')
+    try {
+      const result = await api.uploadCsv(file)
+      setClassicResult(result)
+      setFile(null)
+      setHeaders([])
+      setMapping({})
+      if (inputRef.current) inputRef.current.value = ''
+      onUploaded()
+    } catch (requestError) {
+      const detail = requestError.response?.data?.detail
+      if (typeof detail === 'object' && detail?.error) setError(detail.error)
+      else setError(typeof detail === 'string' ? detail : 'Classic upload failed')
+    } finally {
+      setClassicUploading(false)
     }
   }
 
   return (
     <div className="csv-upload">
-      <div className="csv-upload-input">
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv"
-          onChange={handleChange}
-          disabled={uploading}
-          aria-label="Upload CSV file"
-        />
-        {uploading && (
-          <span className="upload-spinner" role="progressbar" aria-label="Uploading file">
-            Uploading...
-          </span>
-        )}
-        <a className="btn btn-grey btn-sm upload-template-link" href="/jobgrid_sample.csv" download>
-          Download CSV template
-        </a>
-      </div>
-      {error && <div className="upload-error" role="alert">{error}</div>}
-      {result && (
-        <div aria-live="polite">
-          <UploadResult result={result} />
+      {!file && (
+        <div className="csv-upload-input">
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv,.json"
+            onChange={handleChange}
+            disabled={preparing || classicUploading}
+            aria-label="Upload CSV file"
+          />
+          {preparing && <span className="upload-spinner" role="progressbar" aria-label="Reading import headers">Reading headers…</span>}
+          <a className="btn btn-grey btn-sm upload-template-link" href="/jobgrid_sample.csv" download>Download CSV template</a>
         </div>
       )}
+
+      {error && <div className="upload-error" role="alert">{error}</div>}
+
+      {file && (
+        <>
+          <ImportPreview
+            file={file}
+            headers={headers}
+            initialMapping={mapping}
+            onCancel={reset}
+            onCommitted={() => onUploaded()}
+          />
+          {file.name.toLowerCase().endsWith('.csv') && (
+            <div className="upload-result-hint">
+              Need the previous behavior while the mapped importer is being rolled out?{' '}
+              <button type="button" className="btn btn-grey btn-sm" onClick={useClassicImport} disabled={classicUploading}>
+                {classicUploading ? 'Uploading…' : 'Use classic CSV import'}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {classicResult && <ClassicUploadResult result={classicResult} />}
     </div>
   )
 }

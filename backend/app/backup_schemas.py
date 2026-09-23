@@ -20,7 +20,7 @@ from .evidence_schemas import (
 from .reminder_schemas import HHMM_RE, OCCURRENCE_RE
 
 BACKUP_V2_VERSION = "2.0"
-BACKUP_SCHEMA_REVISION = "2.12.0"
+BACKUP_SCHEMA_REVISION = "2.13.0"
 BACKUP_V2_SECTIONS = (
     "csv_rows",
     "url_history",
@@ -136,6 +136,8 @@ CsvRowBackupV2 = create_model(
     clicked=(bool, ...),
     clicked_at=(str | None, ...),
     archived=(bool, ...),
+    # JG-061 optimistic version is additive; older portable v2 payloads restore as version 1.
+    version=(int, Field(default=1, gt=0)),
     # Optional default keeps older v2 payloads valid while new exports carry
     # the explicit archive timestamp.
     archived_at=(str | None, None),
@@ -155,6 +157,7 @@ class UrlHistoryBackupV2(BackupRecordBase):
 
 
 class JobTrackBackupV2(BackupRecordBase):
+    version: int = Field(default=1, gt=0)
     csv_row_ref: str | None
     url: str
     company: str | None
@@ -618,7 +621,7 @@ def _entries(
 
 
 CSV_ROW_EXPORTED_COLUMNS = (
-    "upload_batch_id", "created_at", "clicked", "clicked_at", "archived",
+    "version", "upload_batch_id", "created_at", "clicked", "clicked_at", "archived",
     "archived_at", "capture_source", "captured_at", "capture_notes",
     "is_duplicate", *CSV_ROW_TEXT_FIELDS
 )
@@ -670,7 +673,7 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
         ),
         **_entries(
             [
-                "url", "company", "title", "ats_group", "search_bucket",
+                "version", "url", "company", "title", "ats_group", "search_bucket",
                 "resume_match_score", "status", "opened_at", "applied_at",
                 "follow_up_at", "notes", "session_id", "open_count",
                 "last_opened_at", "created_at", "updated_at",

@@ -260,6 +260,7 @@ def _serialize_sections(
         backup_ref = refs["csv_rows"][row.id]
         record = {
             "backup_ref": backup_ref,
+            "version": row.version,
             "upload_batch_id": row.upload_batch_id,
             "created_at": _utc_iso(row.created_at),
             "clicked": row.clicked,
@@ -289,6 +290,7 @@ def _serialize_sections(
         backup_ref = refs["job_tracks"][item.id]
         sections["job_tracks"].append({
             "backup_ref": backup_ref,
+            "version": item.version,
             "csv_row_ref": _required_ref(
                 refs["csv_rows"], item.csv_row_id,
                 section="job_tracks", backup_ref=backup_ref,
@@ -869,7 +871,7 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
         if existing is None:
             counts["csv_rows"]["created"] += 1
         else:
-            fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
+            fields = ("version", "upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
             counts["csv_rows"][_classify_existing(_record_equal(existing, record, fields))] += 1
 
     for record in document.sections.url_history:
@@ -956,7 +958,7 @@ def _preflight_v2(session: Session, user_id: int, document: BackupDocumentV2) ->
             counts["job_tracks"]["created"] += 1
         else:
             fields = (
-                "url", "company", "title", "ats_group", "search_bucket", "resume_match_score",
+                "version", "url", "company", "title", "ats_group", "search_bucket", "resume_match_score",
                 "status", "opened_at", "applied_at", "follow_up_at", "notes", "session_id",
                 "open_count", "last_opened_at", "created_at", "updated_at",
             )
@@ -1274,7 +1276,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         existing = session.query(CsvRow).filter_by(user_id=user_id, url=record.url).first()
         if existing is not None:
             apply_persisted_job_identity(existing)
-            fields = ("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
+            fields = ("version", "upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)
             outcome = _classify_existing(_record_equal(existing, record, fields))
             refs["csv_rows"][record.backup_ref] = existing.id
             _persist_import_map(session, user_id, backup_id, "csv_rows", record.backup_ref, existing.id)
@@ -1285,6 +1287,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         values = {name: getattr(record, name) for name in CSV_ROW_TEXT_FIELDS}
         item = CsvRow(
             user_id=user_id,
+            version=record.version,
             upload_batch_id=record.upload_batch_id,
             created_at=_parse_backup_datetime(record.created_at),
             clicked=record.clicked,
@@ -1523,7 +1526,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
         if existing is not None:
             apply_persisted_job_identity(existing)
             fields = (
-                "url", "company", "title", "ats_group", "search_bucket", "resume_match_score",
+                "version", "url", "company", "title", "ats_group", "search_bucket", "resume_match_score",
                 "status", "opened_at", "applied_at", "follow_up_at", "notes", "session_id",
                 "open_count", "last_opened_at", "created_at", "updated_at",
             )
@@ -1536,6 +1539,7 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
             continue
         item = JobTrack(
             user_id=user_id,
+            version=record.version,
             csv_row_id=_target_id(refs, "csv_rows", record.csv_row_ref, "job_tracks", record.backup_ref),
             url=record.url,
             company=record.company,

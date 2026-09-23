@@ -249,6 +249,8 @@ def archive_eligible_rows(
                 duration_ms=int((perf_counter() - started) * 1000)
             )
 
+        # Bulk SQL bypasses ORM before_update hooks, so the optimistic version
+        # is advanced in the same statement as the first archive transition.
         archived = (
             db.query(CsvRow)
             .filter(
@@ -259,6 +261,7 @@ def archive_eligible_rows(
                 {
                     CsvRow.archived: True,
                     CsvRow.archived_at: reference_now,
+                    CsvRow.version: CsvRow.version + 1,
                 },
                 synchronize_session=False,
             )
