@@ -313,26 +313,34 @@ def delete_rows(
     )
 
     if payload.mode == "archive":
-        # Only the first false -> true transition owns the archive timestamp.
-        # Legacy archived rows can have archived_at=NULL and must remain unknown.
+        # Bulk SQL bypasses ORM before_update events, so version is incremented
+        # explicitly in the same statement as the archive transition.
         archive_now = datetime.utcnow()
         updated = query.filter(CsvRow.archived.is_(False)).update(
             {
                 CsvRow.archived: True,
                 CsvRow.archived_at: archive_now,
+                CsvRow.version: CsvRow.version + 1,
             },
             synchronize_session=False,
         )
         db.commit()
         return {"archived": updated, "deleted": 0}
 
-    # Application snapshots outlive their source CSV rows.
+    # Application snapshots outlive their source CSV rows. Detach operations are
+    # real JobTrack/CsvRow mutations and therefore advance optimistic versions.
     db.query(JobTrack).filter(
         JobTrack.user_id == user.id, JobTrack.csv_row_id.in_(payload.row_ids),
-    ).update({JobTrack.csv_row_id: None}, synchronize_session=False)
+    ).update(
+        {JobTrack.csv_row_id: None, JobTrack.version: JobTrack.version + 1},
+        synchronize_session=False,
+    )
     db.query(CsvRow).filter(
         CsvRow.user_id == user.id, CsvRow.duplicate_of_id.in_(payload.row_ids),
-    ).update({CsvRow.duplicate_of_id: None}, synchronize_session=False)
+    ).update(
+        {CsvRow.duplicate_of_id: None, CsvRow.version: CsvRow.version + 1},
+        synchronize_session=False,
+    )
     deleted = query.delete(synchronize_session=False)
     db.commit()
     return {"archived": 0, "deleted": deleted}
