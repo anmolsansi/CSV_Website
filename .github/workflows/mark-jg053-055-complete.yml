@@ -1,0 +1,112 @@
+name: Mark JG-053 through JG-055 complete
+
+on:
+  push:
+    branches:
+      - mark-jg053-055-complete
+
+permissions:
+  contents: write
+
+jobs:
+  update-roadmap:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Update JobGrid ticket completion state
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md")
+          text = path.read_text(encoding="utf-8")
+
+          completions = {
+              "JG-053": (
+                  "JG-054",
+                  "**COMPLETED.** JG-053 was implemented and verified in PR #150. CI run #384 passed backend tests, backend compile, frontend build, and Chromium E2E. Contacts, application-contact ownership, interview scheduling, mutation receipts, and portable backup/restore mapping are implemented. JG-056 remains the separate integrated F8 acceptance ticket.",
+              ),
+              "JG-054": (
+                  "JG-055",
+                  "**COMPLETED.** JG-054 was implemented and verified in PR #150. CI run #384 passed backend tests, backend compile, frontend build, and Chromium E2E. Owner-scoped contacts/interviews APIs, idempotent writes, optimistic versioning, overlap warnings, reminder reconciliation, and authenticated RFC5545 calendar downloads are implemented. JG-056 remains the separate integrated F8 acceptance ticket.",
+              ),
+              "JG-055": (
+                  "JG-056",
+                  "**COMPLETED.** JG-055 was implemented and verified in PR #150. CI run #384 passed backend tests, backend compile, frontend build, and Chromium E2E. Application and Company History people/interview panels, timezone previews, overlap warnings, explicit no-invitation calendar wording, and derived Today interview-preparation actions are implemented. JG-056 remains the separate integrated F8 acceptance ticket.",
+              ),
+          }
+
+          for ticket, (next_ticket, completion_text) in completions.items():
+              # Mark the ordered implementation checklist entry complete.
+              checklist_pattern = rf"(?m)^- \[ \] (\[{re.escape(ticket)} —[^\n]+)$"
+              text, count = re.subn(checklist_pattern, r"- [x] \1", text, count=1)
+              if count != 1:
+                  raise RuntimeError(f"Expected exactly one ordered checklist entry for {ticket}, found {count}")
+
+              start_marker = f'<a id="{ticket.lower()}"></a>'
+              next_marker = f'<a id="{next_ticket.lower()}"></a>'
+              start = text.index(start_marker)
+              end = text.index(next_marker, start)
+              section = text[start:end]
+
+              section, count = re.subn(
+                  r"\*\*Status:\*\* PROPOSED / unchecked",
+                  "**Status:** COMPLETED / checked",
+                  section,
+                  count=1,
+              )
+              if count != 1:
+                  raise RuntimeError(f"Expected one proposed status for {ticket}, found {count}")
+
+              def check_box_block(section_text: str, start_heading: str, end_heading: str) -> str:
+                  block_start = section_text.index(start_heading)
+                  block_end = section_text.index(end_heading, block_start)
+                  block = section_text[block_start:block_end]
+                  unchecked = block.count("- [ ] ")
+                  if unchecked == 0:
+                      raise RuntimeError(f"No unchecked boxes found in {ticket} block {start_heading}")
+                  block = block.replace("- [ ] ", "- [x] ")
+                  return section_text[:block_start] + block + section_text[block_end:]
+
+              section = check_box_block(section, "#### Acceptance criteria", "#### Release, rollout and rollback")
+              section = check_box_block(section, "#### Definition of done", "#### Suggested Linear metadata")
+
+              section, count = re.subn(
+                  r"(?m)^- External issue URL:.*$",
+                  "- External issue URL: GitHub issue #149; implementation PR: #150.",
+                  section,
+                  count=1,
+              )
+              if count != 1:
+                  raise RuntimeError(f"Expected one external issue metadata line for {ticket}, found {count}")
+
+              section, count = re.subn(
+                  r"(?s)(#### Ticket intake result\n\n).*?(?=\n\n---\s*$)",
+                  lambda match: match.group(1) + completion_text,
+                  section,
+                  count=1,
+              )
+              if count != 1:
+                  raise RuntimeError(f"Expected one ticket intake result for {ticket}, found {count}")
+
+              text = text[:start] + section + text[end:]
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate and commit the docs-only change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/mark-jg053-055-complete.yml
+          git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "docs(jobgrid): mark JG-053-055 complete [01/01] (#149) [skip ci]"
+          git push origin HEAD:mark-jg053-055-complete
