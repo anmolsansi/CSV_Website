@@ -1,0 +1,110 @@
+name: JG059-061 contract patch
+
+on:
+  push:
+    branches:
+      - jg-059-061-import-ui-undo-foundation
+    paths:
+      - .github/workflows/jg059061-contract-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact contract repairs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          schema = "backend/app/backup_schemas.py"
+          replace_once(schema, 'BACKUP_SCHEMA_REVISION = "2.12.0"', 'BACKUP_SCHEMA_REVISION = "2.13.0"')
+          replace_once(
+              schema,
+              '    archived=(bool, ...),\n    # Optional default keeps older v2 payloads valid while new exports carry',
+              '    archived=(bool, ...),\n    # JG-061 optimistic version is additive; older portable v2 payloads restore as version 1.\n    version=(int, Field(default=1, gt=0)),\n    # Optional default keeps older v2 payloads valid while new exports carry',
+          )
+          replace_once(
+              schema,
+              'class JobTrackBackupV2(BackupRecordBase):\n    csv_row_ref: str | None',
+              'class JobTrackBackupV2(BackupRecordBase):\n    version: int = Field(default=1, gt=0)\n    csv_row_ref: str | None',
+          )
+          replace_once(
+              schema,
+              'CSV_ROW_EXPORTED_COLUMNS = (\n    "upload_batch_id", "created_at", "clicked", "clicked_at", "archived",',
+              'CSV_ROW_EXPORTED_COLUMNS = (\n    "version", "upload_batch_id", "created_at", "clicked", "clicked_at", "archived",',
+          )
+          replace_once(
+              schema,
+              '                "url", "company", "title", "ats_group", "search_bucket",\n                "resume_match_score", "status", "opened_at", "applied_at",',
+              '                "version", "url", "company", "title", "ats_group", "search_bucket",\n                "resume_match_score", "status", "opened_at", "applied_at",',
+          )
+
+          backups = "backend/app/services/backups.py"
+          replace_once(
+              backups,
+              '        record = {\n            "backup_ref": backup_ref,\n            "upload_batch_id": row.upload_batch_id,',
+              '        record = {\n            "backup_ref": backup_ref,\n            "version": row.version,\n            "upload_batch_id": row.upload_batch_id,',
+          )
+          replace_once(
+              backups,
+              '        sections["job_tracks"].append({\n            "backup_ref": backup_ref,\n            "csv_row_ref": _required_ref(',
+              '        sections["job_tracks"].append({\n            "backup_ref": backup_ref,\n            "version": item.version,\n            "csv_row_ref": _required_ref(',
+          )
+          # Existing-record comparisons occur once in verify and once in restore for each entity.
+          p = Path(backups)
+          text = p.read_text()
+          row_fields = '("upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)'
+          if text.count(row_fields) != 2:
+              raise SystemExit(f"{backups}: expected two CsvRow comparison tuples, found {text.count(row_fields)}")
+          text = text.replace(row_fields, '("version", "upload_batch_id", "created_at", "clicked", "clicked_at", "archived", "archived_at", "capture_source", "captured_at", "capture_notes", "is_duplicate", *CSV_ROW_TEXT_FIELDS)')
+          track_fields = '"url", "company", "title", "ats_group", "search_bucket", "resume_match_score",\n                "status", "opened_at", "applied_at", "follow_up_at", "notes", "session_id",\n                "open_count", "last_opened_at", "created_at", "updated_at",'
+          if text.count(track_fields) != 2:
+              raise SystemExit(f"{backups}: expected two JobTrack comparison tuples, found {text.count(track_fields)}")
+          text = text.replace(track_fields, '"version", "url", "company", "title", "ats_group", "search_bucket", "resume_match_score",\n                "status", "opened_at", "applied_at", "follow_up_at", "notes", "session_id",\n                "open_count", "last_opened_at", "created_at", "updated_at",')
+          p.write_text(text)
+          replace_once(
+              backups,
+              '        item = CsvRow(\n            user_id=user_id,\n            upload_batch_id=record.upload_batch_id,',
+              '        item = CsvRow(\n            user_id=user_id,\n            version=record.version,\n            upload_batch_id=record.upload_batch_id,',
+          )
+          replace_once(
+              backups,
+              '        item = JobTrack(\n            user_id=user_id,\n            csv_row_id=_target_id(',
+              '        item = JobTrack(\n            user_id=user_id,\n            version=record.version,\n            csv_row_id=_target_id(',
+          )
+
+          replace_once(
+              "backend/tests/test_schema_parity.py",
+              'ALEMBIC_HEAD = "017"',
+              'ALEMBIC_HEAD = "018"',
+          )
+          replace_once(
+              "backend/tests/test_jg061_undo_foundation.py",
+              '    archive_response = auth_client.delete(\n        "/rows",\n        json={"row_ids": [archive_row.id], "mode": "archive"},\n    )',
+              '    archive_response = auth_client.request(\n        "DELETE",\n        "/rows",\n        json={"row_ids": [archive_row.id], "mode": "archive"},\n    )',
+          )
+          PY
+      - name: Remove one-time patch workflow
+        run: rm .github/workflows/jg059061-contract-patch.yml
+      - name: Commit repairs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/backup_schemas.py backend/app/services/backups.py backend/tests/test_schema_parity.py backend/tests/test_jg061_undo_foundation.py .github/workflows/jg059061-contract-patch.yml
+          git diff --cached --check
+          git commit -m "fix(jg061): preserve entity versions in portable backup [35/36] (#154)"
+          git push origin HEAD:jg-059-061-import-ui-undo-foundation
