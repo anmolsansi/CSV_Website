@@ -55,7 +55,12 @@ def _base_track_refs(payload: dict[str, Any]) -> dict[str, str]:
 
 
 def export_backup_v2_with_contacts(db: Session, user_id: int) -> dict[str, Any]:
-    """Add the F8 durable private graph without changing legacy v2 validators."""
+    """Add the F8 durable private graph without changing legacy v2 validators.
+
+    Accounts with no F8 private records keep the exact frozen v2 envelope. This
+    preserves compatibility with existing validators and release contracts. The
+    checksummed F8 extension is emitted only when it carries private F8 content.
+    """
     payload = export_backup_v2(db, user_id)
     backup_id = UUID(payload["backup_id"])
     track_refs = _base_track_refs(payload)
@@ -63,6 +68,10 @@ def export_backup_v2_with_contacts(db: Session, user_id: int) -> dict[str, Any]:
     contacts = db.query(Contact).filter(Contact.user_id == user_id).order_by(Contact.id.asc()).all()
     links = db.query(ApplicationContact).filter(ApplicationContact.user_id == user_id).order_by(ApplicationContact.id.asc()).all()
     interviews = db.query(Interview).filter(Interview.user_id == user_id).order_by(Interview.id.asc()).all()
+
+    if not contacts and not links and not interviews:
+        return payload
+
     owned_tracks = {item.id: item for item in db.query(JobTrack).filter(JobTrack.user_id == user_id).all()}
 
     contact_refs = {item.id: _ref(backup_id, "contacts", item.id) for item in contacts}
@@ -202,7 +211,6 @@ def restore_backup_payload_with_contacts(db: Session, user_id: int, raw: bytes, 
         if track is not None:
             destination_tracks[ref] = track
 
-    # verify-only validates graph shape but does not mutate F8 data.
     known_contact_refs = {item.get("backup_ref") for item in sections["contacts"]}
     for item in sections["application_contacts"]:
         if item.get("track_ref") not in base_tracks or item.get("contact_ref") not in known_contact_refs:
