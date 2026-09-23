@@ -131,48 +131,58 @@ async function createContactAndInterviews(request: APIRequestContext, trackId: n
 test.describe('JG-055 people and interview workspace', () => {
   test('people_interviews_company_history_calendar_and_today', async ({ page, request }) => {
     await resetAndLogin(request)
-    const application = await createApplication(request)
-    const { first, timezone } = await createContactAndInterviews(request, application.id)
 
-    await page.goto(`/applications?track_id=${application.id}`)
-    const workspace = page.getByTestId('application-f8-workspace')
-    await expect(workspace).toBeVisible({ timeout: 15000 })
+    try {
+      const application = await createApplication(request)
+      const { contact, first, timezone } = await createContactAndInterviews(request, application.id)
 
-    const people = workspace.getByTestId('application-people')
-    await expect(people.getByText('Casey Recruiter', { exact: true })).toBeVisible()
-    await expect(people.getByText('casey.recruiter@example.test', { exact: true })).toBeVisible()
-    await expect(people.getByText('Source: Warm introduction', { exact: true })).toBeVisible()
+      await page.goto(`/applications?track_id=${application.id}`)
+      const workspace = page.getByTestId('application-f8-workspace')
+      await expect(workspace).toBeVisible({ timeout: 15000 })
 
-    const interviews = workspace.getByTestId('application-interviews')
-    await expect(interviews.getByText('Technical', { exact: true })).toBeVisible()
-    await expect(interviews.getByText('Panel', { exact: true })).toBeVisible()
-    await expect(interviews.getByText(`(${timezone})`, { exact: false }).first()).toBeVisible()
-    await expect(interviews.getByText(/Warning: overlaps 1 other scheduled interview/).first()).toBeVisible()
-    await expect(interviews.getByText('Prep: Review system design tradeoffs', { exact: true })).toBeVisible()
+      const people = workspace.getByTestId('application-people')
+      const person = people.getByTestId(`application-person-${contact.id}`)
+      await expect(person.getByText('Casey Recruiter', { exact: true })).toBeVisible()
+      await expect(person.getByText('casey.recruiter@example.test', { exact: true })).toBeVisible()
+      await expect(person.getByText('Source: Warm introduction', { exact: true })).toBeVisible()
 
-    const firstRow = interviews.getByTestId(`application-interview-${first.id}`)
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      firstRow.getByRole('button', { name: 'Download calendar event' }).click(),
-    ])
-    expect(download.suggestedFilename()).toBe(`jobgrid_interview_${first.id}.ics`)
-    await expect(page.getByText('Calendar file downloaded. No invitation was sent.', { exact: true })).toBeVisible()
+      const interviews = workspace.getByTestId('application-interviews')
+      await expect(interviews.getByText('Technical', { exact: true })).toBeVisible()
+      await expect(interviews.getByText('Panel', { exact: true })).toBeVisible()
+      await expect(interviews.getByText(`(${timezone})`, { exact: false }).first()).toBeVisible()
+      await expect(interviews.getByText(/Warning: overlaps 1 other scheduled interview/).first()).toBeVisible()
+      await expect(interviews.getByText('Prep: Review system design tradeoffs', { exact: true })).toBeVisible()
 
-    await page.goto(`/companies?company=${encodeURIComponent(application.company)}&track_id=${application.id}`)
-    const companyWorkspace = page.getByTestId('application-f8-workspace')
-    await expect(companyWorkspace).toBeVisible({ timeout: 15000 })
-    await expect(companyWorkspace.getByText('Casey Recruiter', { exact: true })).toBeVisible()
-    await expect(companyWorkspace.getByText('Technical', { exact: true })).toBeVisible()
+      const firstRow = interviews.getByTestId(`application-interview-${first.id}`)
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        firstRow.getByRole('button', { name: 'Download calendar event' }).click(),
+      ])
+      expect(download.suggestedFilename()).toBe(`jobgrid_interview_${first.id}.ics`)
+      await expect(page.getByText('Calendar file downloaded. No invitation was sent.', { exact: true })).toBeVisible()
 
-    await page.goto('/today')
-    const prepRow = page.locator('tr').filter({ hasText: 'Prepare for Technical interview' })
-    await expect(prepRow).toBeVisible({ timeout: 15000 })
-    await expect(prepRow.getByText('Interview preparation', { exact: true })).toBeVisible()
-    await expect(prepRow.getByRole('button', { name: 'Snooze' })).toBeVisible()
-    await expect(prepRow.getByRole('button', { name: 'Complete' })).toHaveCount(0)
+      await page.goto(`/companies?company=${encodeURIComponent(application.company)}&track_id=${application.id}`)
+      const companyWorkspace = page.getByTestId('application-f8-workspace')
+      await expect(companyWorkspace).toBeVisible({ timeout: 15000 })
+      const companyPerson = companyWorkspace.getByTestId(`application-person-${contact.id}`)
+      await expect(companyPerson.getByText('Casey Recruiter', { exact: true })).toBeVisible()
+      await expect(companyWorkspace.getByTestId(`application-interview-${first.id}`).getByText('Technical', { exact: true })).toBeVisible()
 
-    await prepRow.getByRole('button', { name: 'Open details' }).click()
-    await expect(page).toHaveURL(new RegExp(`/applications\\?track_id=${application.id}$`))
-    await expect(page.getByTestId('application-f8-workspace')).toBeVisible({ timeout: 15000 })
+      await page.goto('/today')
+      const prepRow = page.locator('tr').filter({ hasText: 'Prepare for Technical interview' })
+      await expect(prepRow).toBeVisible({ timeout: 15000 })
+      await expect(prepRow).toContainText('Interview preparation')
+      await expect(prepRow.getByRole('button', { name: 'Snooze' })).toBeVisible()
+      await expect(prepRow.getByRole('button', { name: 'Complete' })).toHaveCount(0)
+
+      await prepRow.getByRole('button', { name: 'Open details' }).click()
+      await expect(page).toHaveURL(new RegExp(`/applications\\?track_id=${application.id}$`))
+      await expect(page.getByTestId('application-f8-workspace')).toBeVisible({ timeout: 15000 })
+    } finally {
+      const restored = await request.patch(`${API_URL}/crm/profile/timezone`, {
+        data: { timezone: 'UTC' },
+      })
+      expect(restored.ok()).toBeTruthy()
+    }
   })
 })
