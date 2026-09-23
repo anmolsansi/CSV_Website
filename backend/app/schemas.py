@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, StrictInt
+from pydantic import BaseModel, Field, StrictInt
 
 from .models import CSV_COLUMNS
 
@@ -35,6 +35,20 @@ class RowOut(BaseModel):
 class RowDeleteIn(BaseModel):
     row_ids: List[int]
     mode: Literal["archive", "delete"] = "delete"
+    request_key: Optional[str] = None
+    expected_versions: Dict[int, StrictInt] = Field(default_factory=dict)
+    confirmation_token: Optional[str] = None
+
+
+class RowRestoreIn(BaseModel):
+    row_ids: List[int]
+    expected_versions: Dict[int, StrictInt]
+    mode: Literal["all_or_nothing", "restore_unchanged"] = "all_or_nothing"
+
+
+class PermanentDeletePreviewIn(BaseModel):
+    row_ids: List[int]
+    expected_versions: Dict[int, StrictInt] = Field(default_factory=dict)
 
 
 class JobTrackUpdateIn(BaseModel):
