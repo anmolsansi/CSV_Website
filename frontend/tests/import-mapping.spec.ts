@@ -10,11 +10,11 @@ async function resetAndLogin(page: Page) {
   })
   expect(login.ok()).toBeTruthy()
   await page.goto('/')
-  await expect(page.getByLabel('Choose CSV or JSON import file')).toBeVisible()
+  await expect(page.getByLabel('Upload CSV file')).toBeVisible()
 }
 
 async function chooseRenamedCsv(page: Page, suffix: string) {
-  await page.getByLabel('Choose CSV or JSON import file').setInputFiles({
+  await page.getByLabel('Upload CSV file').setInputFiles({
     name: `mapped-${suffix}.csv`,
     mimeType: 'text/csv',
     buffer: Buffer.from(`Link,Role,Company\nhttps://example.test/jobs/${suffix},Platform Engineer,Example ${suffix}\n`),
@@ -45,7 +45,7 @@ test.describe('JG-059 deliberate import mapping', () => {
     const rows = await page.request.get(`${API_URL}/rows`, { params: { search: 'renamed-commit', page: 1, page_size: 20 } })
     expect(rows.ok()).toBeTruthy()
     const payload = await rows.json()
-    expect(payload.rows.some((row: any) => row.url === 'https://example.test/jobs/renamed-commit')).toBeTruthy()
+    expect(payload.rows.some((row: any) => row.data?.url === 'https://example.test/jobs/renamed-commit')).toBeTruthy()
   })
 
   test('preview_only_no_rows_written', async ({ page }) => {
@@ -56,7 +56,7 @@ test.describe('JG-059 deliberate import mapping', () => {
     const rows = await page.request.get(`${API_URL}/rows`, { params: { search: 'preview-only', page: 1, page_size: 20 } })
     expect(rows.ok()).toBeTruthy()
     const payload = await rows.json()
-    expect(payload.rows.some((row: any) => row.url === 'https://example.test/jobs/preview-only')).toBeFalsy()
+    expect(payload.rows.some((row: any) => row.data?.url === 'https://example.test/jobs/preview-only')).toBeFalsy()
   })
 
   test('explicit_title_update_preserves_user_fields', async ({ page }) => {
@@ -74,7 +74,7 @@ test.describe('JG-059 deliberate import mapping', () => {
     expect(seed.ok()).toBeTruthy()
 
     const beforeRows = await page.request.get(`${API_URL}/rows`, { params: { search: 'update-title-only', page: 1, page_size: 20 } })
-    const before = (await beforeRows.json()).rows.find((row: any) => row.url === url)
+    const before = (await beforeRows.json()).rows.find((row: any) => row.data?.url === url)
     expect(before).toBeTruthy()
     const clicked = await page.request.post(`${API_URL}/rows/${before.id}/click`)
     expect(clicked.ok()).toBeTruthy()
@@ -87,7 +87,7 @@ test.describe('JG-059 deliberate import mapping', () => {
     expect(notePatch.ok()).toBeTruthy()
 
     await page.reload()
-    await page.getByLabel('Choose CSV or JSON import file').setInputFiles({
+    await page.getByLabel('Upload CSV file').setInputFiles({
       name: 'update.csv',
       mimeType: 'text/csv',
       buffer: Buffer.from(`url,title,company_guess\n${url},New Title,Replacement Co\n`),
@@ -99,9 +99,9 @@ test.describe('JG-059 deliberate import mapping', () => {
     await expect(page.getByRole('heading', { name: 'Import committed' })).toBeVisible()
 
     const afterRows = await page.request.get(`${API_URL}/rows`, { params: { search: 'update-title-only', page: 1, page_size: 20 } })
-    const after = (await afterRows.json()).rows.find((row: any) => row.url === url)
-    expect(after.title).toBe('New Title')
-    expect(after.company_guess).toBe('Example Co')
+    const after = (await afterRows.json()).rows.find((row: any) => row.data?.url === url)
+    expect(after.data.title).toBe('New Title')
+    expect(after.data.company_guess).toBe('Example Co')
     expect(after.clicked).toBe(true)
 
     const applications = await page.request.get(`${API_URL}/crm/applications`)
@@ -161,6 +161,6 @@ test.describe('JG-059 deliberate import mapping', () => {
     expect(keys[0]).toBe(keys[1])
     const rows = await page.request.get(`${API_URL}/rows`, { params: { search: 'lost-response', page: 1, page_size: 20 } })
     const payload = await rows.json()
-    expect(payload.rows.filter((row: any) => row.url === 'https://example.test/jobs/lost-response')).toHaveLength(1)
+    expect(payload.rows.filter((row: any) => row.data?.url === 'https://example.test/jobs/lost-response')).toHaveLength(1)
   })
 })

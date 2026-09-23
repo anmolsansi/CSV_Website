@@ -126,7 +126,7 @@ export default function CsvUpload({ onUploaded }) {
             accept=".csv,.json"
             onChange={handleChange}
             disabled={preparing || classicUploading}
-            aria-label="Choose CSV or JSON import file"
+            aria-label="Upload CSV file"
           />
           {preparing && <span className="upload-spinner" role="progressbar" aria-label="Reading import headers">Reading headers…</span>}
           <a className="btn btn-grey btn-sm upload-template-link" href="/jobgrid_sample.csv" download>Download CSV template</a>

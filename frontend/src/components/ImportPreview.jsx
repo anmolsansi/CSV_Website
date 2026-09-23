@@ -231,7 +231,7 @@ export default function ImportPreview({ file, headers, initialMapping, onCancel,
         {unmappedCount > 0 && <p className="upload-result-hint">{unmappedCount} source column{unmappedCount === 1 ? '' : 's'} will be ignored.</p>}
         {!urlMapped && <p className="upload-error">A source column must map to <code>url</code>.</p>}
         <button type="button" className="btn btn-primary btn-sm" onClick={generatePreview} disabled={!urlMapped || previewing || committing}>
-          {previewing ? 'Generating preview…' : preview ? 'Regenerate preview' : 'Review import'}
+          {previewing ? 'Generating preview…' : preview ? 'Review changes again' : 'Review import'}
         </button>
       </section>
 

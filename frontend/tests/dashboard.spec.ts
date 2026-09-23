@@ -49,8 +49,11 @@ test.describe('Dashboard', () => {
       buffer: Buffer.from(csvContent),
     });
 
-    await page.waitForSelector('.upload-result', { timeout: 15000 });
-    await expect(page.locator('.upload-result')).toBeVisible();
+    await expect(page.locator('.upload-result')).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Review import' }).click();
+    await expect(page.getByRole('heading', { name: '2. Review changes' })).toBeVisible();
+    await page.getByRole('button', { name: 'Commit reviewed import' }).click();
+    await expect(page.getByRole('heading', { name: 'Import committed' })).toBeVisible();
   });
 
   test('select rows and send to Applications', async ({ page }) => {
