@@ -183,6 +183,9 @@ test.describe('JG-055 people and interview workspace', () => {
         data: { timezone: 'UTC' },
       })
       expect(restored.ok()).toBeTruthy()
+      const profile = await request.get(`${API_URL}/crm/profile/timezone`)
+      expect(profile.ok()).toBeTruthy()
+      expect((await profile.json()).timezone).toBe('UTC')
     }
   })
 })
