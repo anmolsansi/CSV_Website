@@ -69,7 +69,7 @@ Bulk responses add:
 - `undo_status`
 - `replayed`
 
-Existing response fields remain present.
+Existing response fields remain present for F10-aware callers. Historical callers that do not supply an operation key retain their exact legacy archive response shape while the server still journals the mutation transactionally.
 
 ### Undo contract
 
@@ -91,7 +91,7 @@ If any entity changed or disappeared, default Undo returns 409 and restores zero
 
 Expired immediate Undo returns 410. A foreign-account action ID is owner-safe 404.
 
-Application status, applied date, and follow-up restoration use the existing lifecycle writer instead of raw field rewrites. The recovery writes compensating lifecycle facts with deterministic operation IDs and resynchronizes reminders when status or follow-up state changes.
+Application status, applied date, and follow-up restoration use the existing lifecycle writer instead of raw field rewrites. The recovery writes compensating lifecycle facts with deterministic operation IDs and resynchronizes reminders when status or follow-up state changes. The existing `status=applied` inference is represented in the bulk patch contract so the journal captures the prior `applied_at` value and Undo can compensate both fields.
 
 ## Archive recovery workspace (JG-063)
 
@@ -101,7 +101,7 @@ The `/archive` frontend route uses that shared query contract. It supports serve
 
 `POST /rows/restore` requires selected owned row IDs plus their expected versions. Restore clears only `archived` and `archived_at`; it does not create visits, applications, or applied dates.
 
-The cross-route `BulkActionStatus` panel stores only non-sensitive operation metadata in session storage. It shows the server-provided Undo deadline, remains available across route changes, renders 409 changed/missing counts, offers deliberate partial recovery only after a conflict, and explains that a 410 immediate-Undo expiry does not remove the Archive recovery path.
+The cross-route `BulkActionStatus` panel stores only non-sensitive operation metadata in session storage. It gives first-party archive requests a stable UUID operation key, shows the server-provided Undo deadline, remains available across route changes, renders 409 changed/missing counts, offers deliberate partial recovery only after a conflict, and explains that a 410 immediate-Undo expiry does not remove the Archive recovery path.
 
 Archive listens for successful bulk-recovery events and reloads its query. Older Dashboard/Application views reload after successful Undo so stale state is not left visible.
 
@@ -109,15 +109,15 @@ Archive listens for successful bulk-recovery events and reloads its query. Older
 
 Permanent deletion is not Undo. F10 ships no automatic source-row purge worker and reports `automatic_purge_enabled=false` from the preview contract.
 
-The only permanent-delete path is for rows that are already archived:
+The only F10 permanent-delete path is for rows that are already archived:
 
 1. The client selects archived rows in `/archive`.
 2. `POST /rows/permanent-delete/preview` owner-checks the rows and optional expected versions.
 3. The server returns the eligible count, warning, and an HMAC confirmation token bound to the owner, row IDs, and current versions.
 4. The user explicitly confirms the warning.
-5. `DELETE /rows` with `mode=delete` rechecks the rows and confirmation token before deleting the source rows.
+5. `DELETE /rows` with `mode=delete`, expected versions, and the confirmation token rechecks the rows before deleting the source rows.
 
-Active rows cannot use this path. A stale version/token requires a fresh preview.
+Active rows cannot use the F10 path. A stale version/token requires a fresh preview. The historical source-delete API remains available only for its pre-F10 compatibility shape, and it preserves durable application history by detaching source references before deletion.
 
 ### Durable graph preservation
 
@@ -154,7 +154,22 @@ npx playwright test tests/archive-undo.spec.ts --project=chromium
 
 It covers archive/reload/restore, two-tab conflict protection, partial counts, expired immediate Undo with Archive recovery, and archived filtering.
 
-Before merge, run the repository's complete backend, frontend, migration/schema, build, and Chromium checks. A ticket is not complete based only on focused tests.
+### Repository acceptance record
+
+Implementation PR: **#157**. Tracking issue: **#156**. Validated implementation head: `b4c605efe33d90a418c49d95b7277d7e5beb078c`.
+
+GitHub Actions CI run **#427** passed the repository's required gates on that implementation head:
+
+- backend pytest: **580 passed**;
+- Chromium Playwright: **179 passed** across 29 files;
+- backend compile check: **PASS**;
+- frontend production build: **PASS**;
+- Alembic migration/schema replay and parity checks included in the backend CI job: **PASS**;
+- preserved top-five/tab-helper release checks included in the browser CI job: **PASS**.
+
+The five JG-063 Archive/Undo Chromium cases were part of that 179-test run, and the JG-062/JG-064 backend regressions were part of the 580-test run. Earlier CI runs correctly exposed archive-query serialization, legacy response compatibility, applied-date journaling, and test-isolation defects. Those defects were fixed in production code or fixtures rather than weakening the acceptance assertions.
+
+Operational owner for release activation: **release operator**. Automatic source-row purge: **disabled**. Disable/rollback switch: remove or disable bulk mutation/Undo UI first, preserve Archive read/restore, and keep purge disabled. Recovery evidence is repository/disposable-test evidence only. Separate staging acceptance and production release are **not claimed** by this document.
 
 ## Observability
 
