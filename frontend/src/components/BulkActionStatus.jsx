@@ -77,6 +77,12 @@ export default function BulkActionStatus() {
       storeAction(next)
       setAction(next)
       window.dispatchEvent(new CustomEvent('jobgrid:bulk-changed', { detail: result }))
+      // Archive owns a targeted data refresh listener. The older Dashboard and
+      // Applications views do not, so reload those routes after the successful
+      // mutation to prevent stale rows/statuses from lingering on screen.
+      if (window.location.pathname !== '/archive') {
+        window.location.reload()
+      }
     } catch (error) {
       const status = error?.response?.status
       const detail = error?.response?.data?.detail || {}
