@@ -17,6 +17,25 @@ function compactPayload(values) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === '' ? null : value]))
 }
 
+function normalize(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function findReusableContact(contacts, draft) {
+  const email = normalize(draft.email)
+  if (email) {
+    const emailMatch = contacts.find((contact) => normalize(contact.email) === email)
+    if (emailMatch) return emailMatch
+  }
+  const name = normalize(draft.name)
+  const company = normalize(draft.company_display)
+  if (!name) return null
+  return contacts.find((contact) => (
+    normalize(contact.name) === name
+    && normalize(contact.company_display) === company
+  )) || null
+}
+
 export default function ApplicationPeople({ application }) {
   const toast = useToast()
   const [linked, setLinked] = useState([])
@@ -53,21 +72,25 @@ export default function ApplicationPeople({ application }) {
     [contacts, selectedId]
   )
 
+  const linkContact = async (contactId, { reused = false } = {}) => {
+    await contactApi.linkApplicationContact(application.id, {
+      contact_id: contactId,
+      role,
+      referral_source: referralSource || null,
+    })
+    setSelectedId('')
+    setReferralSource('')
+    toast(reused ? 'Existing person reused and linked.' : 'Person linked to application.', 'success')
+    await refresh()
+  }
+
   const linkExisting = async (event) => {
     event.preventDefault()
     if (!selected || pending) return
     setPending(true)
     setError('')
     try {
-      await contactApi.linkApplicationContact(application.id, {
-        contact_id: selected.id,
-        role,
-        referral_source: referralSource || null,
-      })
-      setSelectedId('')
-      setReferralSource('')
-      toast('Person linked to application.', 'success')
-      await refresh()
+      await linkContact(selected.id)
     } catch (requestError) {
       const message = formatApiError(requestError, 'Could not link this person.').message
       setError(message)
@@ -83,16 +106,17 @@ export default function ApplicationPeople({ application }) {
     setPending(true)
     setError('')
     try {
+      const reusable = findReusableContact(contacts, draft)
+      if (reusable) {
+        await linkContact(reusable.id, { reused: true })
+        setDraft(EMPTY_CONTACT)
+        return
+      }
+
       const contact = await contactApi.createContact(compactPayload({ ...draft, name: draft.name.trim() }))
-      await contactApi.linkApplicationContact(application.id, {
-        contact_id: contact.id,
-        role,
-        referral_source: referralSource || null,
-      })
+      await linkContact(contact.id)
       setDraft(EMPTY_CONTACT)
-      setReferralSource('')
       toast('Person created and linked.', 'success')
-      await refresh()
     } catch (requestError) {
       // Keep the draft intact so a network or validation error never destroys private notes.
       const message = formatApiError(requestError, 'Could not create and link this person. Your draft was kept.').message
@@ -182,6 +206,7 @@ export default function ApplicationPeople({ application }) {
 
           <details>
             <summary>Create a new person</summary>
+            <p className="muted-text">If the email, or the same name and company, already exists, JobGrid reuses that contact instead of creating a duplicate.</p>
             <form className="document-attach-form" onSubmit={createAndLink}>
               <label>Name<input required maxLength={200} value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
               <label>Email<input type="email" maxLength={320} value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} placeholder="Optional" /></label>
