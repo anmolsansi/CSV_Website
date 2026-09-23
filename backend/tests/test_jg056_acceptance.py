@@ -107,7 +107,7 @@ def test_ics_parser_reads_exactly_one_correct_event(db_session):
     assert properties["DTSTART"] == "20261101T073000Z"
     assert properties["DTEND"] == "20261101T083000Z"
     assert properties["SEQUENCE"] == "2"
-    assert properties["SUMMARY"].startswith("Interview")
+    assert properties["SUMMARY"].startswith("Hiring Manager")
     assert "private note" not in json.dumps(properties)
     assert "private prep" not in json.dumps(properties)
 
