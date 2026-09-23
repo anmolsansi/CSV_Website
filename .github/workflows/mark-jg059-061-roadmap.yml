@@ -63,7 +63,7 @@ jobs:
 
               section = re.sub(r'^- \[ \] ', '- [x] ', section, flags=re.MULTILINE)
               section, count = re.subn(
-                  r'^\*\*PLANNED;[^\n]*\*\*$',
+                  r'^\*\*PLANNED;[^\n]*$',
                   completed_line,
                   section,
                   count=1,
