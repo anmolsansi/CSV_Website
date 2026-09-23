@@ -235,12 +235,12 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 - [ ] [JG-057 — Model private import previews and reusable column mappings](#jg-057)
 - [ ] [JG-058 — Implement preview parsing and transactional reconciliation](#jg-058)
-- [ ] [JG-059 — Build column mapping and deliberate commit preview](#jg-059)
-- [ ] [JG-060 — Validate reimport repeatability and bounded resource use](#jg-060)
+- [x] [JG-059 — Build column mapping and deliberate commit preview](#jg-059)
+- [x] [JG-060 — Validate reimport repeatability and bounded resource use](#jg-060)
 
 **F10 — Undo and a recoverable archive**
 
-- [ ] [JG-061 — Add optimistic versions and bounded undo journals](#jg-061)
+- [x] [JG-061 — Add optimistic versions and bounded undo journals](#jg-061)
 - [ ] [JG-062 — Implement transactional bulk changes and conflict-aware undo](#jg-062)
 - [ ] [JG-063 — Build Archive and explicit Undo conflict handling](#jg-063)
 - [ ] [JG-064 — Prove recovery and decide whether automatic purge is safe](#jg-064)
@@ -14049,7 +14049,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-059"></a>
 ### JG-059 — Build column mapping and deliberate commit preview
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked (locally verified)  
 **Priority:** Feature rank 9  
 **Type:** interface integration  
 **Execution position:** 59/64; group step 3/4
@@ -14232,14 +14232,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-059 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: import-mapping.spec.ts: renamed_headers_preview_commit
-- [ ] Required regression passes: preview_only_no_rows_written
-- [ ] Required regression passes: explicit_title_update_preserves_user_fields
-- [ ] Required regression passes: expired_preview_requires_regenerate
-- [ ] Required regression passes: lost_response_retry_no_duplicates
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F9.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-059 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: import-mapping.spec.ts: renamed_headers_preview_commit
+- [x] Required regression passes: preview_only_no_rows_written
+- [x] Required regression passes: explicit_title_update_preserves_user_fields
+- [x] Required regression passes: expired_preview_requires_regenerate
+- [x] Required regression passes: lost_response_retry_no_duplicates
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F9.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -14257,12 +14257,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -14275,14 +14275,14 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-058 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED LOCALLY; implementation and required repository CI are verified. Staging acceptance and production release remain separate and are not claimed.**
 
 ---
 
 <a id="jg-060"></a>
 ### JG-060 — Validate reimport repeatability and bounded resource use
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked (locally verified)  
 **Priority:** Feature rank 9  
 **Type:** verification/operations  
 **Execution position:** 60/64; group step 4/4
@@ -14455,14 +14455,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-060 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: parser_fixture_matrix_expected_values
-- [ ] Required regression passes: over_limit_zero_destination_writes
-- [ ] Required regression passes: concurrent_commit_no_lost_updates
-- [ ] Required regression passes: saved_mapping_header_mismatch_not_silent
-- [ ] Required regression passes: spreadsheet_error_report_formula_safe
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F9.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-060 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: parser_fixture_matrix_expected_values
+- [x] Required regression passes: over_limit_zero_destination_writes
+- [x] Required regression passes: concurrent_commit_no_lost_updates
+- [x] Required regression passes: saved_mapping_header_mismatch_not_silent
+- [x] Required regression passes: spreadsheet_error_report_formula_safe
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F9.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -14480,12 +14480,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -14498,7 +14498,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-059 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED LOCALLY; implementation and required repository CI are verified. Staging acceptance and production release remain separate and are not claimed.**
 
 ---
 
@@ -14528,7 +14528,7 @@ Archive three rows and undo within10 minutes; all return with original visited/a
 <a id="jg-061"></a>
 ### JG-061 — Add optimistic versions and bounded undo journals
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked (locally verified)  
 **Priority:** Feature rank 10  
 **Type:** schema/contract  
 **Execution position:** 61/64; group step 1/4
@@ -14710,14 +14710,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-061 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: version_changes_on_each_mutation_path
-- [ ] Required regression passes: snapshot_over_limit_rejected_before_write
-- [ ] Required regression passes: duplicate_operation_key_single_journal
-- [ ] Required regression passes: expired_before_images_removed
-- [ ] Required regression passes: foreign_effect_reference_rejected
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-061 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: version_changes_on_each_mutation_path
+- [x] Required regression passes: snapshot_over_limit_rejected_before_write
+- [x] Required regression passes: duplicate_operation_key_single_journal
+- [x] Required regression passes: expired_before_images_removed
+- [x] Required regression passes: foreign_effect_reference_rejected
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -14735,12 +14735,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -14753,7 +14753,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-060 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED LOCALLY; implementation and required repository CI are verified. Staging acceptance and production release remain separate and are not claimed.**
 
 ---
 
