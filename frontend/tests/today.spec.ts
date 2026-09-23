@@ -175,6 +175,7 @@ test.describe('JG-027 Today screen', () => {
   test('followup_reschedule_updates_application_drawer', async ({ page }) => {
     let followUpAt = '2026-09-21T14:00:00Z'
     let actionKey = 'followup:73:2026-09-21T14:00:00Z'
+    const rescheduleUntil = futureLocalDateTime(2)
 
     await routeTodayList(page, () => [followupItem({ action_key: actionKey, due_at: followUpAt })])
 
@@ -182,7 +183,7 @@ test.describe('JG-027 Today screen', () => {
       const payload = route.request().postDataJSON()
       expect(payload.action_key).toBe(actionKey)
       expect(payload.resolution).toBe('reschedule')
-      expect(payload.follow_up_at).toContain('2026-09-23')
+      expect(payload.follow_up_at.slice(0, 16)).toBe(rescheduleUntil)
       followUpAt = payload.follow_up_at
       actionKey = `followup:73:${followUpAt.replace('+00:00', 'Z')}`
       await fulfillJson(route, {
@@ -230,7 +231,7 @@ test.describe('JG-027 Today screen', () => {
     await page.goto('/today')
     await page.getByRole('button', { name: 'Reschedule' }).click()
     const dialog = page.getByRole('dialog', { name: 'Reschedule follow-up' })
-    await dialog.locator('input[type="datetime-local"]').fill('2026-09-23T11:30')
+    await dialog.locator('input[type="datetime-local"]').fill(rescheduleUntil)
     await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toHaveCount(0)
 
@@ -308,6 +309,7 @@ test.describe('JG-027 Today screen', () => {
 test.describe('JG-028 Today acceptance', () => {
   test('five-action work session preserves confirmed state through detail navigation and reload', async ({ page }) => {
     const snoozeUntil = futureLocalDateTime()
+    const rescheduleUntil = futureLocalDateTime(2)
     const detail = followupItem({
       action_key: 'followup:70:2026-09-21T13:00:00Z',
       id: 70,
@@ -457,7 +459,7 @@ test.describe('JG-028 Today acceptance', () => {
       .click()
     await page.getByRole('dialog', { name: 'Reschedule follow-up' })
       .locator('input[type="datetime-local"]')
-      .fill('2026-09-23T11:30')
+      .fill(rescheduleUntil)
     controlActivations += 1
     await page.getByRole('dialog', { name: 'Reschedule follow-up' })
       .getByRole('button', { name: 'Save' })
