@@ -1,0 +1,148 @@
+name: F8 build guide one-shot
+
+on:
+  push:
+    branches: [jg-053-055-contacts-interviews]
+
+permissions:
+  contents: write
+
+jobs:
+  update-docs:
+    if: contains(github.event.head_commit.message, 'bootstrap F8 build guide updater')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: jg-053-055-contacts-interviews
+          fetch-depth: 0
+
+      - name: Append F8 build guide and remove one-shot workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/JOBGRID_BUILD_GUIDE.md')
+          marker = '## F8 recruiter and interview workspace, JG-053 through JG-055'
+          section = r'''
+
+
+## F8 recruiter and interview workspace, JG-053 through JG-055
+
+JG-053 through JG-055 add a private, owner-scoped people and interview workspace to durable application memory. The feature is additive: existing application, Today, reminder, document, evidence, and availability behavior remains authoritative for its existing source types. JG-056 remains the separate full F8 privacy, scheduling, recovery, and mixed-source acceptance ticket.
+
+### Persistence and migration
+
+Alembic revision `016_contacts_interviews` follows revision `015` and creates four owner-scoped stores:
+
+- `contacts` stores the private person record, including optional email, profile URL, company display label, notes, optimistic `version`, timestamps, and a soft-delete marker.
+- `application_contacts` links one owned contact to one owned application with `recruiter`, `referrer`, `interviewer`, or `other` role plus optional referral source. The owner/application/contact/role tuple is unique.
+- `interviews` stores the application, optional contact, UTC start/end instants, the IANA timezone used for display, kind, location or meeting URL, status, round label, private notes, private preparation notes, timestamps, and optimistic `version`.
+- `mutation_receipts` stores bounded owner-scoped UUID replay identity and payload hashes for idempotent F8 creates. Receipts are operational replay state and are pruned after 30 days.
+
+Database foreign keys and service queries both enforce ownership. Cross-account contact/application/interview references return the same not-found shape as missing data and never become an ownership oracle. Contact deletion keeps a redacted historical marker so an interview does not silently lose the fact that a person was once associated with it.
+
+### Contacts and interviews API
+
+The authenticated API surface is:
+
+```text
+GET    /crm/contacts
+POST   /crm/contacts
+PATCH  /crm/contacts/{contact_id}
+DELETE /crm/contacts/{contact_id}
+GET    /crm/tracks/{track_id}/contacts
+POST   /crm/tracks/{track_id}/contacts
+DELETE /crm/tracks/{track_id}/contacts/{association_id}
+GET    /crm/tracks/{track_id}/interviews
+POST   /crm/tracks/{track_id}/interviews
+PATCH  /crm/interviews/{interview_id}
+GET    /crm/interviews/{interview_id}/calendar.ics
+```
+
+Contact and interview create requests use `Idempotency-Key: <UUID>`. An exact replay returns the original result, while reuse of the same key with different input returns HTTP 409. Edits use the current positive entity version. Stale edits return HTTP 409 and leave the stored record unchanged. Interview end must be after start and duration cannot exceed 24 hours. Stored timestamps are normalized to UTC while the validated IANA timezone remains available for display.
+
+Overlap detection is advisory. Saving a scheduled interview returns IDs of other scheduled interviews whose time windows overlap. It does not reject the save because the user may deliberately keep a conflict while coordinating schedules.
+
+Changing an interview reconciles unsent reminder state tied to that application without rewriting sent history. Cancelling an interview also removes its derived Today preparation action. Existing application lifecycle facts remain owned by the established lifecycle system rather than inventing a second mutable history stream.
+
+### Calendar export privacy and RFC5545 behavior
+
+`GET /crm/interviews/{interview_id}/calendar.ics` requires the authenticated owner. Foreign and missing IDs both return 404.
+
+The generated file contains one `VEVENT` with a stable JobGrid UID, UTC `DTSTART`/`DTEND`, optimistic-version-derived `SEQUENCE`, status, bounded public scheduling fields, and RFC5545 text escaping/folding. CR/LF input is escaped before output so user-controlled text cannot inject a second event or property. Private interview notes, preparation notes, contact email, and referral notes are never written to the calendar file.
+
+The UI describes the action as **Download calendar event** and confirms **No invitation was sent**. JobGrid does not claim to send mail or create a calendar event in an external provider.
+
+### Portable backup and recovery
+
+Portable v2 export adds the F8 private graph as an additive checksummed extension. Contacts receive backup-local references. Application-contact links and interviews reference backup-local contact and application identities instead of database IDs. Restore resolves those references into the destination account and records replay identity so repeated restore does not duplicate private records. Verify-only mode validates the F8 reference graph without mutating it.
+
+A conflicting or unresolved F8 reference fails closed. Operational mutation receipts themselves are not exported as user content, except for restore replay bookkeeping created in the destination database.
+
+### Application, company, and Today UI
+
+`ApplicationPeople`, `ApplicationInterviews`, and `ApplicationWorkspace` provide reusable loading, empty, success, pending, error, conflict, and draft-preservation states. All workspace requests use the shared authenticated frontend API client.
+
+People can be reused from the private address book or created and linked from an application. Before creating a new contact, the UI reuses an existing contact with the same email, or the same normalized name plus company, to avoid obvious duplicate person records. A failed save keeps private form notes in the browser draft.
+
+Interview scheduling shows both the selected interview timezone and the account timezone preview. Existing interviews show overlap warnings, associated people, preparation notes, and explicit cancellation. Calendar download is an authenticated blob download and never sends an invitation.
+
+The same workspace is available from expanded Applications details and Company History role details. Company History does not create a second contact/interview state model.
+
+`GET /crm/today` derives same-day future scheduled interview preparation actions with stable identity:
+
+```text
+interview:{interview_id}:{starts_at_utc}
+```
+
+The action uses the existing `WorkItemOverride` snooze model. It provides Snooze and exact application navigation. It deliberately does not expose a generic Complete button, because completing a preparation task must not mutate interview status. Cancelling or rescheduling the source interview invalidates the old derived action identity.
+
+### Verification
+
+Focused backend checks:
+
+```sh
+cd backend
+python -m pytest \
+  tests/test_contact_backup_contract.py \
+  tests/test_contacts_interviews.py \
+  tests/test_contacts_api.py \
+  tests/test_calendar_export.py \
+  tests/test_interview_today.py -q
+python -m compileall app
+python -m alembic upgrade head
+```
+
+Focused frontend checks:
+
+```sh
+cd frontend
+npm ci
+npm run build
+npx playwright test tests/contacts-interviews.spec.ts --project=chromium
+```
+
+`frontend/tests/contacts-interviews.spec.ts` exercises the real browser/backend flow for linked people, private contact display, overlapping interview warnings, timezone display, authenticated calendar download wording, Company History workspace reuse, Today interview preparation, and exact application navigation.
+
+The repository GitHub Actions workflow remains the authoritative completion gate. It applies migrations against PostgreSQL, runs the full backend suite and compile checks, builds the production frontend, and runs the complete Chromium collection. JG-053, JG-054, and JG-055 must not be marked complete until that workflow is green for the final implementation head.
+
+### Rollback
+
+Prefer code rollback while leaving additive revision 016 and private F8 rows in place. Older application code can ignore the new tables while preserving user data for a later forward deploy.
+
+If F8 must be disabled operationally, remove or hide the contacts/interviews entry points first. Do not delete contact, interview, backup, sent reminder, or historical application data as part of a routine rollback. Downgrade revision 016 only after F8 traffic has stopped and private records that must be retained have been exported or otherwise preserved. A rollback must never turn private notes into logs, calendar output, public URLs, or another less-protected storage path.
+'''
+
+          text = path.read_text(encoding='utf-8')
+          if marker not in text:
+              path.write_text(text.rstrip() + section + '\n', encoding='utf-8')
+          PY
+
+          git rm .github/workflows/f8-docs-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/JOBGRID_BUILD_GUIDE.md
+          git commit -m "docs(f8): document contacts and interview workspace [29/30] (#149)"
+          git push origin HEAD:jg-053-055-contacts-interviews
