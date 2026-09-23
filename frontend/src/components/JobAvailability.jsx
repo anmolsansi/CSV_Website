@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, formatApiError } from '../api/client'
+import ApplicationWorkspace from './ApplicationWorkspace'
 
 const STATE_LABELS = {
   unknown: 'Status unknown',
@@ -189,102 +190,105 @@ export default function JobAvailability({ rowId = null, trackId = null, onChange
   const stateLabel = STATE_LABELS[availability.state] || 'Status unknown'
 
   return (
-    <div className="drawer-section" data-testid="job-availability">
-      <h4>Deadline & freshness</h4>
+    <>
+      <div className="drawer-section" data-testid="job-availability">
+        <h4>Deadline & freshness</h4>
 
-      <div className="drawer-field">
-        <span className="drawer-field-label">Availability</span>
-        <span className="drawer-field-value" data-testid="availability-label">{stateLabel}</span>
-      </div>
-      <div className="drawer-field">
-        <span className="drawer-field-label">Last checked</span>
-        <span className="drawer-field-value">{formatTimestamp(availability.last_checked_at, timezoneName)}</span>
-      </div>
-      <div className="drawer-field">
-        <span className="drawer-field-label">Evidence</span>
-        <span className="drawer-field-value">{availability.check_reason || 'No link-check evidence yet'}</span>
-      </div>
-      <div className="drawer-field">
-        <span className="drawer-field-label">Deadline source</span>
-        <span className="drawer-field-value">{availability.deadline_source || 'Not set'}</span>
-      </div>
-
-      <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
-        <label htmlFor={`availability-deadline-${isTrack ? 'track' : 'row'}-${sourceId}`}>
-          Deadline date ({timezoneName})
-        </label>
-        <input
-          id={`availability-deadline-${isTrack ? 'track' : 'row'}-${sourceId}`}
-          type="date"
-          value={deadlineDraft}
-          disabled={pending}
-          onChange={(event) => {
-            setDeadlineDraft(event.target.value)
-            setError('')
-            setMessage('')
-          }}
-        />
-        <small data-testid="deadline-timezone-note">
-          Date-only deadlines are stored at the end of the selected day in {timezoneName}.
-        </small>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button
-            className="btn btn-blue btn-sm"
-            type="button"
-            disabled={pending || !deadlineChanged}
-            onClick={saveDeadline}
-          >
-            {pending ? 'Saving...' : 'Save deadline'}
-          </button>
-          {availability.state === 'closed' ? (
-            <button
-              className="btn btn-grey btn-sm"
-              type="button"
-              disabled={pending}
-              onClick={() => changeManualState('unknown')}
-            >
-              Reopen
-            </button>
-          ) : (
-            <button
-              className="btn btn-grey btn-sm"
-              type="button"
-              disabled={pending}
-              onClick={() => changeManualState('closed')}
-            >
-              Mark closed
-            </button>
-          )}
-          {availability.checks_enabled && (
-            <button
-              className="btn btn-grey btn-sm"
-              type="button"
-              disabled={pending || availability.check_status === 'pending' || availability.check_status === 'running'}
-              onClick={runCheck}
-            >
-              {availability.check_status === 'pending' || availability.check_status === 'running'
-                ? 'Check pending'
-                : 'Check link'}
-            </button>
-          )}
+        <div className="drawer-field">
+          <span className="drawer-field-label">Availability</span>
+          <span className="drawer-field-value" data-testid="availability-label">{stateLabel}</span>
         </div>
-      </div>
+        <div className="drawer-field">
+          <span className="drawer-field-label">Last checked</span>
+          <span className="drawer-field-value">{formatTimestamp(availability.last_checked_at, timezoneName)}</span>
+        </div>
+        <div className="drawer-field">
+          <span className="drawer-field-label">Evidence</span>
+          <span className="drawer-field-value">{availability.check_reason || 'No link-check evidence yet'}</span>
+        </div>
+        <div className="drawer-field">
+          <span className="drawer-field-label">Deadline source</span>
+          <span className="drawer-field-value">{availability.deadline_source || 'Not set'}</span>
+        </div>
 
-      {!availability.checks_enabled && (
-        <p data-testid="manual-freshness-fallback" style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
-          Automatic link checks are off. You can still edit the deadline and close or reopen this job manually.
-        </p>
-      )}
-      {message && <p role="status" style={{ marginTop: 8 }}>{message}</p>}
-      {error && (
-        <p className="error-msg" role="alert" style={{ marginTop: 8 }}>
-          {error}
-          {' '}
-          <button className="btn btn-grey btn-sm" type="button" onClick={() => load({ preserveDraft: true })}>
-            Refresh
-          </button>
-        </p>
-      )}
-    </div>
+        <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+          <label htmlFor={`availability-deadline-${isTrack ? 'track' : 'row'}-${sourceId}`}>
+            Deadline date ({timezoneName})
+          </label>
+          <input
+            id={`availability-deadline-${isTrack ? 'track' : 'row'}-${sourceId}`}
+            type="date"
+            value={deadlineDraft}
+            disabled={pending}
+            onChange={(event) => {
+              setDeadlineDraft(event.target.value)
+              setError('')
+              setMessage('')
+            }}
+          />
+          <small data-testid="deadline-timezone-note">
+            Date-only deadlines are stored at the end of the selected day in {timezoneName}.
+          </small>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-blue btn-sm"
+              type="button"
+              disabled={pending || !deadlineChanged}
+              onClick={saveDeadline}
+            >
+              {pending ? 'Saving...' : 'Save deadline'}
+            </button>
+            {availability.state === 'closed' ? (
+              <button
+                className="btn btn-grey btn-sm"
+                type="button"
+                disabled={pending}
+                onClick={() => changeManualState('unknown')}
+              >
+                Reopen
+              </button>
+            ) : (
+              <button
+                className="btn btn-grey btn-sm"
+                type="button"
+                disabled={pending}
+                onClick={() => changeManualState('closed')}
+              >
+                Mark closed
+              </button>
+            )}
+            {availability.checks_enabled && (
+              <button
+                className="btn btn-grey btn-sm"
+                type="button"
+                disabled={pending || availability.check_status === 'pending' || availability.check_status === 'running'}
+                onClick={runCheck}
+              >
+                {availability.check_status === 'pending' || availability.check_status === 'running'
+                  ? 'Check pending'
+                  : 'Check link'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!availability.checks_enabled && (
+          <p data-testid="manual-freshness-fallback" style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+            Automatic link checks are off. You can still edit the deadline and close or reopen this job manually.
+          </p>
+        )}
+        {message && <p role="status" style={{ marginTop: 8 }}>{message}</p>}
+        {error && (
+          <p className="error-msg" role="alert" style={{ marginTop: 8 }}>
+            {error}
+            {' '}
+            <button className="btn btn-grey btn-sm" type="button" onClick={() => load({ preserveDraft: true })}>
+              Refresh
+            </button>
+          </p>
+        )}
+      </div>
+      {isTrack && <ApplicationWorkspace application={{ id: trackId }} />}
+    </>
   )
 }
