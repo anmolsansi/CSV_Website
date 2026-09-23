@@ -20,17 +20,24 @@ from .config import cookie_security_options, settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
+from .services.today_f8 import build_today_queue_with_interviews, snooze_action_with_interviews
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, availability, backup, capture, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
+from . import contact_models
+from .routers import auth_router, availability, backup, capture, company_aliases, contacts, crm, documents, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
+
+# F8 extends the established Today route without replacing its request contract.
+# Router globals are assigned before requests are served, so the existing route
+# continues to own auth/error handling while the service gains interview actions.
+today.build_today_queue = build_today_queue_with_interviews
+today.snooze_action = snooze_action_with_interviews
 
 if "sqlite" not in settings.DATABASE_URL:
     alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
     alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
     alembic_command.upgrade(alembic_cfg, "head")
 else:
-    from .database import Base, engine
     Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger(__name__)
@@ -128,10 +135,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CSV URL Tracker", lifespan=lifespan)
 
-# Multipart framing adds a small amount of transport overhead around the JSON
-# file. This request-level guard rejects obviously oversized restore requests
-# before Starlette parses the multipart body, while the route still enforces the
-# exact 20 MiB JSON-file limit by reading at most MAX_BACKUP_JSON_BYTES + 1.
 BACKUP_IMPORT_REQUEST_MAX_BYTES = MAX_BACKUP_JSON_BYTES + (1024 * 1024)
 
 
@@ -176,10 +179,6 @@ app.add_middleware(MetricsMiddleware)
 if settings.SENTRY_DSN:
     init_sentry(settings.SENTRY_DSN, settings.ENVIRONMENT)
 
-# The dedicated backup router is authoritative for both portable export and
-# restore. Keep the legacy implementations in crm.py out of the live route table
-# so there is exactly one handler per method/path while compatibility remains in
-# routers.backup.
 crm.router.routes[:] = [
     route
     for route in crm.router.routes
@@ -201,6 +200,7 @@ app.include_router(capture.router)
 app.include_router(company_aliases.router)
 app.include_router(evidence.router)
 app.include_router(documents.router)
+app.include_router(contacts.router)
 app.include_router(crm.router)
 app.include_router(today.router)
 app.include_router(reminders.router)
@@ -247,6 +247,7 @@ if settings.TEST_AUTH:
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
         from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobAvailability, JobCheckRequest, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
+        from .contact_models import ApplicationContact, Contact, Interview, MutationReceipt
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
@@ -264,6 +265,10 @@ if settings.TEST_AUTH:
         db.query(DocumentCreateReceipt).filter_by(user_id=user.id).delete()
         db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
         db.query(DocumentVersion).filter_by(user_id=user.id).delete()
+        db.query(MutationReceipt).filter_by(user_id=user.id).delete()
+        db.query(Interview).filter_by(user_id=user.id).delete()
+        db.query(ApplicationContact).filter_by(user_id=user.id).delete()
+        db.query(Contact).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()

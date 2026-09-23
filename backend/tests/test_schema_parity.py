@@ -33,6 +33,7 @@ from app.models import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+ALEMBIC_HEAD = "016"
 
 
 def test_csv_columns_exist_on_model():
@@ -73,7 +74,7 @@ def test_csv_columns_are_covered_by_migrations():
 def test_alembic_has_single_head():
     cfg = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["015"]
+    assert script.get_heads() == [ALEMBIC_HEAD]
 
 
 def test_legacy_schema_patch_module_removed():
@@ -379,7 +380,7 @@ def test_evidence_migration_upgrade_and_downgrade(migrated_postgres_database):
     finally:
         _run_alembic_upgrade(database_url)
 
-    assert _current_revision(engine) == "015"
+    assert _current_revision(engine) == ALEMBIC_HEAD
     _assert_postgres_matches_metadata(engine)
 
 
@@ -396,7 +397,7 @@ def test_reminder_migration_upgrade_and_downgrade(migrated_postgres_database):
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "015"
+        assert _current_revision(engine) == ALEMBIC_HEAD
         assert "reminder_preferences" in inspector.get_table_names()
         assert "reminder_deliveries" in inspector.get_table_names()
         assert "read_at" in {
@@ -404,7 +405,7 @@ def test_reminder_migration_upgrade_and_downgrade(migrated_postgres_database):
             for column in inspector.get_columns("reminder_deliveries")
         }
     finally:
-        if _current_revision(engine) != "015":
+        if _current_revision(engine) != ALEMBIC_HEAD:
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -427,13 +428,13 @@ def test_reminder_read_state_migration_upgrade_and_downgrade(
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "015"
+        assert _current_revision(engine) == ALEMBIC_HEAD
         assert "read_at" in {
             column["name"]
             for column in inspector.get_columns("reminder_deliveries")
         }
     finally:
-        if _current_revision(engine) != "015":
+        if _current_revision(engine) != ALEMBIC_HEAD:
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -454,12 +455,12 @@ def test_document_migration_upgrade_and_downgrade(migrated_postgres_database):
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "015"
+        assert _current_revision(engine) == ALEMBIC_HEAD
         assert "document_versions" in inspector.get_table_names()
         assert "application_documents" in inspector.get_table_names()
         assert "document_create_receipts" in inspector.get_table_names()
     finally:
-        if _current_revision(engine) != "015":
+        if _current_revision(engine) != ALEMBIC_HEAD:
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -485,7 +486,7 @@ def test_capture_migration_upgrade_and_downgrade(migrated_postgres_database):
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "015"
+        assert _current_revision(engine) == ALEMBIC_HEAD
         csv_columns = {
             column["name"] for column in inspector.get_columns("csv_rows")
         }
@@ -493,7 +494,7 @@ def test_capture_migration_upgrade_and_downgrade(migrated_postgres_database):
         assert "capture_requests" in inspector.get_table_names()
         assert "request_window_counters" in inspector.get_table_names()
     finally:
-        if _current_revision(engine) != "015":
+        if _current_revision(engine) != ALEMBIC_HEAD:
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)
@@ -512,7 +513,7 @@ def test_availability_migration_upgrade_and_downgrade(migrated_postgres_database
 
         _run_alembic_upgrade(database_url)
         inspector = inspect(engine)
-        assert _current_revision(engine) == "015"
+        assert _current_revision(engine) == ALEMBIC_HEAD
         assert "job_availability" in inspector.get_table_names()
         assert "job_check_requests" in inspector.get_table_names()
 
@@ -543,7 +544,7 @@ def test_availability_migration_upgrade_and_downgrade(migrated_postgres_database
         assert "ix_job_check_requests_user_requested" in request_indexes
         assert "ix_job_check_requests_status_lease" in request_indexes
     finally:
-        if _current_revision(engine) != "015":
+        if _current_revision(engine) != ALEMBIC_HEAD:
             _run_alembic_upgrade(database_url)
 
     _assert_postgres_matches_metadata(engine)

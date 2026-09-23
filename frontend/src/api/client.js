@@ -203,6 +203,36 @@ export const api = {
   detachTrackDocument: (trackId, documentId) =>
     client.delete(`/crm/tracks/${trackId}/documents/${documentId}`),
 
+  // CRM - Contacts and interviews
+  getContacts: (params = {}) =>
+    client.get('/crm/contacts', { params }).then((r) => r.data),
+  createContact: (payload, idempotencyKey = createOperationId()) =>
+    client.post('/crm/contacts', payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }).then((r) => r.data),
+  updateContact: (contactId, payload) =>
+    client.patch(`/crm/contacts/${contactId}`, payload).then((r) => r.data),
+  deleteContact: (contactId, version) =>
+    client.delete(`/crm/contacts/${contactId}`, { params: { version } }),
+  getTrackContacts: (trackId) =>
+    client.get(`/crm/tracks/${trackId}/contacts`).then((r) => r.data),
+  linkTrackContact: (trackId, payload, idempotencyKey = createOperationId()) =>
+    client.post(`/crm/tracks/${trackId}/contacts`, payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }).then((r) => r.data),
+  unlinkTrackContact: (trackId, associationId) =>
+    client.delete(`/crm/tracks/${trackId}/contacts/${associationId}`),
+  getTrackInterviews: (trackId) =>
+    client.get(`/crm/tracks/${trackId}/interviews`).then((r) => r.data),
+  createTrackInterview: (trackId, payload, idempotencyKey = createOperationId()) =>
+    client.post(`/crm/tracks/${trackId}/interviews`, payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }).then((r) => r.data),
+  updateInterview: (interviewId, payload) =>
+    client.patch(`/crm/interviews/${interviewId}`, payload).then((r) => r.data),
+  downloadInterviewCalendar: (interviewId) =>
+    client.get(`/crm/interviews/${interviewId}/calendar.ics`, { responseType: 'blob' }),
+
   // CRM - Application evidence and timeline
   getApplicationTimeline: (trackId, params = {}) =>
     client.get(`/crm/tracks/${trackId}/timeline`, { params }).then((r) => r.data),
@@ -242,7 +272,6 @@ export const api = {
     client.patch('/crm/profile/retention', { archive_after_days: archiveAfterDays }).then((r) => r.data),
   getGoals: () => client.get('/crm/goals').then((r) => r.data),
   updateGoals: (goals) => client.put(`/crm/goals?open_per_day=${goals.open_per_day}&apply_per_day=${goals.apply_per_day}&followup_per_day=${goals.followup_per_day}&applypilot_per_day=${goals.applypilot_per_day}`).then((r) => r.data),
-
 
   // CRM - Today
   getToday: (params = {}) =>
