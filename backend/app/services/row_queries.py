@@ -13,6 +13,7 @@ from .numeric_values import numeric_text_expression
 class RowQuery:
     sort_by: str = "created_at"
     sort_dir: Literal["asc", "desc"] = "desc"
+    archive_scope: Literal["active", "archived", "all"] = "active"
     ats_group: str | None = None
     location_group: str | None = None
     search_bucket: str | None = None
@@ -72,14 +73,14 @@ ROW_NUMERIC_SORT_COLUMNS = frozenset({
 
 
 def resolve_row_sort_column(sort_by: str):
-    """Resolve the shared RowQuery sort expression without depending on a router."""
     if sort_by == "created_at":
         return CsvRow.created_at
     if sort_by == "clicked_at":
         return CsvRow.clicked_at
+    if sort_by == "archived_at":
+        return CsvRow.archived_at
     if sort_by not in CSV_COLUMNS:
         raise ValueError("Invalid sort column")
-
     column = getattr(CsvRow, sort_by)
     if sort_by in ROW_NUMERIC_SORT_COLUMNS:
         return numeric_text_expression(column)
@@ -88,10 +89,13 @@ def resolve_row_sort_column(sort_by: str):
 
 def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
     """Build the account-scoped CsvRow predicate query without pagination."""
-    query = db.query(CsvRow).filter(
-        CsvRow.user_id == user_id,
-        CsvRow.archived.is_(False),
-    )
+    query = db.query(CsvRow).filter(CsvRow.user_id == user_id)
+    if params.archive_scope == "active":
+        query = query.filter(CsvRow.archived.is_(False))
+    elif params.archive_scope == "archived":
+        query = query.filter(CsvRow.archived.is_(True))
+    elif params.archive_scope != "all":
+        raise ValueError("Invalid archive scope")
 
     equality_filters = (
         (params.ats_group, CsvRow.ats_group),
@@ -147,7 +151,6 @@ def order_row_query(
     params: RowQuery,
     sort_column_resolver: Callable[[str], object] | None = None,
 ) -> Query:
-    """Apply the shared row ordering plus the stable id-desc tie breaker."""
     resolver = sort_column_resolver or resolve_row_sort_column
     sort_column = resolver(params.sort_by)
     order_func = asc if params.sort_dir == "asc" else desc
@@ -163,7 +166,6 @@ def build_application_query(
     parse_datetime: Callable[[str | None], datetime | None],
     now: datetime | None = None,
 ) -> Query:
-    """Build the account-scoped JobTrack predicate query without pagination."""
     query = db.query(JobTrack).filter(JobTrack.user_id == user_id)
 
     if params.status:
@@ -248,28 +250,22 @@ def build_application_query(
 
     if params.follow_up_due:
         query = query.filter(
-            JobTrack.follow_up_at.isnot(None),
-            JobTrack.follow_up_at <= current_time,
+            JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at <= current_time,
         )
     if params.follow_up_today:
         today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         query = query.filter(
-            JobTrack.follow_up_at >= today_start,
-            JobTrack.follow_up_at < today_end,
+            JobTrack.follow_up_at >= today_start, JobTrack.follow_up_at < today_end,
         )
     if params.follow_up_overdue:
         query = query.filter(
-            JobTrack.follow_up_at.isnot(None),
-            JobTrack.follow_up_at < current_time,
+            JobTrack.follow_up_at.isnot(None), JobTrack.follow_up_at < current_time,
         )
     if params.follow_up_none:
         query = query.filter(JobTrack.follow_up_at.is_(None))
     if params.opened_not_applied:
-        query = query.filter(
-            JobTrack.applied_at.is_(None),
-            JobTrack.status == "opened",
-        )
+        query = query.filter(JobTrack.applied_at.is_(None), JobTrack.status == "opened")
     if params.applied_only:
         query = query.filter(JobTrack.applied_at.isnot(None))
     if params.date_applied_from:
@@ -289,7 +285,6 @@ def order_application_query(
     params: ApplicationQuery,
     numeric_expression: Callable[[object], object],
 ) -> Query:
-    """Apply database-backed application ordering with a stable id-desc tie breaker."""
     order_func = asc if params.sort_dir == "asc" else desc
     sort_column = (
         numeric_expression(JobTrack.resume_match_score)
