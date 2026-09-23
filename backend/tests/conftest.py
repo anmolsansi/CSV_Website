@@ -43,8 +43,6 @@ def engine(tmp_path_factory):
         else {},
     )
     if eng.dialect.name == "postgresql":
-        # The ordinary test database remains separate from JG-019's dedicated
-        # TEST_DATABASE_URL schema-acceptance database.
         Base.metadata.drop_all(bind=eng)
     Base.metadata.create_all(bind=eng)
 
@@ -72,12 +70,6 @@ def sqlite_acceptance_engine(tmp_path, request):
 
 @pytest.fixture(scope="session")
 def postgres_test_url():
-    """Return the isolated PostgreSQL acceptance URL.
-
-    Local runs may omit it and skip PostgreSQL-only acceptance. Mandatory CI
-    must supply it; a missing value there is a hard failure, never schema proof.
-    """
-
     test_url = os.environ.get("TEST_DATABASE_URL")
     if not test_url:
         message = (
@@ -126,6 +118,17 @@ def db_session(engine):
     yield session
     session.rollback()
     session.close()
+
+
+@pytest.fixture(autouse=True)
+def isolate_bulk_action_journals(db_session):
+    """Bulk undo journals are per-test state, never cross-test fixtures."""
+    yield
+    db_session.rollback()
+    from app.undo_models import BulkAction
+
+    db_session.query(BulkAction).delete(synchronize_session=False)
+    db_session.commit()
 
 
 @pytest.fixture()
