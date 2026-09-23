@@ -20,6 +20,10 @@ def _fixture(db):
     return user, track
 
 
+def _content_lines(text: str) -> list[str]:
+    return text.split("\r\n")
+
+
 def test_ics_parser_shape_is_exactly_one_event(db_session):
     user, track = _fixture(db_session)
     interview = Interview(
@@ -39,12 +43,13 @@ def test_ics_parser_shape_is_exactly_one_event(db_session):
     db_session.flush()
 
     text = build_interview_ics(interview, track).decode("utf-8")
-    assert text.count("BEGIN:VCALENDAR") == 1
-    assert text.count("BEGIN:VEVENT") == 1
-    assert text.count("END:VEVENT") == 1
-    assert "DTSTART:20261101T073000Z" in text
-    assert "DTEND:20261101T083000Z" in text
-    assert "SEQUENCE:2" in text
+    lines = _content_lines(text)
+    assert lines.count("BEGIN:VCALENDAR") == 1
+    assert lines.count("BEGIN:VEVENT") == 1
+    assert lines.count("END:VEVENT") == 1
+    assert "DTSTART:20261101T073000Z" in lines
+    assert "DTEND:20261101T083000Z" in lines
+    assert "SEQUENCE:2" in lines
     assert "private interview note" not in text
     assert "private preparation note" not in text
 
@@ -64,7 +69,9 @@ def test_ics_user_text_cannot_inject_properties(db_session):
     db_session.flush()
 
     text = build_interview_ics(interview, track).decode("utf-8")
-    assert text.count("BEGIN:VEVENT") == 1
+    lines = _content_lines(text)
+    assert lines.count("BEGIN:VEVENT") == 1
+    assert "SUMMARY:Injected" not in lines
     assert "LOCATION:HQ\\nSUMMARY:Injected\\nBEGIN:VEVENT" in text
 
 
