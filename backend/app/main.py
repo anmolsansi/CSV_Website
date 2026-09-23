@@ -28,18 +28,15 @@ from .services.import_backups import (
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
 from . import contact_models, import_models
-from .routers import auth_router, availability, backup, capture, company_aliases, contacts, crm, documents, email, evidence, imports, reminders, rows, today, upload
+from .routers import auth_router, availability, backup, bulk_actions, capture, company_aliases, contacts, crm, documents, email, evidence, imports, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 # F8 extends the established Today route without replacing its request contract.
-# Router globals are assigned before requests are served, so the existing route
-# continues to own auth/error handling while the service gains interview actions.
 today.build_today_queue = build_today_queue_with_interviews
 today.snooze_action = snooze_action_with_interviews
 
 # F9 extends the already-versioned portable v2 backup without changing the
-# legacy v1 route or transient-preview storage contract. Only saved mappings are
-# added; uploaded preview/raw/rejected payloads remain intentionally transient.
+# legacy v1 route or transient-preview storage contract.
 backup.export_backup_v2_with_contacts = export_backup_v2_with_import_mappings
 backup.restore_backup_payload_with_contacts = restore_backup_payload_with_import_mappings
 
@@ -65,9 +62,7 @@ def _start_maintenance_scheduler() -> bool:
     global _maintenance_registered
     with _maintenance_registration_lock:
         if _maintenance_registered:
-            logger.info(
-                "maintenance_scheduler outcome=skipped reason=already_registered"
-            )
+            logger.info("maintenance_scheduler outcome=skipped reason=already_registered")
             return False
         scheduler.add_job(
             cleanup_clicked_rows,
@@ -212,6 +207,7 @@ app.include_router(company_aliases.router)
 app.include_router(evidence.router)
 app.include_router(documents.router)
 app.include_router(contacts.router)
+app.include_router(bulk_actions.router)
 app.include_router(crm.router)
 app.include_router(today.router)
 app.include_router(reminders.router)
@@ -260,11 +256,14 @@ if settings.TEST_AUTH:
         from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobAvailability, JobCheckRequest, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
         from .contact_models import ApplicationContact, Contact, Interview, MutationReceipt
         from .import_models import ImportMapping, ImportPreview
+        from .undo_models import BulkAction, BulkActionEffect
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
             return {"deleted": 0}
         user.retention_days = None
+        db.query(BulkActionEffect).filter(BulkActionEffect.action_id.in_(db.query(BulkAction.id).filter_by(user_id=user.id))).delete(synchronize_session=False)
+        db.query(BulkAction).filter_by(user_id=user.id).delete(synchronize_session=False)
         db.query(ImportPreview).filter_by(user_id=user.id).delete()
         db.query(ImportMapping).filter_by(user_id=user.id).delete()
         db.query(RequestWindowCounter).filter_by(user_id=user.id).delete()

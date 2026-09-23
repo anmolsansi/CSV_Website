@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { api } from './api/client'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Archive from './pages/Archive'
 import Today from './pages/Today'
 import Applications from './pages/Applications'
 import Documents from './pages/Documents'
@@ -17,6 +18,7 @@ import ImportExternal from './pages/ImportExternal'
 import Capture from './pages/Capture'
 import Navigation from './components/Navigation'
 import ActiveSessionBar from './components/ActiveSessionBar'
+import BulkActionStatus from './components/BulkActionStatus'
 import CommandPalette from './components/CommandPalette'
 import DarkModeToggle from './components/DarkModeToggle'
 import SkipToContent from './components/SkipToContent'
@@ -80,10 +82,12 @@ function AuthenticatedApp({ user, onLogout }) {
             </div>
           </div>
           <ActiveSessionBar />
+          <BulkActionStatus />
           <main id="main-content" tabIndex={-1}>
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
+                <Route path="/archive" element={<Archive />} />
                 <Route path="/today" element={<Today />} />
                 <Route path="/applications" element={<Applications />} />
                 <Route path="/documents" element={<Documents />} />
@@ -122,17 +126,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (window.location.pathname === '/capture') {
-      ingestCaptureFragment()
-    }
+    if (window.location.pathname === '/capture') ingestCaptureFragment()
   }, [])
 
   useEffect(() => {
-    api
-      .me()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+    api.me().then(setUser).catch(() => setUser(null)).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="loading-screen"><div className="loading-spinner" /><span>Loading JobGrid...</span></div>

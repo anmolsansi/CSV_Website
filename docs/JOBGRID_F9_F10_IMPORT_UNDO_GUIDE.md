@@ -1,10 +1,10 @@
-# JobGrid F9 Import and F10 Undo Foundation
+# JobGrid F9 Import and F10 Undo, Archive, and Recovery
 
-This guide documents the implementation delivered by JG-059, JG-060, and JG-061. It complements `docs/JOBGRID_BUILD_GUIDE.md` with the new import workflow and the version/journal foundation that later F10 tickets will use.
+This guide documents the implementation delivered by JG-059 through JG-064. It complements `docs/JOBGRID_BUILD_GUIDE.md` with the deliberate import workflow, optimistic-version foundation, transactional Undo, Archive recovery workspace, and source-row deletion safety boundary.
 
 ## Deliberate import workflow
 
-The dashboard importer now follows four explicit stages: choose a CSV/JSON file, map source columns by position, review the server preview, then commit. Choosing a file and generating a preview do not write destination rows.
+The dashboard importer follows four explicit stages: choose a CSV/JSON file, map source columns by position, review the server preview, then commit. Choosing a file and generating a preview do not write destination rows.
 
 `frontend/src/api/imports.js` reads only enough client-side structure to show source headers and calls the existing authenticated `/crm/imports` contract through the shared Axios client. `frontend/src/components/ImportPreview.jsx` owns positional mapping, preview counts, invalid-row recovery, update controls, conflict recovery, and commit pending state. `CsvUpload.jsx` refreshes the dashboard only after a confirmed commit, so the active search/filter/sort state remains in place.
 
@@ -20,7 +20,7 @@ The classic CSV importer remains available as an explicit fallback during rollou
 
 ### Preview and commit safety
 
-Preview creation is owner-scoped and stores a private plan for 24 hours. The existing F9 backend caps uploads at 10 MiB and 2,000 records, validates URL identity, retains a bounded 100-row sample, and fingerprints the destination state.
+Preview creation is owner-scoped and stores a private plan for 24 hours. The F9 backend caps uploads at 10 MiB and 2,000 records, validates URL identity, retains a bounded 100-row sample, and fingerprints the destination state.
 
 Commit defaults are deliberately conservative:
 
@@ -37,35 +37,15 @@ Rejected-row CSV downloads are owner-only, `no-store`, limited to the preview li
 
 ## JG-060 repeatability evidence
 
-`backend/tests/test_jg060_import_acceptance.py` covers:
-
-- UTF-8 BOM input
-- quoted commas and quoted newlines
-- duplicate headers by position
-- blank values
-- malformed JSON
-- the exact 2,000-record boundary
-- 2,001-record rejection before destination writes
-- uploads over 10 MiB rejected before destination writes
-- two independent database sessions attempting commits from the same original account destination state, with one commit succeeding and the stale plan rejected
-- saved mapping backup/restore followed by exact fingerprint reuse and explicit mismatch rejection
-- spreadsheet formula escaping in rejected-row downloads
-- measured 2,000-row preview/commit count, SQL-statement count, and elapsed runtime printed as `JG060_MAX_FIXTURE ...` in test output
-
-The measured test records evidence. It does not redefine the 2,000-row/10 MiB limits as a capacity claim. Raising either limit requires a separate design and production measurement.
+`backend/tests/test_jg060_import_acceptance.py` covers UTF-8 BOM input, quoted fields, duplicate headers by position, blank values, malformed JSON, capacity boundaries, concurrent commit attempts, saved mapping reuse, spreadsheet escaping, and the measured 2,000-row fixture. Raising the current limits requires a separate design and production measurement.
 
 ## F10 optimistic version foundation
 
-Migration `018_bulk_undo_foundation.py` is chained after the actual current migration head `017`. It adds positive integer `version` columns to `csv_rows` and `job_tracks`, both starting at 1.
+Migration `018_bulk_undo_foundation.py` adds positive integer `version` columns to `csv_rows` and `job_tracks`, both starting at 1.
 
-Normal SQLAlchemy ORM mutations increment the version exactly once through the shared `before_update` hook registered in `backend/app/undo_models.py`. The repository writer inventory found two production mutation paths that bypass ORM update events:
+Normal SQLAlchemy ORM mutations increment the version exactly once through the shared `before_update` hook registered in `backend/app/undo_models.py`. Raw bulk SQL writers that bypass ORM hooks must advance `version` in the same statement. Deletes remove the entity and do not require a surviving version.
 
-1. `backend/app/routers/rows.py` uses bulk SQL for dashboard archive and relationship detachment before delete.
-2. `backend/app/services/retention.py` uses bulk SQL for automatic archive.
-
-Those statements increment `version` in the same SQL update. Existing import updates, row-click/lifecycle mutations, CRM/application edits, ApplyPilot/lifecycle service mutations, and restore code use ORM assignment and therefore use the shared hook. Deletes remove the entity and do not require a surviving version.
-
-`backend/app/services/undo_foundation.py::compare_and_update` is the common owner-scoped compare-and-update primitive for later F10 mutation tickets. PostgreSQL locks the selected entity row before checking the expected version. A stale version returns the `version_conflict` domain error. JG-061 does not expose a bulk-mutation or Undo route.
+`backend/app/services/undo_foundation.py::compare_and_update` is the common owner-scoped compare-and-update primitive. PostgreSQL locks the selected entity row before checking the expected version. A stale version returns `version_conflict` instead of overwriting newer state.
 
 ## Bounded private journal
 
@@ -74,40 +54,153 @@ Migration 018 also adds:
 - `bulk_actions`: owner, operation kind, request key, status, creation time, undo expiry, and aggregate result metadata
 - `bulk_action_effects`: action, entity type/id, strict before-image, post-mutation version, and per-effect undo status
 
-The journal contract is intentionally bounded:
+The journal is bounded to 500 effects and 1 MiB of canonical JSON before-images per action. Before-images contain only changed allowlisted fields. Owner checks happen before writes and foreign IDs are not disclosed. Replaying the same request key returns the existing action, while conflicting reuse is rejected.
 
-- maximum 500 effects per action
-- maximum 1 MiB canonical JSON before-image payload
-- one `(user_id, request_key)` operation identity
-- one effect per `(action_id, entity_type, entity_id)`
-- before-images contain only fields that actually change and are present in the entity-specific allowlist
-- owner checks happen before journal writes and do not reveal whether a missing ID belongs to another account
-- no secrets, uploaded bytes, whole-row dumps, or unrelated private fields are accepted
+## Transactional bulk actions and Undo (JG-062)
 
-`create_bulk_action_journal` validates target count and snapshot size before adding the journal. Replaying an identical request key returns the existing journal. Reusing the key for different journal input returns `request_key_conflict`.
+`backend/app/services/bulk_actions.py` owns the F10 mutation/recovery service. `backend/app/routers/bulk_actions.py` exposes conflict-aware Undo and routes the existing Applications bulk-update URL through the journal without breaking its legacy `updated` and `failed` response fields.
 
-## Expiry and backups
+Dashboard archive is also journaled. For each eligible entity the server records the narrow before-image, applies the mutation, flushes the optimistic version, and records the resulting version in the journal before the caller commits. Mutation and journal therefore succeed or roll back together.
 
-Private before-images are actionable for 10 minutes. `cleanup_bulk_action_journals` removes expired `before_json` values and changes still-active completed/partial actions to `expired`. Non-private operation metadata is retained for 30 days, then deleted in bounded batches.
+Bulk responses add:
 
-Portable v2 backups may include F10 operation metadata through the existing `f10_bulk_action_metadata` extension. The extension never includes before-images and every exported record carries `undo_available: false`. Restored metadata is always written with `status=expired`, no effects, and `restored_non_actionable=true`. A backup restore can therefore preserve audit context without manufacturing a working Undo action in a different database state.
+- `operation_id`
+- `undo_expires_at`, generated by the server in UTC
+- `undo_status`
+- `replayed`
 
-Transient F9 previews and rejected-row source payloads remain excluded from backups.
+Existing response fields remain present for F10-aware callers. Historical callers that do not supply an operation key retain their exact legacy archive response shape while the server still journals the mutation transactionally.
 
-## Validation and failure behavior
+### Undo contract
 
-The JG-061 regression suite verifies:
+`POST /crm/bulk-actions/{operation_id}/undo` accepts:
 
-- version increments across ORM row updates, mapped-import updates, dashboard bulk archive, retention bulk archive, CRM JobTrack updates, and the compare-and-update helper
-- stale optimistic versions conflict instead of overwriting newer state
-- >1 MiB snapshots and >500-target journals fail with 413-class domain errors before journal writes
-- duplicate operation keys create only one journal and conflicting reuse fails
-- expired before-images are scrubbed while audit metadata remains
-- foreign-account effect references return an owner-safe not-found error and create no journal
-- snapshot generation records only changed allowlisted fields
+```json
+{"mode":"all_or_nothing"}
+```
+
+or the explicit recovery mode:
+
+```json
+{"mode":"restore_unchanged"}
+```
+
+The default is `all_or_nothing`. Before restoring anything, the service owner-checks the action, checks expiry, reloads every effect, and compares the entity's current version with the journal's post-mutation version.
+
+If any entity changed or disappeared, default Undo returns 409 and restores zero records. The response includes aggregate conflict/missing counts. `restore_unchanged` is a separate deliberate request that restores only entities whose versions still match. Per-effect `restored`, `conflict`, and `missing` outcomes are persisted. Repeating a completed Undo is idempotent and does not mutate the records again.
+
+Expired immediate Undo returns 410. A foreign-account action ID is owner-safe 404.
+
+Application status, applied date, and follow-up restoration use the existing lifecycle writer instead of raw field rewrites. The recovery writes compensating lifecycle facts with deterministic operation IDs and resynchronizes reminders when status or follow-up state changes. The existing `status=applied` inference is represented in the bulk patch contract so the journal captures the prior `applied_at` value and Undo can compensate both fields.
+
+## Archive recovery workspace (JG-063)
+
+`GET /rows` now accepts `archive_scope=active|archived|all`. The default remains `active`, so existing callers keep the previous behavior. The same server-side row filters, sorts, counts, and pagination logic are used for archived results. Row responses include optimistic `version`, `archived`, and `archived_at` metadata.
+
+The `/archive` frontend route uses that shared query contract. It supports server-side search, ATS group, search bucket, location, decision, sponsorship, opened/error/JD-missing filters, sorting, and pagination. Legacy archived records without a timestamp display `Unknown` rather than a fabricated time.
+
+`POST /rows/restore` requires selected owned row IDs plus their expected versions. Restore clears only `archived` and `archived_at`; it does not create visits, applications, or applied dates.
+
+The cross-route `BulkActionStatus` panel stores only non-sensitive operation metadata in session storage. It gives first-party archive requests a stable UUID operation key, shows the server-provided Undo deadline, remains available across route changes, renders 409 changed/missing counts, offers deliberate partial recovery only after a conflict, and explains that a 410 immediate-Undo expiry does not remove the Archive recovery path.
+
+Archive listens for successful bulk-recovery events and reloads its query. Older Dashboard/Application views reload after successful Undo so stale state is not left visible.
+
+## Permanent deletion and recovery boundary (JG-064)
+
+Permanent deletion is not Undo. F10 ships no automatic source-row purge worker and reports `automatic_purge_enabled=false` from the preview contract.
+
+The only F10 permanent-delete path is for rows that are already archived:
+
+1. The client selects archived rows in `/archive`.
+2. `POST /rows/permanent-delete/preview` owner-checks the rows and optional expected versions.
+3. The server returns the eligible count, warning, and an HMAC confirmation token bound to the owner, row IDs, and current versions.
+4. The user explicitly confirms the warning.
+5. `DELETE /rows` with `mode=delete`, expected versions, and the confirmation token rechecks the rows before deleting the source rows.
+
+Active rows cannot use the F10 path. A stale version/token requires a fresh preview. The historical source-delete API remains available only for its pre-F10 compatibility shape, and it preserves durable application history by detaching source references before deletion.
+
+### Durable graph preservation
+
+Repository foreign-key inventory shows the two source-row references that must be detached before source deletion:
+
+- `CsvRow.duplicate_of_id`
+- `JobTrack.csv_row_id`
+
+The delete service clears those references before deleting selected archived `CsvRow` records. Applications remain. Durable application-owned lifecycle/evidence, documents, availability, aliases, contacts/interviews, work/reminder state, and other records that hang from `JobTrack` remain in place because the application record is not deleted.
+
+Archived rows with unknown `archived_at` are never candidates for automatic purge because automatic purge is not implemented or enabled. Any future automatic purge is a separate feature and must remain opt-in, require a known age of at least 30 days, use bounded batches, preserve the same graph, expose a disable switch, and pass a production recovery rehearsal before activation.
+
+### Backup recovery proof
+
+JG-064 acceptance exports the portable v2 backup before an explicit source purge, deletes the archived source row, then restores the backup into another account. The restored row-to-application relationship, visit state, application status, notes, and open count must match the pre-purge history. This proves that the existing backup path can recover the tested durable history from a pre-purge backup. It does not claim that JSON backup contains private document bytes; byte-level document recovery remains the responsibility of the existing authenticated document bundle workflow.
+
+## Validation
+
+Focused backend acceptance:
+
+```sh
+cd backend
+pytest tests/test_bulk_undo.py -q
+```
+
+The suite covers transaction rollback, zero-restore conflicts, explicit partial Undo, retry idempotency, 410/404 behavior, lifecycle correction after application Undo, Archive restore semantics, source-row graph preservation, unknown archive timestamps, default-disabled purge, newer-import conflict protection, and pre-purge backup recovery.
+
+Focused browser acceptance:
+
+```sh
+cd frontend
+npx playwright test tests/archive-undo.spec.ts --project=chromium
+```
+
+It covers archive/reload/restore, two-tab conflict protection, partial counts, expired immediate Undo with Archive recovery, and archived filtering.
+
+### Repository acceptance record
+
+Implementation PR: **#157**. Tracking issue: **#156**. Validated implementation head: `b4c605efe33d90a418c49d95b7277d7e5beb078c`.
+
+GitHub Actions CI run **#427** passed the repository's required gates on that implementation head:
+
+- backend pytest: **580 passed**;
+- Chromium Playwright: **179 passed** across 29 files;
+- backend compile check: **PASS**;
+- frontend production build: **PASS**;
+- Alembic migration/schema replay and parity checks included in the backend CI job: **PASS**;
+- preserved top-five/tab-helper release checks included in the browser CI job: **PASS**.
+
+The five JG-063 Archive/Undo Chromium cases were part of that 179-test run, and the JG-062/JG-064 backend regressions were part of the 580-test run. Earlier CI runs correctly exposed archive-query serialization, legacy response compatibility, applied-date journaling, and test-isolation defects. Those defects were fixed in production code or fixtures rather than weakening the acceptance assertions.
+
+Operational owner for release activation: **release operator**. Automatic source-row purge: **disabled**. Disable/rollback switch: remove or disable bulk mutation/Undo UI first, preserve Archive read/restore, and keep purge disabled. Recovery evidence is repository/disposable-test evidence only. Separate staging acceptance and production release are **not claimed** by this document.
+
+## Observability
+
+Bulk Undo logs operation ID, aggregate outcome, restored/conflict/missing counts, and elapsed milliseconds. Logs do not contain before-images. Permanent deletion returns only aggregate detachment/deletion counts. The owner is carried by authenticated database scope rather than written into browser-readable recovery state.
+
+Operational release evidence must record:
+
+- the deployment/PR identifier
+- CI result
+- automatic purge state, which must be disabled for this release
+- recovery test result
+- source rows deleted/restored in the rehearsal only as aggregate counts
 
 ## Deployment and rollback
 
-Deploy database migration 018 before application code that expects row/track versions. The change is additive and existing rows receive server default version 1. Undo routes are not enabled by JG-061, so deploying this ticket does not expose destructive restore behavior.
+Migration 018 must already be applied before JG-062 to JG-064 application code.
 
-Rollback is safe only while later F10 features are not relying on the version/journal columns. Revert the application changes first, then downgrade migration 018. Do not downgrade after later bulk-action tickets have begun persisting journals without reviewing their data-loss implications.
+Recommended deployment order:
+
+1. Deploy backend version/journal-aware mutation and Undo routes.
+2. Verify focused backend acceptance and schema head.
+3. Deploy Archive and global Undo UI.
+4. Keep automatic purge disabled.
+5. Verify Archive restore and two-tab conflict behavior in the deployed environment.
+
+Rollback is application-first. Disable or revert the bulk mutation/Undo UI, keep Archive read/restore available when possible, and leave automatic purge disabled. Do not downgrade version/journal columns after actions have been recorded without a separate data migration/recovery review. Existing journal before-images may be allowed to expire normally or be scrubbed through the bounded cleanup service.
+
+## Portable backup metadata
+
+Private before-images are actionable for 10 minutes. `cleanup_bulk_action_journals` removes expired `before_json` values and changes still-active completed/partial actions to `expired`. Non-private operation metadata is retained for 30 days, then deleted in bounded batches.
+
+Portable v2 backups may include F10 operation metadata through the existing `f10_bulk_action_metadata` extension. The extension never includes before-images and every exported record carries `undo_available: false`. Restored metadata is always written with `status=expired`, no effects, and `restored_non_actionable=true`. A backup restore can preserve audit context without manufacturing a working Undo action in a different database state.
+
+Transient F9 previews and rejected-row source payloads remain excluded from backups.
