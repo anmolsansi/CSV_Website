@@ -22,7 +22,8 @@ from .jobs import cleanup_clicked_rows
 from .services.reminders import run_reminder_worker_once
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
-from .routers import auth_router, availability, backup, capture, company_aliases, crm, documents, email, evidence, reminders, rows, today, upload
+from . import contact_models
+from .routers import auth_router, availability, backup, capture, company_aliases, contacts, crm, documents, email, evidence, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 if "sqlite" not in settings.DATABASE_URL:
@@ -30,7 +31,6 @@ if "sqlite" not in settings.DATABASE_URL:
     alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
     alembic_command.upgrade(alembic_cfg, "head")
 else:
-    from .database import Base, engine
     Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,7 @@ app.include_router(capture.router)
 app.include_router(company_aliases.router)
 app.include_router(evidence.router)
 app.include_router(documents.router)
+app.include_router(contacts.router)
 app.include_router(crm.router)
 app.include_router(today.router)
 app.include_router(reminders.router)
@@ -247,6 +248,7 @@ if settings.TEST_AUTH:
         """Reset all test data. Only available when TEST_AUTH=true."""
         user = db.query(User).filter_by(email="test@jobgrid.dev").first()
         from .models import ApplicationDocument, ApplicationEvidence, CaptureRequest, CompanyAlias, DocumentCreateReceipt, DocumentVersion, EvidenceCreateReceipt, JobAvailability, JobCheckRequest, JobLifecycleEvent, JobTrack, RequestWindowCounter, SavedView, SearchSession, AuditEvent, ApplyPilotBatch, UserGoal, ColumnPreference, UrlHistory, MaintenanceStatus, WorkItem, WorkItemOverride, ReminderDelivery, ReminderPreference
+        from .contact_models import ApplicationContact, Contact, Interview, MutationReceipt
         db.query(MaintenanceStatus).delete()
         if not user:
             db.commit()
@@ -264,6 +266,10 @@ if settings.TEST_AUTH:
         db.query(DocumentCreateReceipt).filter_by(user_id=user.id).delete()
         db.query(ApplicationEvidence).filter_by(user_id=user.id).delete()
         db.query(DocumentVersion).filter_by(user_id=user.id).delete()
+        db.query(MutationReceipt).filter_by(user_id=user.id).delete()
+        db.query(Interview).filter_by(user_id=user.id).delete()
+        db.query(ApplicationContact).filter_by(user_id=user.id).delete()
+        db.query(Contact).filter_by(user_id=user.id).delete()
         db.query(AuditEvent).filter_by(user_id=user.id).delete()
         db.query(ApplyPilotBatch).filter_by(user_id=user.id).delete()
         db.query(UserGoal).filter_by(user_id=user.id).delete()
