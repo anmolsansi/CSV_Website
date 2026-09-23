@@ -12,7 +12,7 @@ Backend:
 
 ```bash
 cd backend
-pytest -q tests/test_jg060_import_acceptance.py tests/test_jg061_undo_foundation.py tests/test_backup_contract.py tests/test_schema_parity.py
+pytest -q tests/test_jg060_import_acceptance.py tests/test_jg061_undo_foundation.py tests/test_jg061_backup_versions.py tests/test_backup_contract.py tests/test_schema_parity.py
 ```
 
 Frontend:
@@ -21,8 +21,10 @@ Frontend:
 cd frontend
 npm run lint
 npm run build
-npx playwright test tests/import-mapping.spec.ts
+npx playwright test tests/import-mapping.spec.ts tests/dashboard.spec.ts
 ```
+
+The dashboard keeps the established accessible upload name `Upload CSV file`, while the control accepts both CSV and JSON. The dashboard upload regression now exercises the deliberate map → review → commit path instead of treating file selection as an immediate write. Import-specific assertions read row values from the existing `row.data` API envelope, and the stale-preview recovery state exposes one unambiguous `Regenerate preview` action.
 
 ## Maximum import fixture
 
