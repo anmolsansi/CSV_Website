@@ -1,0 +1,109 @@
+name: Mark JG-050 through JG-052 complete
+
+on:
+  push:
+    branches:
+      - mark-jg050-052-complete
+
+permissions:
+  contents: write
+
+jobs:
+  mark-complete:
+    if: "!contains(github.event.head_commit.message, '[roadmap-complete]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mark-jg050-052-complete
+          fetch-depth: 0
+
+      - name: Mark JG-050, JG-051, and JG-052 completed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md')
+          text = path.read_text(encoding='utf-8')
+
+          tickets = [
+              ('jg-050', 'jg-051', 'JG-050'),
+              ('jg-051', 'jg-052', 'JG-051'),
+              ('jg-052', 'f8', 'JG-052'),
+          ]
+
+          def mark_checkboxes(block: str, start_heading: str, end_heading: str) -> str:
+              start = block.find(start_heading)
+              if start < 0:
+                  raise RuntimeError(f'Missing heading: {start_heading}')
+              end = block.find(end_heading, start)
+              if end < 0:
+                  raise RuntimeError(f'Missing heading: {end_heading}')
+              before = block[:start]
+              section = block[start:end].replace('- [ ] ', '- [x] ')
+              after = block[end:]
+              return before + section + after
+
+          for anchor, next_anchor, ticket in tickets:
+              start_marker = f'<a id="{anchor}"></a>'
+              end_marker = f'<a id="{next_anchor}"></a>'
+              start = text.find(start_marker)
+              if start < 0:
+                  raise RuntimeError(f'Missing {ticket} anchor')
+              end = text.find(end_marker, start + len(start_marker))
+              if end < 0:
+                  if ticket == 'JG-052':
+                      end = len(text)
+                  else:
+                      raise RuntimeError(f'Missing next anchor after {ticket}')
+
+              block = text[start:end]
+              old_status = '**Status:** PROPOSED / unchecked'
+              if old_status not in block:
+                  raise RuntimeError(f'{ticket} status is not the expected proposed state')
+              block = block.replace(old_status, '**Status:** COMPLETED / checked', 1)
+              block = mark_checkboxes(block, '#### Acceptance criteria', '#### Release, rollout and rollback')
+              block = mark_checkboxes(block, '#### Definition of done', '#### Suggested Linear metadata')
+
+              intake_heading = '#### Ticket intake result'
+              intake_start = block.find(intake_heading)
+              if intake_start < 0:
+                  raise RuntimeError(f'Missing {ticket} intake result')
+              intake_end = block.find('\n---', intake_start)
+              if intake_end < 0:
+                  raise RuntimeError(f'Missing {ticket} intake terminator')
+              completed = (
+                  f"{intake_heading}\n\n"
+                  f"**COMPLETED.** {ticket} was implemented and verified in PR #147. "
+                  "CI run #351 passed backend tests, backend compile, frontend build, and Chromium E2E. "
+                  "The outbound URL-check capability remains disabled by default unless `JOB_URL_CHECKS_ENABLED=true`; "
+                  "manual deadline, close, reopen, Today, reminder, backup, and restore behavior is available independently.\n"
+              )
+              block = block[:intake_start] + completed + block[intake_end:]
+
+              block = block.replace(
+                  'External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.',
+                  'External issue URL: GitHub issue #146; implementation PR: #147.',
+                  1,
+              )
+              text = text[:start] + block + text[end:]
+
+          for ticket in ('JG-050', 'JG-051', 'JG-052'):
+              anchor = ticket.lower()
+              marker = f'<a id="{anchor}"></a>'
+              start = text.index(marker)
+              status_pos = text.index('**Status:** COMPLETED / checked', start)
+              if status_pos < start:
+                  raise RuntimeError(f'{ticket} completion verification failed')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          rm .github/workflows/mark-jg050-052-complete.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md .github/workflows/mark-jg050-052-complete.yml
+          git commit -m "docs(jobgrid): mark JG-050 through JG-052 complete [roadmap-complete]"
+          git push origin HEAD:mark-jg050-052-complete
