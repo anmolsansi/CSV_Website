@@ -241,9 +241,9 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 **F10 — Undo and a recoverable archive**
 
 - [x] [JG-061 — Add optimistic versions and bounded undo journals](#jg-061)
-- [ ] [JG-062 — Implement transactional bulk changes and conflict-aware undo](#jg-062)
-- [ ] [JG-063 — Build Archive and explicit Undo conflict handling](#jg-063)
-- [ ] [JG-064 — Prove recovery and decide whether automatic purge is safe](#jg-064)
+- [x] [JG-062 — Implement transactional bulk changes and conflict-aware undo](#jg-062)
+- [x] [JG-063 — Build Archive and explicit Undo conflict handling](#jg-063)
+- [x] [JG-064 — Prove recovery and decide whether automatic purge is safe](#jg-064)
 
 <a id="r1"></a>
 ## R1 — Repair complete backup and restore
@@ -14760,7 +14760,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-062"></a>
 ### JG-062 — Implement transactional bulk changes and conflict-aware undo
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked (locally verified)  
 **Priority:** Feature rank 10  
 **Type:** API/service  
 **Execution position:** 62/64; group step 2/4
@@ -14947,15 +14947,15 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-062 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: bulk_failure_rolls_back_changes_and_journal
-- [ ] Required regression passes: one_conflict_default_zero_restore
-- [ ] Required regression passes: partial_mode_restores_only_unchanged
-- [ ] Required regression passes: retry_undo_no_second_mutation
-- [ ] Required regression passes: expired410_foreign404
-- [ ] Required regression passes: metric_correction_matches_undo
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-062 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: bulk_failure_rolls_back_changes_and_journal
+- [x] Required regression passes: one_conflict_default_zero_restore
+- [x] Required regression passes: partial_mode_restores_only_unchanged
+- [x] Required regression passes: retry_undo_no_second_mutation
+- [x] Required regression passes: expired410_foreign404
+- [x] Required regression passes: metric_correction_matches_undo
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -14973,12 +14973,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -14987,18 +14987,18 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-061` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #156; implementation PR: #157.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-061 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED LOCALLY; implementation and required repository CI are verified in PR #157 / CI run #427 on implementation head `b4c605efe33d90a418c49d95b7277d7e5beb078c`. Staging acceptance and production release remain separate and are not claimed.**
 
 ---
 
 <a id="jg-063"></a>
 ### JG-063 — Build Archive and explicit Undo conflict handling
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked (locally verified)  
 **Priority:** Feature rank 10  
 **Type:** interface integration  
 **Execution position:** 63/64; group step 3/4
@@ -15185,14 +15185,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-063 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: archive-undo.spec.ts: archive_reload_restore
-- [ ] Required regression passes: two_tab_conflict_no_silent_overwrite
-- [ ] Required regression passes: partial_undo_counts_visible
-- [ ] Required regression passes: expired_undo_archive_still_recoverable
-- [ ] Required regression passes: filters_work_over_all_archived_pages
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-063 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: archive-undo.spec.ts: archive_reload_restore
+- [x] Required regression passes: two_tab_conflict_no_silent_overwrite
+- [x] Required regression passes: partial_undo_counts_visible
+- [x] Required regression passes: expired_undo_archive_still_recoverable
+- [x] Required regression passes: filters_work_over_all_archived_pages
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -15210,12 +15210,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -15224,18 +15224,18 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-062` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #156; implementation PR: #157.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-062 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED LOCALLY; implementation and required repository CI are verified in PR #157 / CI run #427 on implementation head `b4c605efe33d90a418c49d95b7277d7e5beb078c`. Staging acceptance and production release remain separate and are not claimed.**
 
 ---
 
 <a id="jg-064"></a>
 ### JG-064 — Prove recovery and decide whether automatic purge is safe
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked (locally verified)  
 **Priority:** Feature rank 10  
 **Type:** verification/operations  
 **Execution position:** 64/64; group step 4/4
@@ -15416,14 +15416,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-064 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: purge_source_preserves_complete_application_graph
-- [ ] Required regression passes: unknown_archive_timestamp_never_purged
-- [ ] Required regression passes: default_automatic_purge_disabled
-- [ ] Required regression passes: undo_cannot_overwrite_newer_import
-- [ ] Required regression passes: restored_backup_matches_pre_purge_history
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-064 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: purge_source_preserves_complete_application_graph
+- [x] Required regression passes: unknown_archive_timestamp_never_purged
+- [x] Required regression passes: default_automatic_purge_disabled
+- [x] Required regression passes: undo_cannot_overwrite_newer_import
+- [x] Required regression passes: restored_backup_matches_pre_purge_history
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F10.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -15441,12 +15441,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -15455,11 +15455,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-063` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #156; implementation PR: #157.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-063 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED LOCALLY; implementation and required repository CI are verified in PR #157 / CI run #427 on implementation head `b4c605efe33d90a418c49d95b7277d7e5beb078c`. Staging acceptance and production release remain separate and are not claimed.**
 
 ---
 
