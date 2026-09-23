@@ -39,6 +39,19 @@ class RowDeleteIn(BaseModel):
     expected_versions: Dict[int, StrictInt] = Field(default_factory=dict)
     confirmation_token: Optional[str] = None
 
+    def model_post_init(self, __context) -> None:
+        # Before F10, callers commonly sent mode="delete" explicitly. Keep that
+        # frozen source-delete contract when no F10 confirmation context is
+        # present. A permanent-delete confirmation token or expected-version
+        # map keeps mode explicit so the guarded archived-row path is used.
+        if (
+            self.mode == "delete"
+            and self.confirmation_token is None
+            and not self.expected_versions
+            and self.request_key is None
+        ):
+            self.__pydantic_fields_set__.discard("mode")
+
 
 class RowRestoreIn(BaseModel):
     row_ids: List[int]
