@@ -77,13 +77,11 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
-      - name: Commit roadmap update and remove one-time helper
+      - name: Commit canonical roadmap update
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md
-          git rm .github/workflows/mark-jg059-061-roadmap.yml
-          git diff --cached --check
           git commit -m 'docs: mark JG-059 through JG-061 locally complete'
           git push origin HEAD:jg-059-061-import-ui-undo-foundation
