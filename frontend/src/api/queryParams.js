@@ -4,6 +4,7 @@ const BOOL_FALSE = new Set(['false', '0'])
 const DASHBOARD_FIELDS = [
   ['sortBy', 'sort_by', 'string'],
   ['sortDir', 'sort_dir', 'string'],
+  ['archiveScope', 'archive_scope', 'string'],
   ['atsGroup', 'ats_group', 'string'],
   ['locationGroup', 'location_group', 'string'],
   ['searchBucket', 'search_bucket', 'string'],
