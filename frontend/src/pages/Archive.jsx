@@ -167,6 +167,10 @@ export default function Archive() {
             <option value="">All ATS groups</option>
             {(filterOptions.ats_groups || []).map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
+          <select aria-label="Search bucket" value={filters.searchBucket} onChange={(event) => setFilter('searchBucket', event.target.value)}>
+            <option value="">All search buckets</option>
+            {(filterOptions.search_buckets || []).map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
           <select aria-label="Location group" value={filters.locationGroup} onChange={(event) => setFilter('locationGroup', event.target.value)}>
             <option value="">All locations</option>
             {(filterOptions.location_groups || []).map((value) => <option key={value} value={value}>{value}</option>)}
