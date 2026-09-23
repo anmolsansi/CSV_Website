@@ -226,9 +226,9 @@ For every ticket, record: ticket ID; exact git SHA plus relevant uncommitted dif
 
 **F8 — Recruiter referral and interview workspace**
 
-- [ ] [JG-053 — Model contacts associations and scheduled interviews](#jg-053)
-- [ ] [JG-054 — Build private workspace APIs and safe calendar downloads](#jg-054)
-- [ ] [JG-055 — Build application people and interview panels](#jg-055)
+- [x] [JG-053 — Model contacts associations and scheduled interviews](#jg-053)
+- [x] [JG-054 — Build private workspace APIs and safe calendar downloads](#jg-054)
+- [x] [JG-055 — Build application people and interview panels](#jg-055)
 - [ ] [JG-056 — Verify contact privacy scheduling and recovery](#jg-056)
 
 **F9 — Import mapping preview and reconciliation**
@@ -12652,7 +12652,7 @@ Create one recruiter, link to two applications, schedule an interview in a diffe
 <a id="jg-053"></a>
 ### JG-053 — Model contacts associations and scheduled interviews
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked
 **Priority:** Feature rank 8  
 **Type:** schema/contract  
 **Execution position:** 53/64; group step 1/4
@@ -12831,14 +12831,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-053 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: cross_user_association_rejected
-- [ ] Required regression passes: duplicate_role_link_single_row
-- [ ] Required regression passes: end_before_start422
-- [ ] Required regression passes: contact_delete_preserves_interview_marker
-- [ ] Required regression passes: backup_maps_all_relationships
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F8.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-053 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: cross_user_association_rejected
+- [x] Required regression passes: duplicate_role_link_single_row
+- [x] Required regression passes: end_before_start422
+- [x] Required regression passes: contact_delete_preserves_interview_marker
+- [x] Required regression passes: backup_maps_all_relationships
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F8.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -12856,12 +12856,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -12870,18 +12870,18 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-052` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #149; implementation PR: #150.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-052 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-053 was implemented and verified in PR #150. CI run #384 passed backend tests, backend compile, frontend build, and Chromium E2E. Contacts, application-contact ownership, interview scheduling, mutation receipts, and portable backup/restore mapping are implemented. JG-056 remains the separate integrated F8 acceptance ticket.
 
 ---
 
 <a id="jg-054"></a>
 ### JG-054 — Build private workspace APIs and safe calendar downloads
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked
 **Priority:** Feature rank 8  
 **Type:** API/service  
 **Execution position:** 54/64; group step 2/4
@@ -13057,14 +13057,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-054 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: foreign_contact_and_ics404
-- [ ] Required regression passes: ics_injection_cannot_add_second_event
-- [ ] Required regression passes: ics_dst_instant_correct
-- [ ] Required regression passes: stale_interview_edit409
-- [ ] Required regression passes: cancel_suppresses_unsent_reminder
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F8.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-054 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: foreign_contact_and_ics404
+- [x] Required regression passes: ics_injection_cannot_add_second_event
+- [x] Required regression passes: ics_dst_instant_correct
+- [x] Required regression passes: stale_interview_edit409
+- [x] Required regression passes: cancel_suppresses_unsent_reminder
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F8.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -13082,12 +13082,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -13096,18 +13096,18 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-053` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #149; implementation PR: #150.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-053 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-054 was implemented and verified in PR #150. CI run #384 passed backend tests, backend compile, frontend build, and Chromium E2E. Owner-scoped contacts/interviews APIs, idempotent writes, optimistic versioning, overlap warnings, reminder reconciliation, and authenticated RFC5545 calendar downloads are implemented. JG-056 remains the separate integrated F8 acceptance ticket.
 
 ---
 
 <a id="jg-055"></a>
 ### JG-055 — Build application people and interview panels
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / checked
 **Priority:** Feature rank 8  
 **Type:** interface integration  
 **Execution position:** 55/64; group step 3/4
@@ -13290,13 +13290,13 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-055 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: contacts-interviews.spec.ts: recruiter_reused_across_applications
-- [ ] Required regression passes: interview_timezone_preview_matches_server
-- [ ] Required regression passes: calendar_download_not_sent_message
-- [ ] Required regression passes: cancel_removes_today_interview_action
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F8.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-055 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: contacts-interviews.spec.ts: recruiter_reused_across_applications
+- [x] Required regression passes: interview_timezone_preview_matches_server
+- [x] Required regression passes: calendar_download_not_sent_message
+- [x] Required regression passes: cancel_removes_today_interview_action
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by F8.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -13314,12 +13314,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -13328,11 +13328,11 @@ This ticket may be locally complete before the group is exposed. Migration befor
 - Suggested initial state: Backlog; assignee and estimate are chosen during implementation intake, not invented here.
 - Dependency: `JG-054` local completion.
 - Suggested labels: `jobgrid`, `reliability` or `product-feature`, plus the actual affected backend/frontend/data area.
-- External issue URL: none created. Publishing or syncing this metadata is outside this document-writing task.
+- External issue URL: GitHub issue #149; implementation PR: #150.
 
 #### Ticket intake result
 
-**PLANNED; waits for JG-054 local completion, implementation not started.** The what/why/when/how, file scope, contract, tests, rollback and acceptance criteria are supplied. Recheck the current source and predecessor evidence at execution time. Do not change this status to Done merely because this planning text exists.
+**COMPLETED.** JG-055 was implemented and verified in PR #150. CI run #384 passed backend tests, backend compile, frontend build, and Chromium E2E. Application and Company History people/interview panels, timezone previews, overlap warnings, explicit no-invitation calendar wording, and derived Today interview-preparation actions are implemented. JG-056 remains the separate integrated F8 acceptance ticket.
 
 ---
 
