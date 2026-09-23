@@ -153,6 +153,50 @@ def _filter_option_values(db: Session, user_id: int, column, archive_scope: str)
     return [value for (value,) in values if value]
 
 
+def _legacy_delete_rows(db: Session, *, user_id: int, row_ids: list[int]) -> dict:
+    """Keep the pre-F10 omitted-mode DELETE /rows contract for legacy callers.
+
+    First-party F10 clients always send an explicit mode. This compatibility
+    adapter exists only for historical callers that send exactly row_ids. It
+    deletes the source row while detaching the two source references so durable
+    application history remains available.
+    """
+    unique_ids = list(dict.fromkeys(row_ids))
+    rows = db.query(CsvRow).filter(
+        CsvRow.user_id == user_id,
+        CsvRow.id.in_(unique_ids),
+    ).all()
+    by_id = {row.id: row for row in rows}
+    if set(by_id) != set(unique_ids):
+        raise HTTPException(404, "One or more rows not found")
+
+    tracks = db.query(JobTrack).filter(
+        JobTrack.user_id == user_id,
+        JobTrack.csv_row_id.in_(unique_ids),
+    ).all()
+    for track in tracks:
+        track.csv_row_id = None
+
+    duplicates = db.query(CsvRow).filter(
+        CsvRow.user_id == user_id,
+        CsvRow.duplicate_of_id.in_(unique_ids),
+    ).all()
+    for duplicate in duplicates:
+        duplicate.duplicate_of_id = None
+    db.flush()
+
+    for row_id in unique_ids:
+        db.delete(by_id[row_id])
+    db.flush()
+    return {
+        "deleted": len(unique_ids),
+        "archived": 0,
+        "detached_applications": len(tracks),
+        "detached_duplicates": len(duplicates),
+        "legacy_compatibility": True,
+    }
+
+
 @router.get("/rows")
 def list_rows(
     sort_by: str = Query("created_at"),
@@ -374,6 +418,15 @@ def delete_rows(
         raise HTTPException(400, "No rows selected")
 
     try:
+        # Compatibility is intentionally keyed to field omission rather than the
+        # default value. Explicit F10 mode="delete" never bypasses preview/token
+        # checks, while older clients that only sent row_ids keep their frozen
+        # release contract until they can migrate.
+        if "mode" not in payload.model_fields_set:
+            result = _legacy_delete_rows(db, user_id=user.id, row_ids=payload.row_ids)
+            db.commit()
+            return result
+
         if payload.mode == "archive":
             result = archive_rows(
                 db,
