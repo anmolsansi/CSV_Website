@@ -21,6 +21,17 @@ function storeAction(value) {
   }
 }
 
+function operationKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16)
+    const nibble = char === 'x' ? value : (value & 0x3) | 0x8
+    return nibble.toString(16)
+  })
+}
+
 function serverDeadlineLabel(value) {
   if (!value) return 'No immediate Undo deadline returned.'
   const parsed = new Date(value)
@@ -35,7 +46,21 @@ export default function BulkActionStatus() {
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    const interceptor = client.interceptors.response.use((response) => {
+    const requestInterceptor = client.interceptors.request.use((config) => {
+      if (
+        config?.method?.toLowerCase() === 'delete'
+        && config?.url === '/rows'
+        && config?.data?.mode === 'archive'
+        && !config.data.request_key
+      ) {
+        return {
+          ...config,
+          data: { ...config.data, request_key: operationKey() },
+        }
+      }
+      return config
+    })
+    const responseInterceptor = client.interceptors.response.use((response) => {
       const data = response?.data
       if (data?.operation_id && data?.undo_expires_at) {
         const next = {
@@ -51,7 +76,10 @@ export default function BulkActionStatus() {
       }
       return response
     })
-    return () => client.interceptors.response.eject(interceptor)
+    return () => {
+      client.interceptors.request.eject(requestInterceptor)
+      client.interceptors.response.eject(responseInterceptor)
+    }
   }, [])
 
   const deadline = useMemo(
@@ -77,9 +105,6 @@ export default function BulkActionStatus() {
       storeAction(next)
       setAction(next)
       window.dispatchEvent(new CustomEvent('jobgrid:bulk-changed', { detail: result }))
-      // Archive owns a targeted data refresh listener. The older Dashboard and
-      // Applications views do not, so reload those routes after the successful
-      // mutation to prevent stale rows/statuses from lingering on screen.
       if (window.location.pathname !== '/archive') {
         window.location.reload()
       }
