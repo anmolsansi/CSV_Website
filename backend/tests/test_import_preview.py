@@ -125,17 +125,18 @@ def test_duplicate_headers_are_exposed_by_position(auth_client):
 def test_rejected_csv_preserves_original_values_and_is_spreadsheet_safe(auth_client, db_session):
     preview = _preview(
         auth_client,
-        b"url,title\nnot-a-url,=HYPERLINK(\"https://evil.test\")\n",
+        b"url,title\nnot-a-url,=1+1\n",
     )
     assert preview["counts"]["invalid"] == 1
 
     response = auth_client.get(f"/crm/imports/{preview['preview_id']}/rejected.csv")
     assert response.status_code == 200, response.text
     assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
     text = response.content.decode("utf-8-sig")
     assert "_source_row,_error_code,url,title" in text
     assert "not-a-url" in text
-    assert "'=HYPERLINK" in text
+    assert "'=1+1" in text
 
     stored = db_session.query(ImportPreview).filter_by(id=preview["preview_id"]).one()
     stored.expires_at = stored.created_at
