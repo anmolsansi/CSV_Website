@@ -150,7 +150,7 @@ PR #159's head passed hosted CI after the JG-001–JG-010 recovery changes. The 
 
 Critical test safety: `backend/tests/conftest.py` can recreate/drop PostgreSQL tables. `DATABASE_URL` and `TEST_DATABASE_URL` used by tests must always point to disposable test databases. Never point pytest or browser fixtures at production or the only copy of staging data.
 
-Current release gap: CI does not yet enforce the complete C-07 matrix, including the supported SQLite path and explicit multi-zone browser projects.
+Current release gaps: CI does not yet enforce the complete C-07 matrix, including the supported SQLite path and explicit multi-zone browser projects. The `main` branch is currently unprotected and has no required status-check enforcement, so branch protection remains part of C-07 rather than an assumed repository guarantee.
 
 ## Deployment topology
 
@@ -190,7 +190,6 @@ A historical `COMPLETED` label in a roadmap file is not enough to claim release 
 - Do not store private documents in the repository, a served directory, or ephemeral production temp storage.
 - Do not treat mocked browser tests, dev login, queued SMTP, or a green local suite as staging/production evidence.
 - Do not add new frameworks, queues, databases, storage providers, or auth systems unless the owning requirement proves the existing architecture cannot satisfy it.
-- Preserve unrelated files such as `backend/queries.md` and `backend/scraper.py` if they appear in a local working tree but are outside the current task.
 
 ## Where to start for future work
 
