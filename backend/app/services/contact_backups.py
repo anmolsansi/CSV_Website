@@ -6,10 +6,15 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid5
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from ..backup_schemas import BackupContractError, parse_backup_json
+from .backup_sessions import atomic_restore, snapshot_export
+
+from ..backup_schemas import BackupContractError, parse_backup_json, validate_backup_v2
 from ..contact_models import ApplicationContact, Contact, Interview, MutationReceipt
+from ..contact_schemas import ContactCreateRequest, InterviewCreateRequest, ApplicationContactCreateRequest
+from ..backup_schemas import MAX_TOTAL_RECORDS
 from ..models import JobTrack
 from .backups import export_backup_v2, restore_backup_payload
 
@@ -54,6 +59,7 @@ def _base_track_refs(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
+@snapshot_export
 def export_backup_v2_with_contacts(db: Session, user_id: int) -> dict[str, Any]:
     """Add the F8 durable private graph without changing legacy v2 validators.
 
@@ -165,6 +171,46 @@ def _validate_extension(extension: Any) -> dict[str, Any]:
     signed = {"schema_revision": extension["schema_revision"], "sections": sections}
     if extension.get("checksum_sha256") != _checksum(signed):
         raise BackupContractError("checksum_mismatch", 400, "F8 backup extension checksum does not match its contents.")
+    models = {"contacts": ContactCreateRequest, "application_contacts": ApplicationContactCreateRequest,
+              "interviews": InterviewCreateRequest}
+    seen: set[str] = set()
+    if sum(len(records) for records in sections.values()) > MAX_TOTAL_RECORDS:
+        raise BackupContractError("too_many_records", 413, "Backup extension exceeds the record limit.")
+    try:
+        for name, records in sections.items():
+            model = models[name]
+            data_fields = set(model.model_fields) - {"contact_id"}
+            metadata_fields = {"backup_ref", "created_at"}
+            if name != "application_contacts":
+                metadata_fields |= {"updated_at", "version"}
+            if name == "contacts":
+                metadata_fields.add("is_deleted")
+            else:
+                metadata_fields |= {"track_ref", "contact_ref"}
+            for item in records:
+                if not isinstance(item, dict) or set(item) != data_fields | metadata_fields:
+                    raise ValueError("Invalid record fields")
+                ref = item["backup_ref"]
+                if not isinstance(ref, str) or str(UUID(ref)) != ref or ref in seen:
+                    raise ValueError("Invalid or duplicate backup reference")
+                seen.add(ref)
+                for field in ("track_ref", "contact_ref"):
+                    value = item.get(field)
+                    if value is not None and (not isinstance(value, str) or str(UUID(value)) != value):
+                        raise ValueError("Invalid relationship reference")
+                for field in ("created_at", "updated_at", "starts_at", "ends_at"):
+                    if field in item:
+                        _parse_utc(item[field])
+                if "version" in item and (type(item["version"]) is not int or item["version"] < 1):
+                    raise ValueError("Invalid version")
+                if name == "contacts" and type(item["is_deleted"]) is not bool:
+                    raise ValueError("Invalid deletion state")
+                data = {key: item[key] for key in data_fields}
+                if name == "application_contacts":
+                    data["contact_id"] = 1  # Validate the portable role/text, not a source database ID.
+                model.model_validate(data)
+    except (ValueError, TypeError, KeyError, AttributeError, ValidationError) as exc:
+        raise BackupContractError("invalid_f8_backup", 400, "F8 backup contains an invalid record.") from exc
     return sections
 
 
@@ -193,24 +239,19 @@ def _write_receipt(db: Session, user_id: int, scope: str, record: dict[str, Any]
     ))
 
 
-def restore_backup_payload_with_contacts(db: Session, user_id: int, raw: bytes, mode: str) -> dict[str, Any]:
+@atomic_restore
+def restore_backup_payload_with_contacts(db: Session, user_id: int, raw: bytes, mode: str, *, _base_result: dict[str, Any] | None = None) -> dict[str, Any]:
     parsed = parse_backup_json(raw)
     if not isinstance(parsed, dict):
         raise BackupContractError("invalid_backup", 400, "Backup document must be an object.")
     extension = parsed.pop(F8_BACKUP_KEY, None)
     base_raw = json.dumps(parsed, ensure_ascii=False, allow_nan=False).encode("utf-8")
-    result = restore_backup_payload(db, user_id, base_raw, mode)
-    if extension is None:
-        return result
+    sections = _validate_extension(extension) if extension is not None else None
+    if sections is None:
+        return _base_result if _base_result is not None else restore_backup_payload(db, user_id, base_raw, mode)
 
-    sections = _validate_extension(extension)
+    validate_backup_v2(parsed)
     base_tracks = {item["backup_ref"]: item for item in parsed.get("sections", {}).get("job_tracks", [])}
-    destination_tracks: dict[str, JobTrack] = {}
-    for ref, record in base_tracks.items():
-        track = db.query(JobTrack).filter(JobTrack.user_id == user_id, JobTrack.url == record["url"]).first()
-        if track is not None:
-            destination_tracks[ref] = track
-
     known_contact_refs = {item.get("backup_ref") for item in sections["contacts"]}
     for item in sections["application_contacts"]:
         if item.get("track_ref") not in base_tracks or item.get("contact_ref") not in known_contact_refs:
@@ -218,11 +259,36 @@ def restore_backup_payload_with_contacts(db: Session, user_id: int, raw: bytes, 
     for item in sections["interviews"]:
         if item.get("track_ref") not in base_tracks or (item.get("contact_ref") is not None and item.get("contact_ref") not in known_contact_refs):
             raise BackupContractError("conflicting_reference_graph", 409, "F8 interview contains an unresolved reference.")
+    # Receipt hash conflicts must fail preflight as well as an actual restore.
+    replay_ids = {name: [_receipt_entity(db, user_id, scope, item["backup_ref"], item)
+                         for item in sections[name]]
+                  for name, scope in (("contacts", "backup:contact"), ("interviews", "backup:interview"))}
+    result = _base_result if _base_result is not None else restore_backup_payload(db, user_id, base_raw, mode)
+    destination_tracks: dict[str, JobTrack] = {}
+    for ref, record in base_tracks.items():
+        track = db.query(JobTrack).filter(JobTrack.user_id == user_id, JobTrack.url == record["url"]).first()
+        if track is not None:
+            destination_tracks[ref] = track
+
     if mode == "verify_only":
+        contact_ids = dict(zip(
+            (item["backup_ref"] for item in sections["contacts"]), replay_ids["contacts"],
+        ))
+        existing_links = 0
+        for item in sections["application_contacts"]:
+            track = destination_tracks.get(item["track_ref"])
+            contact_id = contact_ids.get(item["contact_ref"])
+            if track is not None and contact_id is not None:
+                existing_links += int(db.query(ApplicationContact).filter_by(
+                    user_id=user_id, track_id=track.id, contact_id=contact_id, role=item["role"],
+                ).first() is not None)
         result["counts"].update({
-            "contacts": {"created": 0, "existing": len(sections["contacts"])},
-            "application_contacts": {"created": 0, "existing": len(sections["application_contacts"])},
-            "interviews": {"created": 0, "existing": len(sections["interviews"])},
+            "contacts": {"created": sum(value is None for value in replay_ids["contacts"]),
+                         "existing": sum(value is not None for value in replay_ids["contacts"])},
+            "application_contacts": {"created": len(sections["application_contacts"]) - existing_links,
+                                     "existing": existing_links},
+            "interviews": {"created": sum(value is None for value in replay_ids["interviews"]),
+                           "existing": sum(value is not None for value in replay_ids["interviews"])},
         })
         return result
 
@@ -313,7 +379,7 @@ def restore_backup_payload_with_contacts(db: Session, user_id: int, raw: bytes, 
             else:
                 existing_counts["interviews"] += 1
 
-        db.commit()
+        db.flush()
     except Exception:
         db.rollback()
         raise

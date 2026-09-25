@@ -3394,3 +3394,14 @@ The repository GitHub Actions workflow is the completion gate. It applies Postgr
 Prefer code rollback while leaving additive revision 016 and private F8 rows in place. Older application code can ignore the new tables while preserving user data for a later forward deploy.
 
 If F8 must be disabled operationally, hide the contacts/interviews entry points first. Do not delete contact, interview, backup, sent reminder, or historical application data as part of a routine rollback. Downgrade revision 016 only after F8 traffic has stopped and private records that must be retained have been preserved. A rollback must never move private notes into logs, calendar output, public URLs, or another less-protected storage path.
+
+
+## Complete recovery integration (JG-001–JG-010, 2026-09-24)
+
+Settings offers **Export complete backup** (ZIP with files and supported metadata) and **Export records only (no files)** (JSON). Select the downloaded ZIP or JSON, inspect the no-write preview, then restore. Keep the file selected to retry a failed request. Legacy JSON remains supported with its existing limitations shown in the preview.
+
+`backup_sessions.py` owns the shared restore transaction and export snapshot. Base, contact, and import restorers reuse that scope instead of independently committing. ZIP export uses the composed metadata exporter; ZIP restore validates all extensions before writing and includes their writes in the document transaction. Failed commit cleanup removes only files published by that attempt. Filesystem crash recovery still requires reconciliation.
+
+Strict extension models reject unknown fields, invalid references, duplicate identities, malformed timestamps and excess aggregate records. Preview counts include existing extension records. SQLite begins the outer transaction explicitly before savepoints; PostgreSQL locks the destination account and exports under repeatable read.
+
+See [JG-001–JG-010 execution evidence](JG001_010_EXECUTION.md) for per-ticket assertions and repeatable checks. The scoped SQLite timestamp correction compares canonical UTC instants and wire timestamps; it does not reinterpret historical dates. These are local completion results, not staging or deployment acceptance.

@@ -306,15 +306,18 @@ export const api = {
 
   exportBackup: () => client.get('/crm/backup/export', { responseType: 'blob' }),
   exportBackupV2: () => client.get('/crm/backup/export', { params: { version: '2' }, responseType: 'blob' }),
+  exportBackupBundle: () => client.get('/crm/backup/export/bundle', { responseType: 'blob' }),
   previewBackup: (file) => {
     const fd = new FormData()
     fd.append('file', file)
-    return client.post('/crm/backup/import?mode=verify_only', fd).then((r) => r.data)
+    const bundle = file.name.toLowerCase().endsWith('.zip')
+    return client.post(`/crm/backup/import${bundle ? '/bundle' : ''}?mode=verify_only`, fd).then((r) => r.data)
   },
   restoreBackup: (file) => {
     const fd = new FormData()
     fd.append('file', file)
-    return client.post('/crm/backup/import?mode=merge_missing', fd).then((r) => r.data)
+    const bundle = file.name.toLowerCase().endsWith('.zip')
+    return client.post(`/crm/backup/import${bundle ? '/bundle' : ''}?mode=merge_missing`, fd).then((r) => r.data)
   },
   importBackup: (file) => {
     const fd = new FormData()

@@ -1,5 +1,7 @@
 # JobGrid — Project Completion Guide
 
+> **2026-09-24 update:** JG-001–JG-010 are completed and verified locally. See [implementation and acceptance evidence](docs/JG001_010_EXECUTION.md). Earlier audit findings below are historical unless updated in those ticket entries. JG-011–JG-064 and the broader C packages retain their separate acceptance gates. This update is not hosted CI or deployment evidence.
+
 Prepared: **2026-09-23**\
 Audited baseline: **`31d51d3e2d61626a13c1b02bc6c4126d3710e542` on main**\
 Overall status: **Not completed — implementation exists across the roadmap, but recovery defects, queue pagination, test failures, and external acceptance remain.**
@@ -537,16 +539,16 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 
 | Ticket | Scope | Closeout status |
 |---|---|---|
-| [JG-001](#jg-001-closeout) | Freeze and validate the complete backup v2 record schema | Not completed — acceptance closeout |
-| [JG-002](#jg-002-closeout) | Add import identity mapping and complete v2 export | Not completed — acceptance closeout |
-| [JG-003](#jg-003-closeout) | Implement preflight and transactional full restore | Not completed — acceptance closeout |
-| [JG-004](#jg-004-closeout) | Build restore preview and prove recoverability in the UI | Not completed — acceptance closeout |
-| [JG-005](#jg-005-closeout) | Extract one account-scoped query builder without changing list behavior | Not completed — acceptance closeout |
-| [JG-006](#jg-006-closeout) | Route every export through the shared filter contract | Not completed — acceptance closeout |
-| [JG-007](#jg-007-closeout) | Unify browser and saved-view query serialization | Not completed — acceptance closeout |
-| [JG-008](#jg-008-closeout) | Define metric semantics and add durable lifecycle event storage | Not completed — acceptance closeout |
-| [JG-009](#jg-009-closeout) | Wire every mutation into the lifecycle ledger | Not completed — acceptance closeout |
-| [JG-010](#jg-010-closeout) | Add user timezone and safely backfill known historical facts | Not completed — acceptance closeout |
+| [JG-001](#jg-001-closeout) | Freeze and validate the complete backup v2 record schema | Completed — locally verified |
+| [JG-002](#jg-002-closeout) | Add import identity mapping and complete v2 export | Completed — locally verified |
+| [JG-003](#jg-003-closeout) | Implement preflight and transactional full restore | Completed — locally verified |
+| [JG-004](#jg-004-closeout) | Build restore preview and prove recoverability in the UI | Completed — locally verified |
+| [JG-005](#jg-005-closeout) | Extract one account-scoped query builder without changing list behavior | Completed — locally verified |
+| [JG-006](#jg-006-closeout) | Route every export through the shared filter contract | Completed — locally verified |
+| [JG-007](#jg-007-closeout) | Unify browser and saved-view query serialization | Completed — locally verified |
+| [JG-008](#jg-008-closeout) | Define metric semantics and add durable lifecycle event storage | Completed — locally verified |
+| [JG-009](#jg-009-closeout) | Wire every mutation into the lifecycle ledger | Completed — locally verified |
+| [JG-010](#jg-010-closeout) | Add user timezone and safely backfill known historical facts | Completed — locally verified |
 | [JG-011](#jg-011-closeout) | Switch analytics goals weekly reports and digest to shared definitions | Not completed — acceptance closeout |
 | [JG-012](#jg-012-closeout) | Introduce explicit archive timestamps and disabled-by-default retention | Not completed — acceptance closeout |
 | [JG-013](#jg-013-closeout) | Replace broken cleanup with a bounded observable archive job | Not completed — acceptance closeout |
@@ -605,22 +607,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-001-closeout"></a>
 ### JG-001 — Freeze and validate the complete backup v2 record schema
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-001 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-001).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Create strict Pydantic v2 backup models with extra=forbid and an explicit section field allowlist
-- [ ] List every current model column as exported, reconstructed, deliberately excluded with reason, or an unresolved migration blocker; include UrlHistory and preference/goal rows
-- [ ] Define backup-local references and canonical checksum serialization; use allow_nan=False and reject duplicate JSON object keys
-- [ ] Validate lengths, total-record limits, section uniqueness and reference targets before constructing ORM objects
-- [ ] Implement a v1-to-internal-format adapter that records which fields were absent; never infer first application dates
-- [ ] Write the v2 example and version compatibility table in the build guide
+- [x] Create strict Pydantic v2 backup models with extra=forbid and an explicit section field allowlist
+- [x] List every current model column as exported, reconstructed, deliberately excluded with reason, or an unresolved migration blocker; include UrlHistory and preference/goal rows
+- [x] Define backup-local references and canonical checksum serialization; use allow_nan=False and reject duplicate JSON object keys
+- [x] Validate lengths, total-record limits, section uniqueness and reference targets before constructing ORM objects
+- [x] Implement a v1-to-internal-format adapter that records which fields were absent; never infer first application dates
+- [x] Write the v2 example and version compatibility table in the build guide
 
 **Required assertion scenarios from the original ticket:** `assert_complete_model_field_inventory`, `test_null_empty_false_zero_round_trip`, `test_unknown_section_or_ownership_field`, `test_duplicate_refs_and_bad_checksum`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -633,22 +635,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-002-closeout"></a>
 ### JG-002 — Add import identity mapping and complete v2 export
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-002 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-002).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Add BackupImportMap with account foreign key, backup UUID, section and source reference; unique index prevents duplicate replay identities
-- [ ] Generate deterministic per-record backup_ref values within the export without exposing them as reusable authorization identifiers
-- [ ] Read all sections within one consistent database snapshot; use PostgreSQL repeatable-read for export and an equivalent read transaction in SQLite
-- [ ] Serialize exact CSV and track fields using JG-001 schema; translate every supported FK to a backup-local reference
-- [ ] Add version=2 branch to GET export while retaining old v1 output for compatibility
-- [ ] Include declared section counts and checksum; close cursors and transaction on serialization failure; never commit unrelated state from GET
+- [x] Add BackupImportMap with account foreign key, backup UUID, section and source reference; unique index prevents duplicate replay identities
+- [x] Generate deterministic per-record backup_ref values within the export without exposing them as reusable authorization identifiers
+- [x] Read all sections within one consistent database snapshot; use PostgreSQL repeatable-read for export and an equivalent read transaction in SQLite
+- [x] Serialize exact CSV and track fields using JG-001 schema; translate every supported FK to a backup-local reference
+- [x] Add version=2 branch to GET export while retaining old v1 output for compatibility
+- [x] Include declared section counts and checksum; close cursors and transaction on serialization failure; never commit unrelated state from GET
 
 **Required assertion scenarios from the original ticket:** `test_export_every_section`, `test_foreign_user_absent`, `test_export_reference_graph`, `test_migration_up_down_empty`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -661,23 +663,23 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-003-closeout"></a>
 ### JG-003 — Implement preflight and transactional full restore
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** PROPOSED / unchecked\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-003 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-003).
 
-**Current finding:** Confirmed defect: contacts-extension rejection can leave base application rows committed. Close C-02 before accepting transactional restore.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Read at most 20 MiB plus one byte; use application body limits as a second guard and do not call unbounded file.read
-- [ ] Parse and validate the entire record graph and checksum before beginning destination writes
-- [ ] Build a preflight plan of creates, natural-key skips, conflicts and remapped references; verify_only returns that plan
-- [ ] Insert sessions and rows before dependent tracks, batches and events; resolve duplicate_of after all source rows have mapped IDs
-- [ ] Insert restored rows, preferences, goals and import identity mapping in one transaction; use savepoints or an upsert for concurrent map uniqueness
-- [ ] On retry return stable mapping results without repeating mutations; on any insert/reference failure roll back every section
-- [ ] Preserve destination-owned records on merge conflicts and report exact counts; v1 omissions produce explicit incomplete warnings
+- [x] Read at most 20 MiB plus one byte; use application body limits as a second guard and do not call unbounded file.read
+- [x] Parse and validate the entire record graph and checksum before beginning destination writes
+- [x] Build a preflight plan of creates, natural-key skips, conflicts and remapped references; verify_only returns that plan
+- [x] Insert sessions and rows before dependent tracks, batches and events; resolve duplicate_of after all source rows have mapped IDs
+- [x] Insert restored rows, preferences, goals and import identity mapping in one transaction; use savepoints or an upsert for concurrent map uniqueness
+- [x] On retry return stable mapping results without repeating mutations; on any insert/reference failure roll back every section
+- [x] Preserve destination-owned records on merge conflicts and report exact counts; v1 omissions produce explicit incomplete warnings
 
 **Required assertion scenarios from the original ticket:** `test_restore_applied_company_notes_and_dates`, `test_retry_and_concurrent_retry`, `test_failure_on_last_section_rolls_back_all`, `test_merge_preserves_newer_destination`, `test_wrong_account_and_reference_injection`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -690,22 +692,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-004-closeout"></a>
 ### JG-004 — Build restore preview and prove recoverability in the UI
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-004 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-004).
 
-**Current finding:** Confirmed defect: the UI describes a metadata-only JSON download as complete. Close C-03 and verify actual file recovery.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Add export-v2 and restore entry points next to existing backup export; keep the ordinary data export separate
-- [ ] Present section counts, legacy limitations and merge policy after verify_only; require a deliberate Restore click to write
-- [ ] Retain selected file in memory only; disable duplicate submissions, reset result when a different file is chosen
-- [ ] Render uploading, validating, ready, importing, completed-with-warnings and error states with retry guidance; never show success on HTTP failure
-- [ ] After completion refresh Applications and Companies from the server and offer a summary download without embedded private records
-- [ ] Exercise the group manual QA with two disposable accounts; save expected/actual evidence and update backup limitations in README and build guide
+- [x] Add export-v2 and restore entry points next to existing backup export; keep the ordinary data export separate
+- [x] Present section counts, legacy limitations and merge policy after verify_only; require a deliberate Restore click to write
+- [x] Retain selected file in memory only; disable duplicate submissions, reset result when a different file is chosen
+- [x] Render uploading, validating, ready, importing, completed-with-warnings and error states with retry guidance; never show success on HTTP failure
+- [x] After completion refresh Applications and Companies from the server and offer a summary download without embedded private records
+- [x] Exercise the group manual QA with two disposable accounts; save expected/actual evidence and update backup limitations in README and build guide
 
 **Required assertion scenarios from the original ticket:** `backup-restore.spec.ts`, `test_invalid_file_has_no_restore_button`, `test_legacy_backup_warning`, `test_import_failure_does_not_clear_selection`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -718,22 +720,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-005-closeout"></a>
 ### JG-005 — Extract one account-scoped query builder without changing list behavior
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** A filter must select the same account-owned population in every consumer.\
 **When:** after C-07; close under C-08 / A02. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-005 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-005).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Capture all existing query arguments and expected defaults from active routes and client mapping
-- [ ] Create RowQuery and ApplicationQuery models separate from output serializers; bind user_id from get_current_user only
-- [ ] Move predicates and stable ordering into pure query-building functions returning SQLAlchemy queries; keep serializers at route boundary
-- [ ] Replace list_rows and application list use incrementally while preserving count, page_size and has_next behavior
-- [ ] Keep numeric sort expression delegated to the current adapter; do not conceal the SQLite failure scheduled for JG-018
-- [ ] Prove generated row IDs are unchanged for supported existing filters before enabling export reuse
+- [x] Capture all existing query arguments and expected defaults from active routes and client mapping
+- [x] Create RowQuery and ApplicationQuery models separate from output serializers; bind user_id from get_current_user only
+- [x] Move predicates and stable ordering into pure query-building functions returning SQLAlchemy queries; keep serializers at route boundary
+- [x] Replace list_rows and application list use incrementally while preserving count, page_size and has_next behavior
+- [x] Keep numeric sort expression delegated to the current adapter; do not conceal the SQLite failure scheduled for JG-018
+- [x] Prove generated row IDs are unchanged for supported existing filters before enabling export reuse
 
 **Required assertion scenarios from the original ticket:** `test_each_filter_and_pair`, `test_two_users_same_url`, `test_null_and_empty_columns`, `test_page_boundaries_and_ties`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -746,22 +748,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-006-closeout"></a>
 ### JG-006 — Route every export through the shared filter contract
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** A filter must select the same account-owned population in every consumer.\
 **When:** after C-07; close under C-08 / A02. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-006 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-006).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Add all shared filter parameters to dashboard and applications exports with documented aliases
-- [ ] Apply scope and ownership checks before querying; selected scope rejects absent, malformed or foreign IDs
-- [ ] Use the same order expression as the table, omit offset/limit for filtered export, and stream bounded chunks instead of reading every record into an additional large list
-- [ ] Validate requested columns against CSV_COLUMNS and preserve explicit column order
-- [ ] Add spreadsheet-safe CSV escaping only at serialization; keep JSON lossless and document the distinction
-- [ ] Return no export body on validation errors; event metadata records only count, format and bounded filter-presence flags
+- [x] Add all shared filter parameters to dashboard and applications exports with documented aliases
+- [x] Apply scope and ownership checks before querying; selected scope rejects absent, malformed or foreign IDs
+- [x] Use the same order expression as the table, omit offset/limit for filtered export, and stream bounded chunks instead of reading every record into an additional large list
+- [x] Validate requested columns against CSV_COLUMNS and preserve explicit column order
+- [x] Add spreadsheet-safe CSV escaping only at serialization; keep JSON lossless and document the distinction
+- [x] Return no export body on validation errors; event metadata records only count, format and bounded filter-presence flags
 
 **Required assertion scenarios from the original ticket:** `test_filtered_export_equals_all_list_pages`, `test_selected_empty_never_exports_all`, `test_selected_foreign_id`, `test_formula_cells_escaped_in_csv_only`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -774,22 +776,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-007-closeout"></a>
 ### JG-007 — Unify browser and saved-view query serialization
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #45; CI run #70 passed\
 **Why:** A filter must select the same account-owned population in every consumer.\
 **When:** after C-07; close under C-08 / A02. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-007 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-007).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Create one serializer for each shared query model with known camelCase aliases and explicit false/null handling
-- [ ] Use it for list loads, filtered export, top-five fetches and saved-view application
-- [ ] Make export scope and sort explicit, and ensure export from page 2 does not inherit page parameters
-- [ ] Read saved-view filters from the actual navigation URL/state on initial load, validate them and show a recoverable error for unsupported keys
-- [ ] Capture the exact query at click time; disable export until the matching request state has settled and surface network errors
-- [ ] Exercise the group manual QA and add an ID-based assertion rather than checking only that a file downloaded
+- [x] Create one serializer for each shared query model with known camelCase aliases and explicit false/null handling
+- [x] Use it for list loads, filtered export, top-five fetches and saved-view application
+- [x] Make export scope and sort explicit, and ensure export from page 2 does not inherit page parameters
+- [x] Read saved-view filters from the actual navigation URL/state on initial load, validate them and show a recoverable error for unsupported keys
+- [x] Capture the exact query at click time; disable export until the matching request state has settled and surface network errors
+- [x] Exercise the group manual QA and add an ID-based assertion rather than checking only that a file downloaded
 
 **Required assertion scenarios from the original ticket:** `filter-export-parity.spec.ts`, `test_selected_scope_exact_ids`, `test_sort_changes_export_order`, `test_error_response_not_downloaded_as_csv`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -802,22 +804,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-008-closeout"></a>
 ### JG-008 — Define metric semantics and add durable lifecycle event storage
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #47; CI run #74 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-008 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-008).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Add the table, uniqueness constraints and user/time/kind composite index from CCR-LIFECYCLE-1
-- [ ] Implement write_event within a caller-owned transaction; never commit inside the helper
-- [ ] Define pure event-key generation and per-kind payload validation; reject unknown kinds
-- [ ] Implement first-visit and first-application insert-on-conflict semantics for PostgreSQL and SQLite
-- [ ] Expose saved,visited,applied definitions as named service functions; avoid reusing count(JobTrack) for visits
-- [ ] Extend backup v2 schema/export/import maps for lifecycle events in the same ticket and assert no restore emits new first events
+- [x] Add the table, uniqueness constraints and user/time/kind composite index from CCR-LIFECYCLE-1
+- [x] Implement write_event within a caller-owned transaction; never commit inside the helper
+- [x] Define pure event-key generation and per-kind payload validation; reject unknown kinds
+- [x] Implement first-visit and first-application insert-on-conflict semantics for PostgreSQL and SQLite
+- [x] Expose saved,visited,applied definitions as named service functions; avoid reusing count(JobTrack) for visits
+- [x] Extend backup v2 schema/export/import maps for lifecycle events in the same ticket and assert no restore emits new first events
 
 **Required assertion scenarios from the original ticket:** `first_event_replay`, `event_owner`, `transaction_rollback`, `backup_lifecycle_roundtrip`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -830,22 +832,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-009-closeout"></a>
 ### JG-009 — Wire every mutation into the lifecycle ledger
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #49; CI run #80 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-009 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-009).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] List active writers: click, from-row, from-rows bulk, application patch, bulk patch, follow-up presets, external import and ApplyPilot result import
-- [ ] Route state changes through common service methods receiving a transaction, authenticated user and stable operation ID
-- [ ] Record first_visited once at actual visit write; record first_applied once when missing applied_at becomes known
-- [ ] Record status_changed only if the value actually changes, with from/to and source; date correction uses an explicit correction kind
-- [ ] Validate every bulk target belongs to the user before any mutation, then commit state and events once
-- [ ] Ensure imports preserve declared dates and do not treat restore/replay as a fresh application; surface uniqueness conflicts as retryable 409 rather than blind re-execution
+- [x] List active writers: click, from-row, from-rows bulk, application patch, bulk patch, follow-up presets, external import and ApplyPilot result import
+- [x] Route state changes through common service methods receiving a transaction, authenticated user and stable operation ID
+- [x] Record first_visited once at actual visit write; record first_applied once when missing applied_at becomes known
+- [x] Record status_changed only if the value actually changes, with from/to and source; date correction uses an explicit correction kind
+- [x] Validate every bulk target belongs to the user before any mutation, then commit state and events once
+- [x] Ensure imports preserve declared dates and do not treat restore/replay as a fresh application; surface uniqueness conflicts as retryable 409 rather than blind re-execution
 
 **Required assertion scenarios from the original ticket:** `all_writer_paths_emit_same_facts`, `repeat_patch_same_status`, `bulk_partial_failure`, `applypilot_replay`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 
@@ -858,22 +860,22 @@ For every entry, execute C-08's requirement-to-evidence procedure, follow its ac
 <a id="jg-010-closeout"></a>
 ### JG-010 — Add user timezone and safely backfill known historical facts
 
-**Closeout status:** Not completed — acceptance closeout.\
+**Closeout status:** Completed — locally verified.\
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #52; CI run #97 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-010 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-010).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
 **What to verify or finish, in order:**
 
-- [ ] Add timezone default UTC for existing users and validate new selections with zoneinfo; accept neither an arbitrary offset nor an invalid zone name
-- [ ] Implement profile read/update routes and common UTC-boundary calculation for daily and rolling-week metrics
-- [ ] Write a resumable backfill command with --dry-run and --after-id; process at most 500 rows per transaction
-- [ ] Create historical first events only from nonnull clicked_at/applied_at; record source=legacy_backfill and preserve original dates
-- [ ] Detect conflicting URL duplicates and missing dates; produce aggregate warning counts and a private review query, not a public list of user records
-- [ ] Extend backup of profile timezone and compare dry-run counts before applying to a disposable copy
+- [x] Add timezone default UTC for existing users and validate new selections with zoneinfo; accept neither an arbitrary offset nor an invalid zone name
+- [x] Implement profile read/update routes and common UTC-boundary calculation for daily and rolling-week metrics
+- [x] Write a resumable backfill command with --dry-run and --after-id; process at most 500 rows per transaction
+- [x] Create historical first events only from nonnull clicked_at/applied_at; record source=legacy_backfill and preserve original dates
+- [x] Detect conflicting URL duplicates and missing dates; produce aggregate warning counts and a private review query, not a public list of user records
+- [x] Extend backup of profile timezone and compare dry-run counts before applying to a disposable copy
 
 **Required assertion scenarios from the original ticket:** `kolkata_midnight`, `dst_23_and_25_hour_days`, `backfill_twice`, `missing_applied_date`. These are scenario names; locate equivalent existing tests before adding or running a selector.
 

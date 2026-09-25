@@ -7,7 +7,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..backup_schemas import BackupContractError, parse_backup_json
+from .backup_sessions import atomic_restore, snapshot_export
+
+from ..backup_schemas import BackupContractError, MAX_TOTAL_RECORDS, parse_backup_json
 from ..import_models import ImportMapping
 from ..undo_models import BulkAction
 from .contact_backups import (
@@ -37,6 +39,24 @@ def _checksum(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
 
+def _check_record_limit(payload: dict[str, Any]) -> None:
+    base_sections = payload.get("sections", {})
+    contact_extension = payload.get("f8_private", {})
+    contact_sections = contact_extension.get("sections", {}) if isinstance(contact_extension, dict) else {}
+    record_count = 0
+    for key, records_key in ((F9_BACKUP_KEY, "mappings"), (F10_BACKUP_KEY, "actions")):
+        extension = payload.get(key, {})
+        records = extension.get(records_key, []) if isinstance(extension, dict) else []
+        if isinstance(records, list):
+            record_count += len(records)
+    for sections in (base_sections, contact_sections):
+        if isinstance(sections, dict):
+            record_count += sum(len(records) for records in sections.values() if isinstance(records, list))
+    if record_count > MAX_TOTAL_RECORDS:
+        raise BackupContractError("too_many_records", 413, "Complete backup exceeds the record limit.")
+
+
+@snapshot_export
 def export_backup_v2_with_import_mappings(db: Session, user_id: int) -> dict[str, Any]:
     """Extend portable v2 backup with mappings and non-actionable F10 metadata.
 
@@ -77,6 +97,7 @@ def export_backup_v2_with_import_mappings(db: Session, user_id: int) -> dict[str
         }
         undo_extension["checksum_sha256"] = _checksum(undo_extension)
         payload[F10_BACKUP_KEY] = undo_extension
+    _check_record_limit(payload)
     return payload
 
 
@@ -237,19 +258,24 @@ def _validate_f10_extension(extension: Any) -> list[dict[str, Any]]:
     return actions
 
 
+@atomic_restore
 def restore_backup_payload_with_import_mappings(
     db: Session,
     user_id: int,
     raw: bytes,
     mode: str,
+    *,
+    _base_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     parsed = parse_backup_json(raw)
     if not isinstance(parsed, dict):
         raise BackupContractError("invalid_backup", 400, "Backup document must be an object.")
+    _check_record_limit(parsed)
     extension = parsed.pop(F9_BACKUP_KEY, None)
     f10_extension = parsed.pop(F10_BACKUP_KEY, None)
     mappings = _validate_extension(extension) if extension is not None else []
     actions = _validate_f10_extension(f10_extension) if f10_extension is not None else []
+
 
     # Detect conflicts before delegating to the established portable restore.
     existing_by_name = {
@@ -286,13 +312,13 @@ def restore_backup_payload_with_import_mappings(
             )
 
     base_raw = json.dumps(parsed, ensure_ascii=False, allow_nan=False).encode("utf-8")
-    result = restore_backup_payload_with_contacts(db, user_id, base_raw, mode)
+    result = restore_backup_payload_with_contacts(db, user_id, base_raw, mode, _base_result=_base_result)
 
     if extension is not None:
         existing_count = sum(1 for record in mappings if record["name"] in existing_by_name)
         if mode == "verify_only":
             result["counts"]["import_mappings"] = {
-                "created": 0,
+                "created": len(mappings) - existing_count,
                 "existing": existing_count,
             }
         else:
@@ -318,7 +344,7 @@ def restore_backup_payload_with_import_mappings(
         existing_count = sum(1 for record in actions if record["request_key"] in existing_actions)
         if mode == "verify_only":
             result["counts"]["bulk_action_metadata"] = {
-                "created": 0,
+                "created": len(actions) - existing_count,
                 "existing": existing_count,
             }
         else:
@@ -347,5 +373,5 @@ def restore_backup_payload_with_import_mappings(
             }
 
     if mode != "verify_only":
-        db.commit()
+        db.flush()
     return result

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from uuid import UUID, uuid4, uuid5
 
+from .backup_sessions import atomic_restore, restore_session as shared_restore_session, snapshot_export
+
 from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -622,19 +624,10 @@ def _build_backup_v2(session: Session, user_id: int) -> dict[str, Any]:
     return validate_backup_v2(payload).model_dump(mode="json", exclude_none=False)
 
 
+@snapshot_export
 def export_backup_v2(db: Session, user_id: int) -> dict[str, Any]:
-    """Build v2 from a dedicated read transaction without committing request state."""
-    bind = db.get_bind()
-    engine = getattr(bind, "engine", bind)
-    isolation_level = "REPEATABLE READ" if engine.dialect.name == "postgresql" else "SERIALIZABLE"
-
-    with engine.connect().execution_options(isolation_level=isolation_level) as connection:
-        snapshot_session = Session(bind=connection, autoflush=False, expire_on_commit=False)
-        try:
-            with snapshot_session.begin():
-                return _build_backup_v2(snapshot_session, user_id)
-        finally:
-            snapshot_session.close()
+    """Export base records in the same snapshot as any enclosing extensions."""
+    return _build_backup_v2(db, user_id)
 
 
 RESTORE_MODE_MERGE = "merge_missing"
@@ -2060,42 +2053,15 @@ def _restore_v2_transaction(session: Session, user_id: int, document: BackupDocu
     return {"counts": counts, "warnings": warnings}
 
 
+@atomic_restore
 def restore_backup_v2(db: Session, user_id: int, document: BackupDocumentV2, mode: str) -> dict[str, Any]:
     if mode not in {RESTORE_MODE_MERGE, RESTORE_MODE_VERIFY}:
         raise BackupContractError("invalid_restore_mode", 400, "Unsupported restore mode.")
-
-    bind = db.get_bind()
-    engine = getattr(bind, "engine", bind)
-    restore_session = Session(bind=engine, autoflush=False, expire_on_commit=False)
-    try:
-        if mode == RESTORE_MODE_VERIFY:
-            with restore_session.begin():
-                counts = _preflight_v2(restore_session, user_id, document)
-            return {
-                "backup_id": document.backup_id,
-                "mode": mode,
-                "counts": counts,
-                "warnings": [],
-                "verified": True,
-            }
-
-        with restore_session.begin():
-            result = _restore_v2_transaction(restore_session, user_id, document)
-        return {
-            "backup_id": document.backup_id,
-            "mode": mode,
-            "counts": result["counts"],
-            "warnings": result["warnings"],
-            "verified": True,
-        }
-    except BackupContractError:
-        restore_session.rollback()
-        raise
-    except Exception:
-        restore_session.rollback()
-        raise
-    finally:
-        restore_session.close()
+    if mode == RESTORE_MODE_VERIFY:
+        result = {"counts": _preflight_v2(db, user_id, document), "warnings": []}
+    else:
+        result = _restore_v2_transaction(db, user_id, document)
+    return {"backup_id": document.backup_id, "mode": mode, **result, "verified": True}
 
 
 def _legacy_backup_id(payload: dict[str, Any]) -> str:
@@ -2107,6 +2073,7 @@ def _legacy_ref(backup_id: str, section: str, index: int) -> str:
     return str(uuid5(UUID(backup_id), f"legacy:{section}:{index}"))
 
 
+@atomic_restore
 def restore_backup_v1(db: Session, user_id: int, payload: dict[str, Any], mode: str) -> dict[str, Any]:
     legacy = adapt_v1_backup(payload)
     backup_id = _legacy_backup_id(payload)
@@ -2115,9 +2082,7 @@ def restore_backup_v1(db: Session, user_id: int, payload: dict[str, Any], mode: 
     for section in sorted(legacy.absent_sections):
         warnings.append(_restore_warning("legacy_section_absent", section=section))
 
-    bind = db.get_bind()
-    engine = getattr(bind, "engine", bind)
-    restore_session = Session(bind=engine, autoflush=False, expire_on_commit=False)
+    restore_session = db
 
     def classify_or_apply(write: bool) -> None:
         restore_session.query(User).filter(User.id == user_id).with_for_update().one()
@@ -2326,30 +2291,14 @@ def restore_backup_v1(db: Session, user_id: int, payload: dict[str, Any], mode: 
                 _persist_import_map(restore_session, user_id, backup_id, "audit_events", ref, item.id)
             warnings.append(_restore_warning("legacy_relationships_detached", section="audit_events", backup_ref=ref))
 
-    try:
-        if mode == RESTORE_MODE_VERIFY:
-            with restore_session.begin():
-                classify_or_apply(False)
-        elif mode == RESTORE_MODE_MERGE:
-            with restore_session.begin():
-                classify_or_apply(True)
-        else:
-            raise BackupContractError("invalid_restore_mode", 400, "Unsupported restore mode.")
-        return {
-            "backup_id": backup_id,
-            "mode": mode,
-            "counts": counts,
-            "warnings": warnings,
-            "verified": True,
-        }
-    except BackupContractError:
-        restore_session.rollback()
-        raise
-    except Exception:
-        restore_session.rollback()
-        raise
-    finally:
-        restore_session.close()
+    if mode == RESTORE_MODE_VERIFY:
+        classify_or_apply(False)
+    elif mode == RESTORE_MODE_MERGE:
+        classify_or_apply(True)
+    else:
+        raise BackupContractError("invalid_restore_mode", 400, "Unsupported restore mode.")
+    return {"backup_id": backup_id, "mode": mode, "counts": counts,
+            "warnings": warnings, "verified": True}
 
 
 def restore_backup_payload(db: Session, user_id: int, raw: bytes, mode: str) -> dict[str, Any]:
@@ -2399,9 +2348,12 @@ def _sha256_path(path) -> str:
     return digest.hexdigest()
 
 
+@snapshot_export
 def export_backup_bundle(db: Session, user_id: int) -> bytes:
     """Return a bounded ZIP containing v2 metadata plus every ready document byte."""
-    backup = export_backup_v2(db, user_id)
+    from .import_backups import export_backup_v2_with_import_mappings
+
+    backup = export_backup_v2_with_import_mappings(db, user_id)
     backup_bytes = json.dumps(
         backup,
         ensure_ascii=False,
@@ -2501,7 +2453,7 @@ def export_backup_bundle(db: Session, user_id: int) -> bytes:
     return output.getvalue()
 
 
-def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, StagedDocument]]:
+def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, StagedDocument], dict[str, Any]]:
     if len(raw) > MAX_BACKUP_BUNDLE_UPLOAD_BYTES:
         raise _bundle_error(
             "bundle_too_large",
@@ -2547,7 +2499,13 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
             payload = parse_backup_json(backup_bytes)
             if not isinstance(payload, dict) or str(payload.get("version")) != "2.0":
                 raise _bundle_error("unsupported_backup_version", "Document bundles require backup v2.")
-            document = validate_backup_v2(payload)
+            from .contact_backups import F8_BACKUP_KEY
+            from .import_backups import F9_BACKUP_KEY, F10_BACKUP_KEY
+
+            document = validate_backup_v2({
+                key: value for key, value in payload.items()
+                if key not in {F8_BACKUP_KEY, F9_BACKUP_KEY, F10_BACKUP_KEY}
+            })
 
             manifest_raw = archive.read("manifest.json")
             manifest = parse_backup_json(manifest_raw)
@@ -2629,7 +2587,7 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
                     item.path.unlink(missing_ok=True)
                     raise _bundle_error("bundle_document_checksum_mismatch", "Bundled document bytes failed exact size/checksum validation.")
                 staged[ref] = item
-            return document, staged
+            return document, staged, payload
     except zipfile.BadZipFile as exc:
         raise _bundle_error("invalid_bundle_zip", "Backup bundle is not a valid ZIP archive.") from exc
     except Exception:
@@ -2904,66 +2862,50 @@ def _restore_document_bundle_records(
     return counts
 
 def restore_backup_bundle(db: Session, user_id: int, raw: bytes, mode: str) -> dict[str, Any]:
-    """Validate every byte before writes, then restore metadata and immutable bytes."""
+    """Restore the complete graph and files under one owned transaction."""
+    from .import_backups import restore_backup_payload_with_import_mappings
+
     if mode not in {RESTORE_MODE_MERGE, RESTORE_MODE_VERIFY}:
         raise _bundle_error("invalid_restore_mode", "Unsupported restore mode.")
-    document, staged = _validate_bundle_zip(raw)
+    document, staged, payload = _validate_bundle_zip(raw)
+    metadata = canonical_json_bytes(payload)
+    published: list[Any] = []
     try:
-        preflight = _preflight_document_bundle(db, user_id, document)
-        if any(values["conflicts"] for values in preflight.values()):
-            raise _bundle_error(
-                "document_restore_conflict",
-                "Document bundle conflicts with existing destination records.",
-                status_code=409,
+        with shared_restore_session(db) as session:
+            preflight = _preflight_document_bundle(session, user_id, document)
+            if any(values["conflicts"] for values in preflight.values()):
+                raise _bundle_error("document_restore_conflict",
+                                    "Document bundle conflicts with existing destination records.",
+                                    status_code=409)
+            # Validate every extension and replay identity before creating core
+            # records or publishing files, while holding the account lock.
+            result = restore_backup_payload_with_import_mappings(
+                session, user_id, metadata, RESTORE_MODE_VERIFY,
             )
-        if mode == RESTORE_MODE_VERIFY:
-            result = restore_backup_v2(db, user_id, document, mode)
-            result["counts"].update(preflight)
-            result["warnings"] = [
-                warning for warning in result["warnings"]
-                if warning.get("code") != "document_bytes_excluded"
-            ]
-            result["document_bytes_included"] = True
-            return result
-
-        bind = db.get_bind()
-        engine = getattr(bind, "engine", bind)
-        restore_session = Session(bind=engine, autoflush=False, expire_on_commit=False)
-        root = _storage_root(create=True)
-        published: list[Any] = []
-        try:
-            with restore_session.begin():
-                core = _restore_v2_transaction(restore_session, user_id, document)
-                restored_counts = _restore_document_bundle_records(
-                    restore_session,
-                    user_id,
-                    document,
-                    staged,
-                    root=root,
-                    published=published,
+            if mode == RESTORE_MODE_VERIFY:
+                result["counts"].update(preflight)
+            else:
+                core = _restore_v2_transaction(session, user_id, document)
+                result = restore_backup_payload_with_import_mappings(
+                    session, user_id, metadata, mode,
+                    _base_result={"backup_id": document.backup_id, "mode": mode,
+                                  **core, "verified": True},
                 )
-            core["counts"].update(restored_counts)
-            return {
-                "backup_id": document.backup_id,
-                "mode": mode,
-                "counts": core["counts"],
-                "warnings": [
-                    warning for warning in core["warnings"]
-                    if warning.get("code") != "document_bytes_excluded"
-                ],
-                "verified": True,
-                "document_bytes_included": True,
-            }
-        except Exception:
-            restore_session.rollback()
-            for path in published:
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-            raise
-        finally:
-            restore_session.close()
+                result["counts"].update(_restore_document_bundle_records(
+                    session, user_id, document, staged, root=_storage_root(create=True),
+                    published=published,
+                ))
+            result["warnings"] = [warning for warning in result["warnings"]
+                                  if warning.get("code") != "document_bytes_excluded"]
+            result["document_bytes_included"] = True
+        return result
+    except Exception:
+        for path in published:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
     finally:
         for item in staged.values():
             try:

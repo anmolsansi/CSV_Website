@@ -55,7 +55,7 @@ function CountGrid({ counts }) {
         <div key={section} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 8 }}>
           <strong style={{ display: 'block', fontSize: 12 }}>{section.replaceAll('_', ' ')}</strong>
           <span style={{ fontSize: 12, color: '#4b5563' }}>
-            {values.created} create · {values.skipped} skip · {values.conflicts} conflict
+            {values.created ?? 0} create · {values.skipped ?? values.existing ?? 0} skip · {values.conflicts ?? 0} conflict
           </span>
         </div>
       ))}
@@ -90,18 +90,18 @@ export default function BackupRestore({ onRestored, toast }) {
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  const exportV2 = async () => {
+  const exportV2 = async (bundle = true) => {
     if (busy) return
     setExporting(true)
     try {
-      const response = await api.exportBackupV2()
+      const response = await (bundle ? api.exportBackupBundle() : api.exportBackupV2())
       const url = URL.createObjectURL(response.data)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `jobgrid_backup_v2_${new Date().toISOString().slice(0, 10)}.json`
+      anchor.download = `jobgrid_backup_v2_${new Date().toISOString().slice(0, 10)}.${bundle ? 'zip' : 'json'}`
       anchor.click()
       URL.revokeObjectURL(url)
-      toast?.('Complete v2 backup exported', 'success')
+      toast?.(bundle ? 'Complete backup exported: records and files' : 'Records exported; document files are excluded', 'success')
     } catch (exportError) {
       toast?.(getErrorMessage(exportError, 'Could not export the backup. Please retry.'), 'error')
     } finally {
@@ -175,8 +175,11 @@ export default function BackupRestore({ onRestored, toast }) {
 
   return (
     <>
-      <button className="btn btn-grey" type="button" onClick={exportV2} disabled={busy}>
+      <button className="btn btn-grey" type="button" onClick={() => exportV2(true)} disabled={busy}>
         {exporting ? 'Exporting backup…' : 'Export complete backup'}
+      </button>
+      <button className="btn btn-grey" type="button" onClick={() => exportV2(false)} disabled={busy}>
+        Export records only (no files)
       </button>
       <label className="btn btn-grey" style={{ cursor: busy ? 'not-allowed' : 'pointer' }}>
         Restore backup file
@@ -184,7 +187,7 @@ export default function BackupRestore({ onRestored, toast }) {
           ref={inputRef}
           data-testid="backup-file-input"
           type="file"
-          accept="application/json,.json"
+          accept="application/json,application/zip,.json,.zip"
           onChange={chooseFile}
           disabled={busy}
           style={{ display: 'none' }}
@@ -211,6 +214,11 @@ export default function BackupRestore({ onRestored, toast }) {
 
           {preview && (
             <>
+              <div role="note">
+                {current?.document_bytes_included
+                  ? 'ZIP backup includes document files.'
+                  : 'Records-only backup: document files are not included.'}
+              </div>
               <div style={{ fontSize: 13 }}>
                 <strong>Merge policy:</strong> JobGrid creates missing records only. Existing destination records win on conflicts and are not overwritten.
               </div>
