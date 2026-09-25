@@ -1,5 +1,7 @@
 # JobGrid — Remaining Implementation Tickets (Full Detail)
 
+> **2026-09-24 reconciliation:** JG-001–JG-010 are locally verified complete; see [current evidence](JG001_010_EXECUTION.md). Historical source snapshots and proposed designs below are not current implementation inventory. Later tickets require separate acceptance.
+
 Prepared: **2026-09-12**  
 Project: **CSV_Website / JobGrid**  
 Status: **Implementation backlog — completed tickets are marked per-ticket below; remaining tickets stay proposed until implemented**  
@@ -271,7 +273,7 @@ In a disposable account upload two jobs, visit one, mark the other applied, add 
 <a id="jg-001"></a>
 ### JG-001 — Freeze and validate the complete backup v2 record schema
 
-**Status:** COMPLETED / locally verified  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** verification/operations  
 **Execution position:** 1/64; group step 1/4
@@ -498,7 +500,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-002"></a>
 ### JG-002 — Add import identity mapping and complete v2 export
 
-**Status:** COMPLETED / locally verified  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** schema/contract  
 **Execution position:** 2/64; group step 2/4
@@ -731,7 +733,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-003"></a>
 ### JG-003 — Implement preflight and transactional full restore
 
-**Status:** PROPOSED / unchecked  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 3/64; group step 3/4
@@ -915,14 +917,14 @@ Record a request/operation ID, safe outcome code, affected count and elapsed tim
 
 #### Acceptance criteria
 
-- [ ] Every numbered JG-003 checkpoint is implemented or explicitly proved already satisfied.
-- [ ] Required regression passes: test_restore_applied_company_notes_and_dates: application exists after fresh-session reload
-- [ ] Required regression passes: test_retry_and_concurrent_retry: one mapping and one destination entity per backup record
-- [ ] Required regression passes: test_failure_on_last_section_rolls_back_all: injected constraint failure leaves zero partial rows
-- [ ] Required regression passes: test_merge_preserves_newer_destination: no existing note/status is overwritten
-- [ ] Required regression passes: test_wrong_account_and_reference_injection: no foreign IDs attached
-- [ ] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
-- [ ] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
+- [x] Every numbered JG-003 checkpoint is implemented or explicitly proved already satisfied.
+- [x] Required regression passes: test_restore_applied_company_notes_and_dates: application exists after fresh-session reload
+- [x] Required regression passes: test_retry_and_concurrent_retry: one mapping and one destination entity per backup record
+- [x] Required regression passes: test_failure_on_last_section_rolls_back_all: injected constraint failure leaves zero partial rows
+- [x] Required regression passes: test_merge_preserves_newer_destination: no existing note/status is overwritten
+- [x] Required regression passes: test_wrong_account_and_reference_injection: no foreign IDs attached
+- [x] No regression in the preserved original application-memory/filter/tab-opening contracts touched by R1.
+- [x] The exact scope works after reload/retry and rejects inaccessible account data where applicable.
 
 #### Release, rollout and rollback
 
@@ -965,7 +967,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-004"></a>
 ### JG-004 — Build restore preview and prove recoverability in the UI
 
-**Status:** COMPLETED / locally verified  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** interface integration  
 **Execution position:** 4/64; group step 4/4
@@ -1172,12 +1174,12 @@ This ticket may be locally complete before the group is exposed. Migration befor
 
 #### Definition of done
 
-- [ ] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
-- [ ] Migration/backup/compatibility checks pass when this ticket changes persistent data.
-- [ ] Relevant user journey or service fixture has actual expected-versus-observed evidence.
-- [ ] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
-- [ ] Diff contains only the named logical change and preserves unrelated work.
-- [ ] Local, staging and released states are recorded separately; no false completion of external gates.
+- [x] Implementation and narrowly scoped regressions pass; failed checks are resolved rather than hidden.
+- [x] Migration/backup/compatibility checks pass when this ticket changes persistent data.
+- [x] Relevant user journey or service fixture has actual expected-versus-observed evidence.
+- [x] Build guide describes implemented behavior, configuration, limits and recovery; no future feature is presented as shipped.
+- [x] Diff contains only the named logical change and preserves unrelated work.
+- [x] Local, staging and released states are recorded separately; no false completion of external gates.
 
 #### Suggested Linear metadata
 
@@ -1219,7 +1221,7 @@ Upload 61 matching jobs plus two controls; set ATS, remote, sponsorship and sear
 <a id="jg-005"></a>
 ### JG-005 — Extract one account-scoped query builder without changing list behavior
 
-**Status:** COMPLETED / locally verified  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 5/64; group step 1/3
@@ -1446,7 +1448,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-006"></a>
 ### JG-006 — Route every export through the shared filter contract
 
-**Status:** COMPLETED / locally verified  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 6/64; group step 2/3
@@ -1672,7 +1674,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-007"></a>
 ### JG-007 — Unify browser and saved-view query serialization
 
-**Status:** COMPLETED / locally verified — merged in PR #45; CI run #70 passed  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** interface integration  
 **Execution position:** 7/64; group step 3/3
@@ -1925,7 +1927,7 @@ Set Asia/Kolkata, visit a job and save/apply a different job. Confirm visited=1,
 <a id="jg-008"></a>
 ### JG-008 — Define metric semantics and add durable lifecycle event storage
 
-**Status:** COMPLETED / locally verified — merged in PR #47; CI run #74 passed  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** schema/contract  
 **Execution position:** 8/64; group step 1/4
@@ -2155,7 +2157,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-009"></a>
 ### JG-009 — Wire every mutation into the lifecycle ledger
 
-**Status:** COMPLETED / locally verified — merged in PR #49; CI run #80 passed  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** API/service  
 **Execution position:** 9/64; group step 2/4
@@ -2382,7 +2384,7 @@ This ticket may be locally complete before the group is exposed. Migration befor
 <a id="jg-010"></a>
 ### JG-010 — Add user timezone and safely backfill known historical facts
 
-**Status:** COMPLETED / locally verified — merged in PR #52; CI run #97 passed  
+**Status:** COMPLETED / locally reverified 2026-09-24 — [evidence](JG001_010_EXECUTION.md)\
 **Priority:** P1  
 **Type:** schema/contract  
 **Execution position:** 10/64; group step 3/4

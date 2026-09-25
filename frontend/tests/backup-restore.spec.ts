@@ -127,3 +127,42 @@ test('v2 restore recovers an applied job and company after reload', async ({ pag
   await page.getByRole('button', { name: `${company} · 1 jobs · 1 applied`, exact: true }).click()
   await expect(page.getByText(/^Applied:/)).toBeVisible()
 })
+
+test('complete ZIP download restores private records and file bytes through the UI', async ({ page, context }) => {
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  await context.request.post(`${API_URL}/auth/logout`)
+  expect((await context.request.post(`${API_URL}/auth/dev-login`, { data: { email: `zip-source-${suffix}@example.test` } })).ok()).toBeTruthy()
+  const bytes = Buffer.from('Synthetic recovery resume')
+  const upload = await context.request.post(`${API_URL}/crm/documents`, {
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    multipart: { kind: 'resume', label: 'Recovery resume', file: { name: 'resume.txt', mimeType: 'text/plain', buffer: bytes } },
+  })
+  expect(upload.status()).toBe(201)
+  const contact = await context.request.post(`${API_URL}/crm/contacts`, { data: { name: `Recovery contact ${suffix}` }, headers: { 'Idempotency-Key': crypto.randomUUID() } })
+  expect(contact.ok()).toBeTruthy()
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Export records only (no files)', exact: true })).toBeVisible()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export complete backup', exact: true }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/\.zip$/)
+  const path = test.info().outputPath('complete-backup.zip')
+  await download.saveAs(path)
+  await context.request.post(`${API_URL}/auth/logout`)
+  expect((await context.request.post(`${API_URL}/auth/dev-login`, { data: { email: `zip-target-${suffix}@example.test` } })).ok()).toBeTruthy()
+  await page.goto('/')
+  await page.getByTestId('backup-file-input').setInputFiles(path!)
+  await expect(page.getByText('ZIP backup includes document files.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Restore backup', exact: true }).click()
+  await expect(page.getByText('Restore completed.', { exact: false })).toBeVisible()
+  await page.reload()
+  const people = await context.request.get(`${API_URL}/crm/contacts`)
+  expect(await people.text()).toContain(`Recovery contact ${suffix}`)
+  const docs = await context.request.get(`${API_URL}/crm/documents`)
+  const listing = await docs.json()
+  const records = Array.isArray(listing) ? listing : listing.rows || listing.items || listing.documents
+  expect(records).toHaveLength(1)
+  const restored = await context.request.get(`${API_URL}/crm/documents/${records[0].id}/download`)
+  expect(restored.ok()).toBeTruthy()
+  expect(await restored.body()).toEqual(bytes)
+})

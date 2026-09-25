@@ -862,9 +862,18 @@ def test_backup_round_trip_retains_snooze_and_manual_action(db_session):
         restored_track.id, restored_track.follow_up_at
     )
     assert set(overrides) == {manual_key, followup_key}
-    assert overrides[manual_key].snoozed_until == manual_snooze
+    # SQLite reloads naive UTC; PostgreSQL returns aware UTC for this column.
+    # Compare the persisted instant and the portable wire representation.
+    from app.today_schemas import canonical_utc_timestamp
+
+    assert canonical_utc_timestamp(overrides[manual_key].snoozed_until) == manual_snooze.isoformat().replace("+00:00", "Z")
     assert overrides[manual_key].version == 2
-    assert overrides[followup_key].snoozed_until == followup_snooze
+    assert canonical_utc_timestamp(overrides[followup_key].snoozed_until) == followup_snooze.isoformat().replace("+00:00", "Z")
+    exported_overrides = export_backup_v2(db_session, destination_id)["sections"]["work_item_overrides"]
+    assert {item["snoozed_until"] for item in exported_overrides} == {
+        manual_snooze.isoformat().replace("+00:00", "Z"),
+        followup_snooze.isoformat().replace("+00:00", "Z"),
+    }
 
     replay = restore_backup_v2(
         db_session,

@@ -309,3 +309,43 @@ def test_failed_publish_rolls_back_core_restore(
     assert db_session.query(DocumentVersion).filter_by(
         user_id=destination.id,
     ).count() == 0
+
+
+def test_complete_bundle_commit_failure_rolls_back_files_and_extensions(client, db_session, monkeypatch, private_document_storage):
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+    from app.contact_models import Contact
+    from app.import_models import ImportMapping
+
+    fixture = _source_fixture(client, db_session)
+    source = db_session.query(JobTrack).filter_by(url=fixture['urls'][0]).one()
+    db_session.add(Contact(user_id=source.user_id, name='Recovery recruiter'))
+    db_session.add(ImportMapping(user_id=source.user_id, name='Recovery mapping',
+                                header_fingerprint='a' * 64, mapping_json={'0': 'url'}))
+    db_session.commit()
+    exported = client.get('/crm/backup/export/bundle')
+    assert exported.status_code == 200, exported.text
+    destination_email = _login_destination(client)
+    destination = db_session.query(User).filter_by(email=destination_email).one()
+    original_files = set(private_document_storage.rglob('*.bin'))
+
+    def fail_commit(session):
+        if session.info.get('backup_restore'):
+            raise RuntimeError('injected final commit failure')
+
+    event.listen(Session, 'before_commit', fail_commit)
+    try:
+        result = client.post('/crm/backup/import/bundle', files={'file': ('backup.zip', exported.content, 'application/zip')})
+        assert result.status_code == 500
+    finally:
+        event.remove(Session, 'before_commit', fail_commit)
+    db_session.expire_all()
+    for model in (JobTrack, Contact, ImportMapping, DocumentVersion):
+        assert db_session.query(model).filter_by(user_id=destination.id).count() == 0
+    assert set(private_document_storage.rglob('*.bin')) == original_files
+
+    retry = client.post('/crm/backup/import/bundle', files={'file': ('backup.zip', exported.content, 'application/zip')})
+    assert retry.status_code == 200, retry.text
+    assert retry.json()['counts']['contacts']['created'] == 1
+    assert retry.json()['counts']['import_mappings']['created'] == 1
+    assert retry.json()['counts']['document_versions']['created'] == 2
