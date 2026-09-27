@@ -3,8 +3,8 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 const API_URL = 'http://localhost:8000'
 const ACCOUNT_TIMEZONE = 'America/New_York'
 const FIXED_BROWSER_NOW = '2026-09-21T15:00:00.000Z'
-const FUTURE_SNOOZE_WALL = '2030-06-15T12:30'
-const FUTURE_RESCHEDULE_WALL = '2030-06-16T09:45'
+const FUTURE_SNOOZE_WALL = '2027-03-15T12:30'
+const FUTURE_RESCHEDULE_WALL = '2027-03-16T09:45'
 const PAST_WALL = '2020-01-01T09:00'
 
 function manualItem(overrides: Record<string, unknown> = {}) {
