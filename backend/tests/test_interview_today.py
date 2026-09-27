@@ -89,3 +89,56 @@ def test_interview_preparation_reuses_today_snooze_model(db_session):
     )
     item = next(item for item in with_snoozed["items"] if item["action_key"] == key)
     assert item["snooze_version"] == 2
+
+
+def test_three_interviews_are_reachable_through_today_cursor(db_session):
+    user, track, first_interview = _setup(db_session)
+    for hour, label in ((18, "System Design"), (20, "Hiring Manager")):
+        db_session.add(
+            Interview(
+                user_id=user.id,
+                track_id=track.id,
+                starts_at=datetime(2026, 9, 23, hour, 0),
+                ends_at=datetime(2026, 9, 23, hour + 1, 0),
+                timezone="UTC",
+                kind="video",
+                status="scheduled",
+                round_label=label,
+            )
+        )
+    db_session.flush()
+
+    now = datetime(2026, 9, 23, 8, 0, tzinfo=timezone.utc)
+    first_page = build_today_queue_with_interviews(
+        db_session,
+        user_id=user.id,
+        timezone_name="UTC",
+        secret_key="test-secret",
+        now=now,
+        limit=2,
+    )
+
+    assert first_page["counts"]["total"] == 3
+    assert first_page["counts"]["due_today"] == 3
+    assert len(first_page["items"]) == 2
+    assert all(item["type"] == "interview" for item in first_page["items"])
+    assert first_page["next_cursor"] is not None
+
+    second_page = build_today_queue_with_interviews(
+        db_session,
+        user_id=user.id,
+        timezone_name="UTC",
+        secret_key="test-secret",
+        cursor=first_page["next_cursor"],
+        now=now + timedelta(hours=1),
+        limit=2,
+    )
+
+    assert second_page["as_of"] == first_page["as_of"]
+    assert second_page["counts"]["total"] == 3
+    assert len(second_page["items"]) == 1
+    assert second_page["next_cursor"] is None
+
+    emitted = first_page["items"] + second_page["items"]
+    assert len({item["action_key"] for item in emitted}) == 3
+    assert {item["id"] for item in emitted} >= {first_interview.id}
