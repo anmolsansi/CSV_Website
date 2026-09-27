@@ -1,6 +1,6 @@
 # Repo Context — JobGrid — 2026-09-27
 
-Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162 and the C-05 SQLite timestamp-contract repair in PR #163.
+Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162, the C-05 SQLite timestamp-contract repair in PR #163, and the C-06 browser-time determinism package in PR #167.
 
 This file is the compact repository context for implementation agents. It describes the current codebase, contracts, active risks, and completion state. Read `development.md` for the full completion plan and ticket-level closeout instructions. Historical planning files may contain stale proposed names or completion labels, so current code plus the completion evidence docs take precedence.
 
@@ -89,7 +89,7 @@ C-04 replaces split base/interview pagination with one mixed-source continuation
 
 Reminder scheduling and delivery are separate activation gates. `RUN_REMINDER_WORKER` and `REMINDER_EMAIL_DELIVERY_ENABLED` default off. Maintenance jobs also default off. Tests and local work must not accidentally send real email or run destructive background work.
 
-Browser time testing is not fully release-hardened yet. `frontend/playwright.config.ts` currently defines setup plus one Chromium project. C-06/C-07 in `development.md` require explicit multi-timezone browser coverage instead of relying on the host timezone.
+C-06 makes browser-time acceptance deterministic without changing product-time semantics. The primary `chromium` Playwright project is explicitly UTC, while `chromium-kolkata` and `chromium-new-york` repeat the `@time-zone` contract scenarios in `Asia/Kolkata` and `America/New_York`. Tests freeze the browser clock where needed and keep browser-local `datetime-local` wall time separate from expected UTC payload/persistence. They also verify account timezone versus device timezone, day-boundary behavior, failure/cancel/focus paths, reload persistence, and real-API snooze/reschedule round trips. `.github/workflows/c06-browser-timezones.yml` enforces the targeted three-zone matrix. See `docs/C06_BROWSER_TIME_DETERMINISM.md`.
 
 ## Documents and private storage
 
@@ -150,9 +150,11 @@ C-04 adds focused mixed-source backend coverage for source ordering, cursor term
 
 C-05 adds `backend/tests/test_timestamp_contracts.py` for UTC/offset/DST/legacy-naive persistence behavior, SQLite reload/serialization, reminder same-instant idempotency, and backup/restore round trips. The original snooze and reminder regressions are also executed explicitly against SQLite while ordinary hosted backend CI exercises PostgreSQL.
 
+C-06 adds `frontend/tests/c06-browser-time.spec.ts`, repairs the original Today wall-time fixtures, and adds `.github/workflows/c06-browser-timezones.yml`. The accepted C-06 run collected and passed 16 tests across UTC, Asia/Kolkata, and America/New_York, including real migrated-backend snooze/reschedule persistence. The accompanying full CI run passed 603 PostgreSQL backend tests, all 186 explicit-UTC Chromium tests, 8 tab-helper tests, the focused JG-023 browser workflow, frontend production build, backend compile, and Alembic revision 018 startup.
+
 Critical test safety: `backend/tests/conftest.py` can recreate/drop PostgreSQL tables. `DATABASE_URL` and `TEST_DATABASE_URL` used by tests must always point to disposable test databases. Never point pytest or browser fixtures at production or the only copy of staging data.
 
-Current release gaps: CI does not yet enforce the complete C-07 matrix, including the supported SQLite path and explicit multi-zone browser projects. The `main` branch is currently unprotected and has no required status-check enforcement, so branch protection remains part of C-07 rather than an assumed repository guarantee.
+Current release gaps belong to C-07: the release policy still needs explicit hosted enforcement for the supported SQLite path, exact deployable-SHA/evidence handling, and branch protection/required status checks. C-06's dedicated multi-zone workflow is targeted browser-time evidence, not a substitute for C-07's complete release-policy matrix. The `main` branch is currently unprotected and has no required status-check enforcement.
 
 ## Deployment topology
 
@@ -174,7 +176,8 @@ This topology is deployment preparation, not proof of production readiness. Real
 - C-01 through C-03 were closed in the recovery sequence through PR #161.
 - C-04 mixed-source Today pagination is closed by the mixed-source cursor/query repair and the acceptance evidence in `docs/C04_TODAY_PAGINATION.md`.
 - C-05 SQLite timestamp contracts are closed by PR #163 and the acceptance evidence in `docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md`. Persisted naive SQLite values for UTC-instant columns are normalized as UTC at the Python/wire boundary; request inputs that require offsets remain strict.
-- The immediate engineering sequence is now C-06 deterministic browser-time tests and C-07 corrected release CI.
+- C-06 deterministic browser-time tests are closed by PR #167 and the acceptance evidence in `docs/C06_BROWSER_TIME_DETERMINISM.md`. Product wall-time semantics are unchanged; the test harness now proves the same payload/persistence contract in UTC, Asia/Kolkata, and America/New_York.
+- The immediate engineering sequence is now C-07 corrected release CI.
 - C-08 is broad product acceptance across the existing implementation. Do not rebuild features that already satisfy their contracts.
 - C-09/C-10 are real staging and external-provider gates.
 - C-11 reconciles ticket/documentation evidence after acceptance.
@@ -191,6 +194,7 @@ A historical `COMPLETED` label in a roadmap file is not enough to claim release 
 - Do not add independent commits inside composed backup restore layers.
 - Do not change backup wire formats, cursor formats, timestamp semantics, or public API contracts silently.
 - Do not replace the C-04 mixed-source cursor with page-local source cursors or merge interviews after base pagination.
+- Do not make browser-time tests deterministic by forcing the host process to UTC or by comparing stripped UTC text with local `datetime-local` input. Keep wall time, UTC instant, account timezone, and browser timezone explicit.
 - Do not reactivate automatic purge, reminder email, URL checking, or maintenance jobs by default.
 - Do not store private documents in the repository, a served directory, or ephemeral production temp storage.
 - Do not treat mocked browser tests, dev login, queued SMTP, or a green local suite as staging/production evidence.
