@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from .time_utils import normalize_utc_instant, same_utc_instant
+
 
 HHMM_RE = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 OCCURRENCE_RE = re.compile(
@@ -105,12 +107,12 @@ def validate_preference_for_timezone(
 
 
 def _utc_key_timestamp(value: datetime) -> str:
-    if value.tzinfo is None:
+    if value.tzinfo is None or value.utcoffset() is None:
         raise ReminderContractError(
             "naive_occurrence_time",
             "Reminder occurrence due time must be timezone-aware.",
         )
-    utc = value.astimezone(timezone.utc).replace(microsecond=0)
+    utc = normalize_utc_instant(value).replace(microsecond=0)
     return utc.isoformat().replace("+00:00", "Z")
 
 
@@ -144,6 +146,20 @@ def remap_reminder_occurrence_key(value: str, *, track_id: int) -> str:
     )
 
 
+def _normalized_sent_at_input(sent_at: datetime | None) -> datetime:
+    if sent_at is None:
+        raise ReminderContractError(
+            "sent_at_required",
+            "sent_at is required when a delivery becomes sent.",
+        )
+    if sent_at.tzinfo is None or sent_at.utcoffset() is None:
+        raise ReminderContractError(
+            "sent_at_timezone_required",
+            "sent_at must be timezone-aware.",
+        )
+    return normalize_utc_instant(sent_at)
+
+
 def apply_delivery_transition(
     delivery: Any,
     new_status: str,
@@ -159,11 +175,15 @@ def apply_delivery_transition(
         )
 
     if current == new_status:
-        if current == "sent" and sent_at is not None and delivery.sent_at != sent_at:
-            raise ReminderContractError(
-                "sent_at_immutable",
-                "sent_at cannot change after provider acceptance.",
-            )
+        if current == "sent" and sent_at is not None:
+            normalized_sent_at = _normalized_sent_at_input(sent_at)
+            if delivery.sent_at is None or not same_utc_instant(
+                delivery.sent_at, normalized_sent_at
+            ):
+                raise ReminderContractError(
+                    "sent_at_immutable",
+                    "sent_at cannot change after provider acceptance.",
+                )
         return
 
     if current == "unknown" and new_status == "pending" and explicit_unknown_retry:
@@ -185,17 +205,7 @@ def apply_delivery_transition(
         )
 
     if new_status == "sent":
-        if sent_at is None:
-            raise ReminderContractError(
-                "sent_at_required",
-                "sent_at is required when a delivery becomes sent.",
-            )
-        if sent_at.tzinfo is None:
-            raise ReminderContractError(
-                "sent_at_timezone_required",
-                "sent_at must be timezone-aware.",
-            )
-        delivery.sent_at = sent_at
+        delivery.sent_at = _normalized_sent_at_input(sent_at)
     elif sent_at is not None:
         raise ReminderContractError(
             "sent_at_not_allowed",

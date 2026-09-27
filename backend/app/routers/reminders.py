@@ -21,6 +21,7 @@ from ..reminder_schemas import (
 )
 from ..services.lifecycle import LifecycleEventError, coerce_operation_id
 from ..services.reminders import email_delivery_availability, sync_user_reminders
+from ..time_utils import normalize_utc_instant
 
 
 router = APIRouter(prefix="/crm/reminders", tags=["reminders"])
@@ -107,6 +108,12 @@ def _decode_cursor(value: str) -> int:
     return delivery_id
 
 
+def _wire_instant(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return normalize_utc_instant(value)
+
+
 def _delivery_summary(delivery: ReminderDelivery) -> dict:
     track = delivery.track
     unread = (
@@ -121,9 +128,9 @@ def _delivery_summary(delivery: ReminderDelivery) -> dict:
         "role": track.title if track is not None else None,
         "channel": delivery.channel,
         "status": delivery.status,
-        "scheduled_at": delivery.scheduled_at,
-        "sent_at": delivery.sent_at,
-        "read_at": delivery.read_at,
+        "scheduled_at": _wire_instant(delivery.scheduled_at),
+        "sent_at": _wire_instant(delivery.sent_at),
+        "read_at": _wire_instant(delivery.read_at),
         "unread": unread,
         "attempt_count": delivery.attempt_count,
         "last_error_code": delivery.last_error_code,
