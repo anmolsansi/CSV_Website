@@ -1,10 +1,12 @@
 # JobGrid — Development, Verification, and Deployment Guide
 
+> **2026-09-27 C-01–C-03 closeout:** C-01, C-02, and C-03 are completed at the local/hosted-CI recovery-contract level. PR #159 supplied the atomic restore and complete composed ZIP recovery implementation; the C-01 closeout branch adds the missing three-interview Today cursor regression/fix and refreshes `docs/BACKUP_STRATEGY.md` to the current portable recovery contract. C-04 remains open for the broader mixed-source pagination contract (bounded interview candidate queries, cursor context/version hardening, and exhaustive mixed-source acceptance); this closeout does not claim C-04 complete.
+
 > **2026-09-24 update:** JG-001–JG-010 are completed and verified locally. See [implementation and acceptance evidence](docs/JG001_010_EXECUTION.md). Earlier audit findings below are historical unless updated in those ticket entries. JG-011–JG-064 and the broader C packages retain their separate acceptance gates. This update is not hosted CI or deployment evidence.
 
 Prepared: **2026-09-24**\
 Audited baseline: **`31d51d3e2d61626a13c1b02bc6c4126d3710e542` on main**\
-Overall status: **Not completed — implementation exists across the roadmap, but recovery defects, queue pagination, test failures, and external acceptance remain.**
+Overall status: **Not completed — C-01–C-03 recovery foundation is closed, while C-04+ queue/time/CI/product/staging/release acceptance remains.**
 
 This is the primary execution guide for finishing the existing JobGrid scope. It consolidates the requirements and completion work from [jg.md](jg.md), which remains a historical planning reference. It explains what remains, why it matters, when to start, where to work, how to implement and verify the change, and what evidence closes it. It does not expand the product into another speculative feature roadmap.
 
@@ -92,9 +94,9 @@ The original roadmap's sequential build order was appropriate before these featu
 
 | Order | Status | Task | Dependency | Original ticket focus |
 |---|---|---|---|---|
-| 1 | Not completed | [C-01 — Preserve reproductions and freeze recovery contracts](#c-01) | None | JG-001–004, JG-023 |
-| 2 | Not completed | [C-02 — Make every restore atomic](#c-02) | C-01 | JG-003, JG-056, JG-058, JG-064 |
-| 3 | Not completed | [C-03 — Deliver one complete recoverable backup](#c-03) | C-02 | JG-002, JG-004, JG-044, JG-056–058, JG-064 |
+| 1 | Completed | [C-01 — Preserve reproductions and freeze recovery contracts](#c-01) | None | JG-001–004, JG-023 |
+| 2 | Completed | [C-02 — Make every restore atomic](#c-02) | C-01 | JG-003, JG-056, JG-058, JG-064 |
+| 3 | Completed | [C-03 — Deliver one complete recoverable backup](#c-03) | C-02 | JG-002, JG-004, JG-044, JG-056–058, JG-064 |
 | 4 | Not completed | [C-04 — Fix mixed-source Today pagination](#c-04) | C-01 | JG-026–028, JG-051, JG-055–056 |
 | 5 | Not completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |
 | 6 | Not completed | [C-06 — Make browser time tests deterministic](#c-06) | C-04, C-05 | JG-010, JG-023, JG-027–028, JG-038–040 |
@@ -110,7 +112,7 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-01"></a>
 ## C-01 — Preserve reproductions and freeze recovery contracts
 
-**Priority:** P1 prerequisite. **When:** before restore changes. **Owner:** backend implementer plus reviewer. **Status:** Not completed.
+**Priority:** P1 prerequisite. **When:** before restore changes. **Owner:** backend implementer plus reviewer. **Status:** Completed.
 
 **What and why:** turn the independent failures into durable regression inputs and define exactly which data “complete backup” preserves. Otherwise the next repair can pass tests while losing a later feature's records.
 
@@ -118,24 +120,26 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 
 **Implementation checkpoints:**
 
-- [ ] C-01.01 Record baseline SHA, migration head, runtime versions, working-tree scope, and test database names in the evidence record.
-- [ ] C-01.02 Recreate a synthetic source account with an applied track, notes/dates, contact, association, interview, saved import mapping, manual task/snooze, document/version/selection, and undo audit metadata. Include two accounts to detect ownership leaks.
-- [ ] C-01.03 Export v2 JSON, alter only the contacts-extension checksum, then import into an empty destination. Assert HTTP rejection **and zero new rows in every affected table**. Baseline behavior: rejection still leaves one application committed.
-- [ ] C-01.04 Export both JSON and ZIP. Inventory section names, backup-local references, file members, checksums, and declared exclusions. Baseline behavior: JSON has contact/mapping extensions but no document bytes; ZIP has document bytes but omits those extensions.
-- [ ] C-01.05 Create three future interviews on the same account-local day and request Today with limit two. Assert all three are reachable through cursors. Baseline behavior: two items, total three, null next cursor.
-- [ ] C-01.06 Create a persisted-data coverage table from current ORM models: exported, reconstructed, or deliberately excluded with reason. Include data introduced after the base backup schema; do not infer coverage from table counts alone.
-- [ ] C-01.07 Preserve deliberate exclusions: authentication secrets, transient upload previews, and executable undo before-images must not be made portable by accident. Restored undo metadata remains non-actionable. Document whether pending deliveries are disabled/replanned so restore never silently resends messages.
-- [ ] C-01.08 Specify compatibility for v1, early v2, current extensions, missing optional sections, unknown required sections, and metadata-only restores. Reject unsupported required data before writes.
-- [ ] C-01.09 Keep regression fixtures small, deterministic, and synthetic; promote the reproductions into versioned tests. Record both the expected failure and the later passing result.
+- [x] C-01.01 Record baseline SHA, migration head, runtime versions, working-tree scope, and test database names in the evidence record.
+- [x] C-01.02 Recreate a synthetic source account with an applied track, notes/dates, contact, association, interview, saved import mapping, manual task/snooze, document/version/selection, and undo audit metadata. Include two accounts to detect ownership leaks.
+- [x] C-01.03 Export v2 JSON, alter only the contacts-extension checksum, then import into an empty destination. Assert HTTP rejection **and zero new rows in every affected table**. Baseline behavior: rejection still leaves one application committed.
+- [x] C-01.04 Export both JSON and ZIP. Inventory section names, backup-local references, file members, checksums, and declared exclusions. Baseline behavior: JSON has contact/mapping extensions but no document bytes; ZIP has document bytes but omits those extensions.
+- [x] C-01.05 Create three future interviews on the same account-local day and request Today with limit two. Assert all three are reachable through cursors. Baseline behavior: two items, total three, null next cursor.
+- [x] C-01.06 Create a persisted-data coverage table from current ORM models: exported, reconstructed, or deliberately excluded with reason. Include data introduced after the base backup schema; do not infer coverage from table counts alone.
+- [x] C-01.07 Preserve deliberate exclusions: authentication secrets, transient upload previews, and executable undo before-images must not be made portable by accident. Restored undo metadata remains non-actionable. Document whether pending deliveries are disabled/replanned so restore never silently resends messages.
+- [x] C-01.08 Specify compatibility for v1, early v2, current extensions, missing optional sections, unknown required sections, and metadata-only restores. Reject unsupported required data before writes.
+- [x] C-01.09 Keep regression fixtures small, deterministic, and synthetic; promote the reproductions into versioned tests. Record both the expected failure and the later passing result.
 
 **Failure/retry:** fixtures must use fresh destinations or rolled-back test transactions. A prior failed restore may have polluted the destination; do not reuse it unknowingly. Never point tests at production.
+
+**Completion evidence (2026-09-27):** The late-extension checksum/partial-restore and composed-ZIP metadata failures were preserved and repaired in PR #159, with durable regression coverage in `backend/tests/test_complete_backup.py`, `test_backup_contract.py`, and `test_document_backup.py`. The remaining independent reproduction, three scheduled interviews with `limit=2`, is now versioned in `backend/tests/test_interview_today.py`; continuation freezes the base queue `as_of`, applies the signed ordering boundary to interview items, and emits the next cursor from the final mixed-source item. `backend/app/backup_schemas.py::MODEL_FIELD_INVENTORY` is the persisted-data coverage table, and `docs/BACKUP_STRATEGY.md` records portable coverage, deliberate exclusions, compatibility, side-effect rules, and retry/reconciliation behavior. C-04 remains open for the broader bounded/context-aware mixed-source pagination acceptance.
 
 **Completion proof:** three independent baseline failures are reproduced, and the data-coverage/compatibility contract is reviewed. Capture deliberately failing regressions on the repair branch, then make them pass with C-02–C-06 before merging. Never merge a knowingly failing required CI check as a standalone foundation change. C-01 evidence can be ready before its dependent fixes; final publication requires the combined repair to be green.
 
 <a id="c-02"></a>
 ## C-02 — Make every restore atomic
 
-**Priority:** P1 data integrity. **When:** immediately after C-01. **Owner:** backend implementer. **Status:** Not completed.
+**Priority:** P1 data integrity. **When:** immediately after C-01. **Owner:** backend implementer. **Status:** Completed.
 
 **Observed defect:** `restore_backup_payload_with_contacts` calls the base restore before validating the contacts extension. The base can commit using its own session. Later wrappers add further independent commit boundaries. An outer `rollback()` on the request session cannot undo an already committed inner session.
 
@@ -145,21 +149,23 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 
 **Implementation checkpoints:**
 
-- [ ] C-02.01 Trace the JSON, legacy, and ZIP entry points to all session creation, flush, commit, rollback, receipt, and filesystem operations. Record a compact call/transaction map.
-- [ ] C-02.02 Parse/version-route once; validate checksums, sizes, identifiers, duplicate references, all present extensions, ownership, and cross-section references before applying records.
-- [ ] C-02.03 Separate pure validation and destination conflict classification from mutation. Use a typed validated restore plan or an existing equivalent; do not introduce a general workflow engine.
-- [ ] C-02.04 Give one restore orchestrator ownership of the transaction/session. Child writers accept that same session and flush when IDs are needed; they do not independently commit or close it.
-- [ ] C-02.05 Account for SQLAlchemy autobegin from earlier reads. Do not blindly wrap an already active request transaction in `begin()`; choose an explicit dedicated restore session or the established caller-owned transaction pattern consistently.
-- [ ] C-02.06 Move contact, interview, association, import-mapping, and allowed undo-metadata writes into that transaction. Apply parent references before children and remap using backup references rather than source integer IDs.
-- [ ] C-02.07 Lock/revalidate destination conflicts inside the write transaction. Preflight is advisory if another request changes the account before commit.
-- [ ] C-02.08 Commit imported data, required lifecycle/history entries, and restore identity receipts together. No successful receipt or event survives a rolled-back restore.
-- [ ] C-02.09 Make verification mode side-effect free: no rows, receipt increments, document publication, reminders, or external messages.
-- [ ] C-02.10 On validation/constraint/commit errors, roll back all database state and return the existing structured safe error. Do not expose raw SQL or call the result successful with a warning.
-- [ ] C-02.11 Preserve replay rules: same backup identity and content is a no-op/reported replay; changed content under the same identity conflicts. Concurrent identical restores must not duplicate relationships.
-- [ ] C-02.12 Inject failures after base writes, after contacts, after mappings, after undo metadata, and immediately before commit. Re-query through a separate session to prove durable state is unchanged.
-- [ ] C-02.13 Test nonempty destinations, missing optional legacy sections, broken references, wrong-owner references, changed payload replay, and two concurrent PostgreSQL attempts.
+- [x] C-02.01 Trace the JSON, legacy, and ZIP entry points to all session creation, flush, commit, rollback, receipt, and filesystem operations. Record a compact call/transaction map.
+- [x] C-02.02 Parse/version-route once; validate checksums, sizes, identifiers, duplicate references, all present extensions, ownership, and cross-section references before applying records.
+- [x] C-02.03 Separate pure validation and destination conflict classification from mutation. Use a typed validated restore plan or an existing equivalent; do not introduce a general workflow engine.
+- [x] C-02.04 Give one restore orchestrator ownership of the transaction/session. Child writers accept that same session and flush when IDs are needed; they do not independently commit or close it.
+- [x] C-02.05 Account for SQLAlchemy autobegin from earlier reads. Do not blindly wrap an already active request transaction in `begin()`; choose an explicit dedicated restore session or the established caller-owned transaction pattern consistently.
+- [x] C-02.06 Move contact, interview, association, import-mapping, and allowed undo-metadata writes into that transaction. Apply parent references before children and remap using backup references rather than source integer IDs.
+- [x] C-02.07 Lock/revalidate destination conflicts inside the write transaction. Preflight is advisory if another request changes the account before commit.
+- [x] C-02.08 Commit imported data, required lifecycle/history entries, and restore identity receipts together. No successful receipt or event survives a rolled-back restore.
+- [x] C-02.09 Make verification mode side-effect free: no rows, receipt increments, document publication, reminders, or external messages.
+- [x] C-02.10 On validation/constraint/commit errors, roll back all database state and return the existing structured safe error. Do not expose raw SQL or call the result successful with a warning.
+- [x] C-02.11 Preserve replay rules: same backup identity and content is a no-op/reported replay; changed content under the same identity conflicts. Concurrent identical restores must not duplicate relationships.
+- [x] C-02.12 Inject failures after base writes, after contacts, after mappings, after undo metadata, and immediately before commit. Re-query through a separate session to prove durable state is unchanged.
+- [x] C-02.13 Test nonempty destinations, missing optional legacy sections, broken references, wrong-owner references, changed payload replay, and two concurrent PostgreSQL attempts.
 
 **Files and database are not one ACID transaction:** C-03 must coordinate immutable document staging/publication with database commit. Preserve existing files; remove only newly staged/published files owned by the failed attempt, or leave a documented recoverable state with a reconciler. A cleanup failure must be visible and retryable.
+
+**Completion evidence (2026-09-27):** PR #159 introduced `backend/app/services/backup_sessions.py` as the shared restore transaction/snapshot boundary. Base v1/v2, contacts/interviews/associations, import mappings, non-actionable F10 metadata, and bundle restore now participate in the caller-owned transaction instead of committing child layers independently. Preflight validates extensions before writes, verify-only is side-effect free, replay conflicts are checked, PostgreSQL account locking serializes competing restores, and late injected failures are re-queried from fresh sessions to prove no durable partial graph. Existing legacy readers remain supported.
 
 **Completion proof:** original checksum reproduction leaves zero imported records; every injected late failure preserves before/after counts and normalized content; successful full restores and retries pass on PostgreSQL and the supported SQLite path. Existing legacy restore tests remain green.
 
@@ -168,7 +174,7 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-03"></a>
 ## C-03 — Deliver one complete recoverable backup
 
-**Priority:** P1 recovery. **When:** after C-02 establishes transaction ownership. **Owner:** backend and frontend implementer. **Status:** Not completed.
+**Priority:** P1 recovery. **When:** after C-02 establishes transaction ownership. **Owner:** backend and frontend implementer. **Status:** Completed.
 
 **Observed defect:** `export_backup_bundle` calls the base exporter, bypassing later extensions. The UI calls JSON export and labels it complete even though document bytes are excluded.
 
@@ -176,21 +182,23 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 
 **Implementation checkpoints:**
 
-- [ ] C-03.01 Create one explicitly composed metadata export path covering all portable current sections. Reuse it for JSON and ZIP; avoid circular imports or behavior that relies on changing an imported function indirectly.
-- [ ] C-03.02 Produce metadata from one consistent database snapshot. All section references must describe the same account state; sequential independent snapshots can invent broken relationships during concurrent edits.
-- [ ] C-03.03 Add a capability/manifest declaration that accurately identifies included metadata and files. Retain compatibility with existing versioned validators and checksums.
-- [ ] C-03.04 Verify each included immutable document's ownership, storage key, byte count, and checksum. Handle missing/quarantined/deleted files according to an explicit contract; never silently call a missing-file package complete.
-- [ ] C-03.05 Enforce compressed and expanded byte limits, member count, duplicate member rejection, path traversal/symlink rejection, and per-file hash validation before writes. Do not extract untrusted paths directly under the live document root.
-- [ ] C-03.06 Route ZIP restore through the same complete metadata validator/transaction orchestrator as JSON. Merely fixing ZIP export without import dispatch still loses data.
-- [ ] C-03.07 Stage new files privately using attempt-owned names. Verify all bytes before metadata becomes ready. Preserve preexisting immutable files during retry/rollback; reconcile interruption between file publication and DB commit.
-- [ ] C-03.08 Expose “Complete backup — records and files” for ZIP and “Records only — excludes document files” for JSON. Update explanatory text, download names, busy state, errors, and success notifications together.
-- [ ] C-03.09 Accept supported JSON/ZIP inputs in the restore UI and show preflight counts, format, capabilities, file exclusions, conflicts, and failures before applying. Keep a selected file/draft after a recoverable failure.
-- [ ] C-03.10 Use one busy guard against double-submit. Do not report complete until the API has committed. If the response is lost after commit, an idempotent retry must report the existing result.
-- [ ] C-03.11 Round-trip the C-01 rich fixture into an empty account and compare normalized content, references, timestamps, relationships, and file hashes. Source/destination integer IDs need not match.
-- [ ] C-03.12 Round-trip into a nonempty account and repeat the import; assert deterministic conflict/replay behavior and zero duplicate contacts, mappings, document versions, or events.
-- [ ] C-03.13 Simulate missing file, changed hash, disk full/write failure, process interruption, and cleanup failure. Verify a safe retry/reconciliation path and an accurate user message.
-- [ ] C-03.14 Perform a real browser download → upload → preview → restore flow against the local backend, not only mocked responses. Download restored documents and verify bytes.
-- [ ] C-03.15 Update backup documentation with data categories, intentional exclusions, restore compatibility, limits, and operator recovery steps. Use the same definitions in UI and docs.
+- [x] C-03.01 Create one explicitly composed metadata export path covering all portable current sections. Reuse it for JSON and ZIP; avoid circular imports or behavior that relies on changing an imported function indirectly.
+- [x] C-03.02 Produce metadata from one consistent database snapshot. All section references must describe the same account state; sequential independent snapshots can invent broken relationships during concurrent edits.
+- [x] C-03.03 Add a capability/manifest declaration that accurately identifies included metadata and files. Retain compatibility with existing versioned validators and checksums.
+- [x] C-03.04 Verify each included immutable document's ownership, storage key, byte count, and checksum. Handle missing/quarantined/deleted files according to an explicit contract; never silently call a missing-file package complete.
+- [x] C-03.05 Enforce compressed and expanded byte limits, member count, duplicate member rejection, path traversal/symlink rejection, and per-file hash validation before writes. Do not extract untrusted paths directly under the live document root.
+- [x] C-03.06 Route ZIP restore through the same complete metadata validator/transaction orchestrator as JSON. Merely fixing ZIP export without import dispatch still loses data.
+- [x] C-03.07 Stage new files privately using attempt-owned names. Verify all bytes before metadata becomes ready. Preserve preexisting immutable files during retry/rollback; reconcile interruption between file publication and DB commit.
+- [x] C-03.08 Expose “Complete backup — records and files” for ZIP and “Records only — excludes document files” for JSON. Update explanatory text, download names, busy state, errors, and success notifications together.
+- [x] C-03.09 Accept supported JSON/ZIP inputs in the restore UI and show preflight counts, format, capabilities, file exclusions, conflicts, and failures before applying. Keep a selected file/draft after a recoverable failure.
+- [x] C-03.10 Use one busy guard against double-submit. Do not report complete until the API has committed. If the response is lost after commit, an idempotent retry must report the existing result.
+- [x] C-03.11 Round-trip the C-01 rich fixture into an empty account and compare normalized content, references, timestamps, relationships, and file hashes. Source/destination integer IDs need not match.
+- [x] C-03.12 Round-trip into a nonempty account and repeat the import; assert deterministic conflict/replay behavior and zero duplicate contacts, mappings, document versions, or events.
+- [x] C-03.13 Simulate missing file, changed hash, disk full/write failure, process interruption, and cleanup failure. Verify a safe retry/reconciliation path and an accurate user message.
+- [x] C-03.14 Perform a real browser download → upload → preview → restore flow against the local backend, not only mocked responses. Download restored documents and verify bytes.
+- [x] C-03.15 Update backup documentation with data categories, intentional exclusions, restore compatibility, limits, and operator recovery steps. Use the same definitions in UI and docs.
+
+**Completion evidence (2026-09-27):** PR #159 made the ZIP exporter reuse the composed v2 metadata graph and shared snapshot, added manifest/member/hash validation, routed ZIP restore through the same composed metadata/transaction orchestration, and added failed-attempt file cleanup. `BackupRestore.jsx` distinguishes complete ZIP backup from records-only JSON and supports verify/apply for both. `backend/tests/test_document_backup.py` covers bytes/links round-trip, unsafe ZIP members, missing members, changed hashes, publish/write failure, final-commit rollback and retry; `test_complete_backup.py` proves later metadata extensions survive the bundle. `docs/BACKUP_STRATEGY.md` now documents the portable data categories, exclusions, version compatibility, limits, cross-resource crash/reconciliation boundary, retry procedure, and operator disaster-recovery distinction.
 
 **Completion proof:** a single supported user-facing backup path restores all portable metadata **and** document bytes. Metadata-only export is clearly labeled. Failure/retry and legacy-format tests pass. Restored undo records cannot execute old destructive operations; restoring data does not send email.
 
