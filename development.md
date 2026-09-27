@@ -1,12 +1,14 @@
 # JobGrid — Development, Verification, and Deployment Guide
 
+> **2026-09-27 C-05 closeout:** C-05 is completed. PR #163 normalized SQLite-reloaded persisted UTC instants at the Python/wire boundary without a schema migration. Hosted CI passed the PostgreSQL suite, explicit SQLite regressions, frontend build, and full Chromium browser suite. Requirement-level evidence is recorded in [docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md](docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md).
+
 > **2026-09-27 C-01–C-03 closeout:** C-01, C-02, and C-03 are completed at the local/hosted-CI recovery-contract level. PR #159 supplied the atomic restore and complete composed ZIP recovery implementation; the C-01 closeout branch adds the missing three-interview Today cursor regression/fix and refreshes `docs/BACKUP_STRATEGY.md` to the current portable recovery contract. C-04 remains open for the broader mixed-source pagination contract (bounded interview candidate queries, cursor context/version hardening, and exhaustive mixed-source acceptance); this closeout does not claim C-04 complete.
 
 > **2026-09-24 update:** JG-001–JG-010 are completed and verified locally. See [implementation and acceptance evidence](docs/JG001_010_EXECUTION.md). Earlier audit findings below are historical unless updated in those ticket entries. JG-011–JG-064 and the broader C packages retain their separate acceptance gates. This update is not hosted CI or deployment evidence.
 
 Prepared: **2026-09-24**\
 Audited baseline: **`31d51d3e2d61626a13c1b02bc6c4126d3710e542` on main**\
-Overall status: **Not completed — C-01–C-03 recovery foundation is closed, while C-04+ queue/time/CI/product/staging/release acceptance remains.**
+Overall status: **Not completed — completed recovery and SQLite timestamp-contract closeouts are recorded below; the remaining open packages continue through queue/browser-time/CI/product/staging/release acceptance.**
 
 This is the primary execution guide for finishing the existing JobGrid scope. It consolidates the requirements and completion work from [jg.md](jg.md), which remains a historical planning reference. It explains what remains, why it matters, when to start, where to work, how to implement and verify the change, and what evidence closes it. It does not expand the product into another speculative feature roadmap.
 
@@ -98,7 +100,7 @@ The original roadmap's sequential build order was appropriate before these featu
 | 2 | Completed | [C-02 — Make every restore atomic](#c-02) | C-01 | JG-003, JG-056, JG-058, JG-064 |
 | 3 | Completed | [C-03 — Deliver one complete recoverable backup](#c-03) | C-02 | JG-002, JG-004, JG-044, JG-056–058, JG-064 |
 | 4 | Not completed | [C-04 — Fix mixed-source Today pagination](#c-04) | C-01 | JG-026–028, JG-051, JG-055–056 |
-| 5 | Not completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |
+| 5 | Completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |
 | 6 | Not completed | [C-06 — Make browser time tests deterministic](#c-06) | C-04, C-05 | JG-010, JG-023, JG-027–028, JG-038–040 |
 | 7 | Not completed | [C-07 — Enforce the corrected release test matrix](#c-07) | C-02–06 | JG-019–023 |
 | 8 | Not completed | [C-08 — Close every product acceptance contract](#c-08) | C-07 | All 64 original tickets |
@@ -236,20 +238,22 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-05"></a>
 ## C-05 — Normalize SQLite timestamp contracts
 
-**Priority:** P2 supported-runtime correctness. **When:** after restore repair, before the matrix is enforced. **Owner:** backend implementer. **Status:** Not completed.
+**Priority:** P2 supported-runtime correctness. **When:** after restore repair, before the matrix is enforced. **Owner:** backend implementer. **Status:** Completed.
 
 **Observed failures:** `test_backup_round_trip_retains_snooze_and_manual_action` in `backend/tests/test_backup_contract.py` and `test_illegal_state_transition_rejected` in `backend/tests/test_reminder_models.py` compare naive SQLite values with timezone-aware UTC values. PostgreSQL passed. This is not evidence of lost timestamps by itself.
 
 **Implementation checkpoints:**
 
-- [ ] C-05.01 State the intended contract at three boundaries: stored legacy columns, internal Python values, and wire/export timestamps. Distinguish UTC instants from date-only deadlines and local scheduled wall times.
-- [ ] C-05.02 Trace `WorkItemOverride.snoozed_until` and `ReminderDelivery.sent_at` from input through persistence, reload, comparison, export, restore, and response serialization.
-- [ ] C-05.03 If stored naive values mean UTC, normalize explicitly to UTC at the chosen boundary. Never attach the host timezone to a legacy naive UTC value.
-- [ ] C-05.04 Reuse an existing appropriate helper; add a small shared helper only if production consumers require it. If production behavior already honors the contract and only assertions are wrong, fix assertions to compare canonical instants without changing schema.
-- [ ] C-05.05 Test persistence after session expiration/new session, not only the in-memory object. Preserve actual instant, microseconds, and null behavior.
-- [ ] C-05.06 Add UTC, positive-offset, negative-offset, DST-boundary, legacy-naive, and backup round-trip examples. Reject ambiguous inputs according to the existing API contract.
-- [ ] C-05.07 Run both failing tests, then related reminder/Today/backup tests on both databases. Do not remove timezone checks or add blanket skips to get a green result.
-- [ ] C-05.08 Change a database column only if demonstrated necessary. Any migration requires explicit conversion semantics and previous-data verification on a disposable clone.
+- [x] C-05.01 State the intended contract at three boundaries: stored legacy columns, internal Python values, and wire/export timestamps. Distinguish UTC instants from date-only deadlines and local scheduled wall times.
+- [x] C-05.02 Trace `WorkItemOverride.snoozed_until` and `ReminderDelivery.sent_at` from input through persistence, reload, comparison, export, restore, and response serialization.
+- [x] C-05.03 If stored naive values mean UTC, normalize explicitly to UTC at the chosen boundary. Never attach the host timezone to a legacy naive UTC value.
+- [x] C-05.04 Reuse an existing appropriate helper; add a small shared helper only if production consumers require it. If production behavior already honors the contract and only assertions are wrong, fix assertions to compare canonical instants without changing schema.
+- [x] C-05.05 Test persistence after session expiration/new session, not only the in-memory object. Preserve actual instant, microseconds, and null behavior.
+- [x] C-05.06 Add UTC, positive-offset, negative-offset, DST-boundary, legacy-naive, and backup round-trip examples. Reject ambiguous inputs according to the existing API contract.
+- [x] C-05.07 Run both failing tests, then related reminder/Today/backup tests on both databases. Do not remove timezone checks or add blanket skips to get a green result.
+- [x] C-05.08 Change a database column only if demonstrated necessary. Any migration requires explicit conversion semantics and previous-data verification on a disposable clone.
+
+**Completion evidence (2026-09-27):** PR #163 (`C-05: normalize SQLite timestamp contracts`) was validated and merged into `main` at `57f6e1767f96bc00c6c97109050fb78f42c54f57`. C-05 adds an explicit persisted-UTC normalization boundary for SQLite reloads without changing schema or migrations. The hosted run passed 615 PostgreSQL backend tests, the two original C-05 regressions through an explicit SQLite subprocess, all focused timestamp-contract coverage, frontend build, 8/8 tab-helper tests, 2/2 focused browser checks, and 181/181 Chromium tests. See [C-05 SQLite timestamp contract evidence](docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md).
 
 **Completion proof:** both original tests pass for a documented reason on SQLite and PostgreSQL, and wire/export values represent the same instant after reload and restore.
 
@@ -496,7 +500,7 @@ python -m pytest tests -q --tb=short \
   --junitxml=/tmp/jobgrid-completion-evidence/sqlite.xml
 ```
 
-Review every skip. Only database-specific exclusions are expected; do not blanket-ignore skipped feature acceptance. The two recorded failures must be fixed before closing this path.
+Review every skip. Only database-specific exclusions are expected; do not blanket-ignore skipped feature acceptance. The two historical timezone failures were closed by C-05 and are preserved as regressions; the full supported SQLite path remains a C-07 release-matrix gate.
 
 ### Backend — PostgreSQL and migrations
 
@@ -1207,7 +1211,7 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 **When:** after C-05, C-07; close under C-08 / A06. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-019 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-019).
 
-**Current finding:** SQLite run has two timezone assertion failures. Close C-05; the PostgreSQL pass does not close SQLite acceptance.
+**Current finding:** The C-05 timestamp regressions are closed with PostgreSQL and explicit SQLite evidence. JG-019 remains open for its broader SQLite function/schema and C-07 matrix acceptance; the old audit failures are historical.
 
 **What to verify or finish, in order:**
 
@@ -1237,7 +1241,7 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 **When:** after C-05, C-07; close under C-08 / A06. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-020 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-020).
 
-**Current finding:** Both runtime paths are not yet green. Close C-05/C-07 and retain separate migration evidence.
+**Current finding:** C-05 is closed. JG-020 remains open until C-07 enforces the complete supported runtime matrix and separate migration evidence.
 
 **What to verify or finish, in order:**
 
