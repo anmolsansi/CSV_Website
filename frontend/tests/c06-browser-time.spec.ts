@@ -257,7 +257,7 @@ test.describe('C-06 deterministic browser time contracts', () => {
     await expect(row).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Due today' })).toBeVisible()
     await expect(row).toContainText(await accountDisplay(page, boundaryInstant))
-    await expect(page.getByText(ACCOUNT_TIMEZONE)).toBeVisible()
+    await expect(page.getByText(`Your next useful actions in ${ACCOUNT_TIMEZONE}.`, { exact: true })).toBeVisible()
 
     const configuredBrowserZone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
     if (configuredBrowserZone !== ACCOUNT_TIMEZONE) {
