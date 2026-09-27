@@ -8,7 +8,7 @@
 
 Prepared: **2026-09-24**\
 Audited baseline: **`31d51d3e2d61626a13c1b02bc6c4126d3710e542` on main**\
-Overall status: **Not completed — C-01–C-03 recovery foundation is closed, while C-04+ queue/time/CI/product/staging/release acceptance remains.**
+Overall status: **Not completed — completed recovery and SQLite timestamp-contract closeouts are recorded below; the remaining open packages continue through queue/browser-time/CI/product/staging/release acceptance.**
 
 This is the primary execution guide for finishing the existing JobGrid scope. It consolidates the requirements and completion work from [jg.md](jg.md), which remains a historical planning reference. It explains what remains, why it matters, when to start, where to work, how to implement and verify the change, and what evidence closes it. It does not expand the product into another speculative feature roadmap.
 
