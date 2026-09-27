@@ -1,0 +1,38 @@
+name: Finalize C-05 status wording
+
+on:
+  push:
+    branches:
+      - docs/c05-status-reconcile
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/c05-status-reconcile
+      - name: Update overall status wording
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('development.md')
+          text = path.read_text()
+          old = 'Overall status: **Not completed — C-01–C-03 recovery foundation is closed, while C-04+ queue/time/CI/product/staging/release acceptance remains.**'
+          new = 'Overall status: **Not completed — completed recovery and SQLite timestamp-contract closeouts are recorded below; the remaining open packages continue through queue/browser-time/CI/product/staging/release acceptance.**'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one overall-status match, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          Path('.github/workflows/c05-doc-reconcile-final.yml').unlink()
+          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add development.md .github/workflows/c05-doc-reconcile-final.yml
+          git commit -m "docs: clarify C-05 closeout status"
+          git push origin HEAD:docs/c05-status-reconcile
