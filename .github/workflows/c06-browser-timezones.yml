@@ -30,9 +30,16 @@ jobs:
       TEST_AUTH: "true"
       SECRET_KEY: c06-ci-browser-time-secret-not-production
       FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
       ENVIRONMENT: test
       RUN_MAINTENANCE_JOBS: "false"
-      DOCUMENT_STORAGE_DIR: /tmp/jobgrid-private-documents
+      RUN_REMINDER_WORKER: "false"
+      REMINDER_EMAIL_DELIVERY_ENABLED: "false"
+      JOB_URL_CHECKS_ENABLED: "false"
+      SMTP_HOST: ""
+      DOCUMENT_STORAGE_DIR: /tmp/jobgrid-c06-private-documents
+      VITE_API_URL: http://localhost:8000
+      VITE_ENABLE_DEV_LOGIN: "true"
     defaults:
       run:
         working-directory: frontend
@@ -60,7 +67,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m alembic upgrade head
+          mkdir -p "${GITHUB_WORKSPACE}/frontend/ci-artifacts"
+
+          sanitize_log() {
+            sed -E \
+              -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g' \
+              -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g'
+          }
+
+          if ! python -m alembic upgrade head > /tmp/c06-alembic.log 2>&1; then
+            sanitize_log < /tmp/c06-alembic.log > "${GITHUB_WORKSPACE}/frontend/ci-artifacts/c06-alembic.log"
+            cat "${GITHUB_WORKSPACE}/frontend/ci-artifacts/c06-alembic.log"
+            exit 1
+          fi
+
+          MIGRATION_REVISION="$(python -m alembic current 2>/dev/null | sed -nE 's/^([0-9A-Za-z_-]+).*/\1/p' | head -n 1)"
+          if [ -z "$MIGRATION_REVISION" ]; then
+            echo "Unable to determine the applied Alembic revision."
+            exit 1
+          fi
+
+          {
+            echo "source_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "migration_revision=$MIGRATION_REVISION"
+            echo "python=$(python --version 2>&1)"
+            echo "pip=$(python -m pip --version)"
+            echo "requirements_sha256=$(sha256sum requirements.txt | awk '{print $1}')"
+          } > "${GITHUB_WORKSPACE}/frontend/ci-artifacts/c06-backend-runtime.txt"
+
           python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/c06-backend.log 2>&1 &
           BACKEND_PID=$!
           READY=0
@@ -75,12 +110,26 @@ jobs:
             sleep 1
           done
           if [ "$READY" -ne 1 ]; then
-            cat /tmp/c06-backend.log
+            sanitize_log < /tmp/c06-backend.log > "${GITHUB_WORKSPACE}/frontend/ci-artifacts/c06-backend-server.log"
+            cat "${GITHUB_WORKSPACE}/frontend/ci-artifacts/c06-backend-server.log"
             exit 1
           fi
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+
+      - name: Record C-06 browser runtime evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "playwright=$(npx playwright --version)"
+            echo "package_lock_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
+            printf "chromium="
+            node --input-type=module -e "import { chromium } from 'playwright'; const browser = await chromium.launch({ headless: true }); console.log(browser.version()); await browser.close();"
+          } > ci-artifacts/c06-browser-runtime.txt
 
       - name: Verify C-06 timezone collection is nonempty
         shell: bash
@@ -95,6 +144,10 @@ jobs:
               exit 1
             fi
           done
+          if ! printf '%s\n' "$COLLECTION_OUTPUT" | grep -Eq 'Total: [1-9][0-9]* tests? in [1-9][0-9]* files?'; then
+            echo "C-06 timezone collection is empty."
+            exit 1
+          fi
 
       - name: Run C-06 timezone contracts
         shell: bash
@@ -104,17 +157,34 @@ jobs:
             --project=chromium \
             --project=chromium-kolkata \
             --project=chromium-new-york \
-            --reporter=line | tee ci-artifacts/c06-timezone-results.txt
+            --reporter=line,html | tee ci-artifacts/c06-timezone-results.txt
+
+      - name: Sanitize C-06 backend logs on failure
+        if: failure()
+        working-directory: ${{ github.workspace }}/backend
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/frontend/ci-artifacts"
+          if [ -f /tmp/c06-backend.log ]; then
+            sed -E \
+              -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g' \
+              -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g' \
+              /tmp/c06-backend.log > "${GITHUB_WORKSPACE}/frontend/ci-artifacts/c06-backend-server.log"
+          fi
 
       - name: Upload C-06 browser-time evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: c06-browser-timezones-${{ github.sha }}
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
           path: |
+            frontend/ci-artifacts/c06-backend-runtime.txt
+            frontend/ci-artifacts/c06-browser-runtime.txt
             frontend/ci-artifacts/c06-timezone-collection.txt
             frontend/ci-artifacts/c06-timezone-results.txt
+            frontend/ci-artifacts/c06-alembic.log
+            frontend/ci-artifacts/c06-backend-server.log
             frontend/playwright-report/
             frontend/test-results/
