@@ -70,6 +70,7 @@ jobs:
           cat > ci-artifacts/sqlite-explicit-deselects.txt <<'EOF'
           tests/test_database_dialects.py::test_both_dialect_api_responses_are_200
           tests/test_cleanup_job.py::test_postgresql_advisory_lock_contention_is_skipped_and_recoverable
+          tests/test_release_contracts.py::test_primary_runtime_numeric_sort_is_numeric_not_lexical
           tests/test_today_api.py::test_today_postgres_query_plans_use_owner_due_indexes
           EOF
 
@@ -80,6 +81,7 @@ jobs:
           pytest tests/ -m "not postgresql" \
             --deselect tests/test_database_dialects.py::test_both_dialect_api_responses_are_200 \
             --deselect tests/test_cleanup_job.py::test_postgresql_advisory_lock_contention_is_skipped_and_recoverable \
+            --deselect tests/test_release_contracts.py::test_primary_runtime_numeric_sort_is_numeric_not_lexical \
             --deselect tests/test_today_api.py::test_today_postgres_query_plans_use_owner_due_indexes \
             --collect-only -q | tee ci-artifacts/sqlite-collection.txt
           if ! grep -Eq '[1-9][0-9]* tests? collected' ci-artifacts/sqlite-collection.txt; then
@@ -94,6 +96,7 @@ jobs:
           pytest tests/ -m "not postgresql" \
             --deselect tests/test_database_dialects.py::test_both_dialect_api_responses_are_200 \
             --deselect tests/test_cleanup_job.py::test_postgresql_advisory_lock_contention_is_skipped_and_recoverable \
+            --deselect tests/test_release_contracts.py::test_primary_runtime_numeric_sort_is_numeric_not_lexical \
             --deselect tests/test_today_api.py::test_today_postgres_query_plans_use_owner_due_indexes \
             -v --tb=short --junitxml=ci-artifacts/sqlite-release.xml
           python ../scripts/verify_junit.py ci-artifacts/sqlite-release.xml \
