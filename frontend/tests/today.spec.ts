@@ -3,8 +3,16 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 const AS_OF = '2026-09-21T15:00:00Z'
 const TIMEZONE = 'America/New_York'
 
-function futureLocalDateTime(days = 1) {
-  return new Date(Date.now() + (days * 24 * 60 * 60 * 1000)).toISOString().slice(0, 16)
+async function futureLocalDateTime(page: Page, days = 1) {
+  return page.evaluate((offsetDays) => {
+    const target = new Date(Date.now() + (offsetDays * 24 * 60 * 60 * 1000))
+    const browserLocal = new Date(target.getTime() - (target.getTimezoneOffset() * 60 * 1000))
+    return browserLocal.toISOString().slice(0, 16)
+  }, days)
+}
+
+async function browserLocalWallToIso(page: Page, wallTime: string) {
+  return page.evaluate((value) => new Date(value).toISOString(), wallTime)
 }
 
 function manualItem(overrides: Record<string, unknown> = {}) {
@@ -117,14 +125,15 @@ test.describe('JG-027 Today screen', () => {
   test('keyboard_snooze_persists_after_reload', async ({ page }) => {
     let snoozed = false
     const item = manualItem()
-    const snoozeUntil = futureLocalDateTime()
+    const snoozeUntil = await futureLocalDateTime(page)
+    const expectedSnoozeInstant = await browserLocalWallToIso(page, snoozeUntil)
 
     await routeTodayList(page, () => snoozed ? [] : [item])
     await page.route('**/crm/today/snooze', async (route) => {
       const payload = route.request().postDataJSON()
       expect(payload.action_key).toBe(item.action_key)
       expect(payload.version).toBe(1)
-      expect(payload.until.slice(0, 16)).toBe(snoozeUntil)
+      expect(new Date(payload.until).toISOString()).toBe(expectedSnoozeInstant)
       snoozed = true
       await fulfillJson(route, {
         action_key: item.action_key,
@@ -140,7 +149,9 @@ test.describe('JG-027 Today screen', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Snooze action' })
     await expect(dialog).toBeVisible()
-    await dialog.locator('input[type="datetime-local"]').fill(snoozeUntil)
+    const input = dialog.locator('input[type="datetime-local"]')
+    await input.fill(snoozeUntil)
+    await expect(input).toHaveValue(snoozeUntil)
     await dialog.getByRole('button', { name: 'Save' }).press('Enter')
 
     await expect(dialog).toHaveCount(0)
@@ -175,7 +186,8 @@ test.describe('JG-027 Today screen', () => {
   test('followup_reschedule_updates_application_drawer', async ({ page }) => {
     let followUpAt = '2026-09-21T14:00:00Z'
     let actionKey = 'followup:73:2026-09-21T14:00:00Z'
-    const rescheduleUntil = futureLocalDateTime(2)
+    const rescheduleUntil = await futureLocalDateTime(page, 2)
+    const expectedRescheduleInstant = await browserLocalWallToIso(page, rescheduleUntil)
 
     await routeTodayList(page, () => [followupItem({ action_key: actionKey, due_at: followUpAt })])
 
@@ -183,7 +195,7 @@ test.describe('JG-027 Today screen', () => {
       const payload = route.request().postDataJSON()
       expect(payload.action_key).toBe(actionKey)
       expect(payload.resolution).toBe('reschedule')
-      expect(payload.follow_up_at.slice(0, 16)).toBe(rescheduleUntil)
+      expect(new Date(payload.follow_up_at).toISOString()).toBe(expectedRescheduleInstant)
       followUpAt = payload.follow_up_at
       actionKey = `followup:73:${followUpAt.replace('+00:00', 'Z')}`
       await fulfillJson(route, {
@@ -231,7 +243,9 @@ test.describe('JG-027 Today screen', () => {
     await page.goto('/today')
     await page.getByRole('button', { name: 'Reschedule' }).click()
     const dialog = page.getByRole('dialog', { name: 'Reschedule follow-up' })
-    await dialog.locator('input[type="datetime-local"]').fill(rescheduleUntil)
+    const input = dialog.locator('input[type="datetime-local"]')
+    await input.fill(rescheduleUntil)
+    await expect(input).toHaveValue(rescheduleUntil)
     await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toHaveCount(0)
 
@@ -239,7 +253,7 @@ test.describe('JG-027 Today screen', () => {
     // verifies the persisted reschedule in the existing Applications edit surface.
     await page.getByRole('button', { name: 'Open details' }).click()
     await expect(page.getByRole('heading', { name: 'Applications' })).toBeVisible()
-    await expect(page.locator('tbody tr').first().locator('input[type="datetime-local"]').nth(1)).not.toHaveValue('')
+    await expect(page.locator('tbody tr').first().locator('input[type="datetime-local"]').nth(1)).toHaveValue(rescheduleUntil)
     await expect(page.locator('tbody tr').first().locator('input.inline-input')).toHaveValue('Beta')
   })
 
@@ -308,8 +322,8 @@ test.describe('JG-027 Today screen', () => {
 
 test.describe('JG-028 Today acceptance', () => {
   test('five-action work session preserves confirmed state through detail navigation and reload', async ({ page }) => {
-    const snoozeUntil = futureLocalDateTime()
-    const rescheduleUntil = futureLocalDateTime(2)
+    const snoozeUntil = await futureLocalDateTime(page)
+    const rescheduleUntil = await futureLocalDateTime(page, 2)
     const detail = followupItem({
       action_key: 'followup:70:2026-09-21T13:00:00Z',
       id: 70,
