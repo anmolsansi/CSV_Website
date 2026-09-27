@@ -93,20 +93,22 @@ def test_interview_preparation_reuses_today_snooze_model(db_session):
 
 def test_three_interviews_are_reachable_through_today_cursor(db_session):
     user, track, first_interview = _setup(db_session)
+    interviews = [first_interview]
     for hour, label in ((18, "System Design"), (20, "Hiring Manager")):
-        db_session.add(
-            Interview(
-                user_id=user.id,
-                track_id=track.id,
-                starts_at=datetime(2026, 9, 23, hour, 0),
-                ends_at=datetime(2026, 9, 23, hour + 1, 0),
-                timezone="UTC",
-                kind="video",
-                status="scheduled",
-                round_label=label,
-            )
+        interview = Interview(
+            user_id=user.id,
+            track_id=track.id,
+            starts_at=datetime(2026, 9, 23, hour, 0),
+            ends_at=datetime(2026, 9, 23, hour + 1, 0),
+            timezone="UTC",
+            kind="video",
+            status="scheduled",
+            round_label=label,
         )
+        db_session.add(interview)
+        interviews.append(interview)
     db_session.flush()
+    expected_ids = {interview.id for interview in interviews}
 
     now = datetime(2026, 9, 23, 8, 0, tzinfo=timezone.utc)
     first_page = build_today_queue_with_interviews(
@@ -141,4 +143,4 @@ def test_three_interviews_are_reachable_through_today_cursor(db_session):
 
     emitted = first_page["items"] + second_page["items"]
     assert len({item["action_key"] for item in emitted}) == 3
-    assert {item["id"] for item in emitted} >= {first_interview.id}
+    assert {item["id"] for item in emitted} == expected_ids
