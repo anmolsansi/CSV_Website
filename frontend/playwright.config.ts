@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const authenticatedChromium = {
+  ...devices['Desktop Chrome'],
+  storageState: 'tests/.auth/user.json',
+};
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -21,10 +26,32 @@ export default defineConfig({
       testMatch: /auth\.setup\.ts/,
     },
     {
-      name: 'chromium',
+      // The full browser suite runs in an explicit zone so host TZ never becomes
+      // an undeclared part of the test contract.
+      name: 'chromium-utc',
       use: {
-        ...devices['Desktop Chrome'],
-        storageState: 'tests/.auth/user.json',
+        ...authenticatedChromium,
+        timezoneId: 'UTC',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      // C-06 time-contract scenarios are repeated in a non-DST offset zone.
+      name: 'chromium-kolkata',
+      grep: /@time-zone/,
+      use: {
+        ...authenticatedChromium,
+        timezoneId: 'Asia/Kolkata',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      // Repeat the same scenarios in a DST-observing zone.
+      name: 'chromium-new-york',
+      grep: /@time-zone/,
+      use: {
+        ...authenticatedChromium,
+        timezoneId: 'America/New_York',
       },
       dependencies: ['setup'],
     },
