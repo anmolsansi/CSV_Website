@@ -1,0 +1,153 @@
+name: Reconcile C-05 completion docs
+
+on:
+  push:
+    branches:
+      - docs/c05-status-reconcile
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/c05-status-reconcile
+          fetch-depth: 0
+
+      - name: Reconcile C-05 documentation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          EVIDENCE = (
+              "**Completion evidence (2026-09-27):** PR #163 (`C-05: normalize SQLite timestamp contracts`) "
+              "was validated and merged into `main` at `57f6e1767f96bc00c6c97109050fb78f42c54f57`. "
+              "C-05 adds an explicit persisted-UTC normalization boundary for SQLite reloads without changing schema or migrations. "
+              "The hosted run passed 615 PostgreSQL backend tests, the two original C-05 regressions through an explicit SQLite subprocess, "
+              "all focused timestamp-contract coverage, frontend build, 8/8 tab-helper tests, 2/2 focused browser checks, and 181/181 Chromium tests. "
+              "See [C-05 SQLite timestamp contract evidence](docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md)."
+          )
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          def update_c05_section(text, label):
+              start = text.index('<a id="c-05"></a>')
+              end = text.index('<a id="c-06"></a>', start)
+              before, section, after = text[:start], text[start:end], text[end:]
+              section = replace_once(
+                  section,
+                  '**Priority:** P2 supported-runtime correctness. **When:** after restore repair, before the matrix is enforced. **Owner:** backend implementer. **Status:** Not completed.',
+                  '**Priority:** P2 supported-runtime correctness. **When:** after restore repair, before the matrix is enforced. **Owner:** backend implementer. **Status:** Completed.',
+                  f'{label} C-05 status',
+              )
+              for idx in range(1, 9):
+                  section = replace_once(section, f'- [ ] C-05.0{idx}', f'- [x] C-05.0{idx}', f'{label} C-05.0{idx}')
+              if EVIDENCE not in section:
+                  section = replace_once(section, '\n**Completion proof:**', f'\n{EVIDENCE}\n\n**Completion proof:**', f'{label} C-05 evidence')
+              return before + section + after
+
+          development = Path('development.md')
+          text = development.read_text()
+          closeout_note = (
+              '> **2026-09-27 C-05 closeout:** C-05 is completed. PR #163 normalized SQLite-reloaded persisted UTC instants at the Python/wire boundary without a schema migration. '
+              'Hosted CI passed the PostgreSQL suite, explicit SQLite regressions, frontend build, and full Chromium browser suite. '
+              'Requirement-level evidence is recorded in [docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md](docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md).'
+          )
+          if closeout_note not in text:
+              text = replace_once(text, '# JobGrid — Development, Verification, and Deployment Guide\n', '# JobGrid — Development, Verification, and Deployment Guide\n\n' + closeout_note + '\n', 'development closeout note')
+          text = replace_once(
+              text,
+              '| 5 | Not completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |',
+              '| 5 | Completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |',
+              'development work-order C-05',
+          )
+          text = update_c05_section(text, 'development')
+          text = text.replace(
+              'Review every skip. Only database-specific exclusions are expected; do not blanket-ignore skipped feature acceptance. The two recorded failures must be fixed before closing this path.',
+              'Review every skip. Only database-specific exclusions are expected; do not blanket-ignore skipped feature acceptance. The two historical timezone failures were closed by C-05 and are preserved as regressions; the full supported SQLite path remains a C-07 release-matrix gate.',
+          )
+          text = text.replace(
+              '**Current finding:** SQLite run has two timezone assertion failures. Close C-05; the PostgreSQL pass does not close SQLite acceptance.',
+              '**Current finding:** The C-05 timestamp regressions are closed with PostgreSQL and explicit SQLite evidence. JG-019 remains open for its broader SQLite function/schema and C-07 matrix acceptance; the old audit failures are historical.',
+          )
+          text = text.replace(
+              '**Current finding:** Both runtime paths are not yet green. Close C-05/C-07 and retain separate migration evidence.',
+              '**Current finding:** C-05 is closed. JG-020 remains open until C-07 enforces the complete supported runtime matrix and separate migration evidence.',
+          )
+          development.write_text(text)
+
+          jg = Path('jg.md')
+          text = jg.read_text()
+          history_note = (
+              '> **2026-09-27 C-05 closeout:** C-05 is completed and supersedes the older C-05 audit status below. '
+              'PR #163 and [docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md](docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md) are the current requirement-level evidence. '
+              '`development.md` remains the primary completion guide.'
+          )
+          if history_note not in text:
+              text = replace_once(text, '# JobGrid — Project Completion Guide\n', '# JobGrid — Project Completion Guide\n\n' + history_note + '\n', 'jg closeout note')
+          text = replace_once(
+              text,
+              '| 5 | Not completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |',
+              '| 5 | Completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |',
+              'jg work-order C-05',
+          )
+          text = update_c05_section(text, 'jg')
+          text = text.replace(
+              '**Current finding:** SQLite run has two timezone assertion failures. Close C-05; the PostgreSQL pass does not close SQLite acceptance.',
+              '**Current finding:** The C-05 timestamp regressions are closed with PostgreSQL and explicit SQLite evidence. JG-019 remains open for its broader SQLite function/schema and release-matrix acceptance.',
+          )
+          text = text.replace(
+              '**Current finding:** Both runtime paths are not yet green. Close C-05/C-07 and retain separate migration evidence.',
+              '**Current finding:** C-05 is closed. JG-020 remains open until C-07 enforces the complete supported runtime matrix and separate migration evidence.',
+          )
+          jg.write_text(text)
+
+          context = Path('docs/repo_context.md')
+          text = context.read_text()
+          text = replace_once(
+              text,
+              'Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by the C-04 mixed-source Today pagination repair in PR #162.',
+              'Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162 and the C-05 SQLite timestamp-contract repair in PR #163.',
+              'repo_context baseline lineage',
+          )
+          text = replace_once(
+              text,
+              '- C-04 mixed-source Today pagination is closed by the mixed-source cursor/query repair and the acceptance evidence in `docs/C04_TODAY_PAGINATION.md`.\n- The immediate engineering sequence is now C-05 SQLite timestamp contracts, C-06 deterministic browser-time tests, and C-07 corrected release CI.',
+              '- C-04 mixed-source Today pagination is closed by the mixed-source cursor/query repair and the acceptance evidence in `docs/C04_TODAY_PAGINATION.md`.\n- C-05 SQLite timestamp contracts are closed by PR #163 and the acceptance evidence in `docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md`. Persisted naive SQLite values for UTC-instant columns are normalized as UTC at the Python/wire boundary; request inputs that require offsets remain strict.\n- The immediate engineering sequence is now C-06 deterministic browser-time tests and C-07 corrected release CI.',
+              'repo_context completion sequence',
+          )
+          marker = 'C-04 adds focused mixed-source backend coverage for source ordering, cursor termination, signed context, snoozes, account-local midnight, old cursor rejection, mutation-between-pages behavior, and a 250-row bounded-query fixture. It also adds a Playwright flow that forces a two-item Today page against the real backend, clicks the actual Load more control, reaches all three interview actions, and preserves application navigation. Existing interview browser coverage still verifies cancellation removes the Today action.\n'
+          addition = marker + '\nC-05 adds `backend/tests/test_timestamp_contracts.py` for UTC/offset/DST/legacy-naive persistence behavior, SQLite reload/serialization, reminder same-instant idempotency, and backup/restore round trips. The original snooze and reminder regressions are also executed explicitly against SQLite while ordinary hosted backend CI exercises PostgreSQL.\n'
+          if 'C-05 adds `backend/tests/test_timestamp_contracts.py`' not in text:
+              text = replace_once(text, marker, addition, 'repo_context C-05 testing evidence')
+          context.write_text(text)
+
+          # The focused evidence file is already authoritative; confirm it is marked complete.
+          c05 = Path('docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md').read_text()
+          if 'Status: **complete**.' not in c05:
+              raise SystemExit('C-05 evidence file is not marked complete')
+
+          # The helper workflow is temporary and must not remain in the PR.
+          Path('.github/workflows/c05-doc-reconcile.yml').unlink()
+          PY
+
+          git diff --check
+          git diff -- development.md jg.md docs/repo_context.md
+
+      - name: Commit reconciled documentation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add development.md jg.md docs/repo_context.md .github/workflows/c05-doc-reconcile.yml
+          git commit -m "docs: mark C-05 completed"
+          git push origin HEAD:docs/c05-status-reconcile
