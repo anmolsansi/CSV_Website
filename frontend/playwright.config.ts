@@ -26,9 +26,9 @@ export default defineConfig({
       testMatch: /auth\.setup\.ts/,
     },
     {
-      // The full browser suite runs in an explicit zone so host TZ never becomes
-      // an undeclared part of the test contract.
-      name: 'chromium-utc',
+      // Preserve the established `chromium` project name used by release CI,
+      // but make its timezone explicit so host TZ is not part of the contract.
+      name: 'chromium',
       use: {
         ...authenticatedChromium,
         timezoneId: 'UTC',
