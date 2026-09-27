@@ -10,6 +10,9 @@ jobs:
   frontend:
     name: Frontend Build
     runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: /api
+      VITE_ENABLE_DEV_LOGIN: "false"
     defaults:
       run:
         working-directory: frontend
@@ -48,9 +51,16 @@ jobs:
       TEST_AUTH: "true"
       SECRET_KEY: jg021-ci-e2e-test-secret-not-production
       FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
       ENVIRONMENT: test
       RUN_MAINTENANCE_JOBS: "false"
+      RUN_REMINDER_WORKER: "false"
+      REMINDER_EMAIL_DELIVERY_ENABLED: "false"
+      JOB_URL_CHECKS_ENABLED: "false"
+      SMTP_HOST: ""
       DOCUMENT_STORAGE_DIR: /tmp/jobgrid-private-documents
+      VITE_API_URL: http://localhost:8000
+      VITE_ENABLE_DEV_LOGIN: "true"
     defaults:
       run:
         working-directory: frontend
@@ -81,7 +91,9 @@ jobs:
           mkdir -p ci-artifacts
 
           sanitize_log() {
-            sed -E               -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g'               -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g'
+            sed -E \
+              -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g' \
+              -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g'
           }
 
           if ! python -m alembic upgrade head > /tmp/jobgrid-alembic.log 2>&1; then
@@ -117,6 +129,12 @@ jobs:
             cat ci-artifacts/backend-server.log
             exit 1
           fi
+
+          {
+            echo "source_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "migration_revision=$MIGRATION_REVISION"
+          } > ci-artifacts/c07-e2e-runtime.txt
 
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -184,6 +202,8 @@ jobs:
             frontend/ci-artifacts/jg023-browser-release-evidence.txt
             frontend/ci-artifacts/jg023-playwright-collection.txt
             frontend/ci-artifacts/jg023-playwright-focused.txt
+            frontend/ci-artifacts/playwright-collection.txt
+            frontend/ci-artifacts/c07-e2e-runtime.txt
 
       - name: Sanitize backend logs on failure
         if: failure()
@@ -192,7 +212,10 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           if [ -f /tmp/jobgrid-backend.log ]; then
-            sed -E               -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g'               -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g'               /tmp/jobgrid-backend.log > ci-artifacts/backend-server.log
+            sed -E \
+              -e 's#(postgresql(\+psycopg2)?://)[^/@[:space:]]+:[^@[:space:]]+@#\1***:***@#g' \
+              -e 's#(DATABASE_URL|TEST_DATABASE_URL|SECRET_KEY)=([^[:space:]]+)#\1=***#g' \
+              /tmp/jobgrid-backend.log > ci-artifacts/backend-server.log
           fi
 
       - name: Upload E2E failure artifacts
@@ -249,8 +272,13 @@ jobs:
       TEST_AUTH: "true"
       SECRET_KEY: jg021-ci-backend-test-secret-not-production
       FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
       ENVIRONMENT: test
       RUN_MAINTENANCE_JOBS: "false"
+      RUN_REMINDER_WORKER: "false"
+      REMINDER_EMAIL_DELIVERY_ENABLED: "false"
+      JOB_URL_CHECKS_ENABLED: "false"
+      SMTP_HOST: ""
       DOCUMENT_STORAGE_DIR: /tmp/jobgrid-private-documents
     defaults:
       run:
@@ -320,24 +348,40 @@ jobs:
             tests/test_cleanup_job.py::test_cleanup_failure_not_zero_success \
             tests/test_numeric_sort.py::test_numeric_order_not_lexical \
             -q --junitxml=ci-artifacts/jg023-release-contracts.xml
-          python - <<'PY'
-          import xml.etree.ElementTree as ET
-          path = "ci-artifacts/jg023-release-contracts.xml"
-          root = ET.parse(path).getroot()
-          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-          tests = sum(int(s.attrib.get("tests", "0")) for s in suites)
-          failures = sum(int(s.attrib.get("failures", "0")) for s in suites)
-          errors = sum(int(s.attrib.get("errors", "0")) for s in suites)
-          skipped = sum(int(s.attrib.get("skipped", "0")) for s in suites)
-          if tests <= 0 or failures or errors or skipped:
-              raise SystemExit(
-                  f"JG-023 release gate rejected tests={tests} failures={failures} "
-                  f"errors={errors} skipped={skipped}"
-              )
-          with open("ci-artifacts/jg023-backend-release-evidence.txt", "a", encoding="utf-8") as handle:
-              handle.write(f"focused_tests={tests}\n")
-              handle.write("focused_failures=0\nfocused_errors=0\nfocused_skipped=0\n")
-          PY
+          python ../scripts/verify_junit.py ci-artifacts/jg023-release-contracts.xml \
+            --label "JG-023 backend release contracts" --min-tests 1 --max-skips 0
+
+      - name: Verify C-07 backend regression collection is nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest \
+            tests/test_complete_backup.py \
+            tests/test_backup_contract.py \
+            tests/test_document_backup.py \
+            tests/test_interview_today.py \
+            tests/test_today_api.py \
+            tests/test_timestamp_contracts.py \
+            --collect-only -q | tee ci-artifacts/c07-backend-regression-collection.txt
+          if ! grep -Eq '[1-9][0-9]* tests? collected' ci-artifacts/c07-backend-regression-collection.txt; then
+            echo "C-07 restore/backup/queue regression collection is empty."
+            exit 1
+          fi
+
+      - name: Run C-07 backend release regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest \
+            tests/test_complete_backup.py \
+            tests/test_backup_contract.py \
+            tests/test_document_backup.py \
+            tests/test_interview_today.py \
+            tests/test_today_api.py \
+            tests/test_timestamp_contracts.py \
+            -q --junitxml=ci-artifacts/c07-backend-regressions.xml
+          python ../scripts/verify_junit.py ci-artifacts/c07-backend-regressions.xml \
+            --label "C-07 backend regressions" --min-tests 1 --max-skips 0
 
       - name: Verify backend test collection is nonempty
         shell: bash
@@ -345,9 +389,18 @@ jobs:
           set -euo pipefail
           mkdir -p ci-artifacts
           pytest tests/ --collect-only -q | tee ci-artifacts/pytest-collection.txt
+          if ! grep -Eq '[1-9][0-9]* tests? collected' ci-artifacts/pytest-collection.txt; then
+            echo "Backend test collection is empty."
+            exit 1
+          fi
 
       - name: Run pytest
         run: pytest tests/ -v --tb=short --junitxml=ci-artifacts/pytest.xml
+
+      - name: Verify backend JUnit release result
+        run: >-
+          python ../scripts/verify_junit.py ci-artifacts/pytest.xml
+          --label "PostgreSQL backend suite" --min-tests 1 --max-skips 0
 
       - name: Upload JG-023 backend release evidence
         if: always()
@@ -360,6 +413,9 @@ jobs:
             backend/ci-artifacts/jg023-backend-release-evidence.txt
             backend/ci-artifacts/jg023-pytest-collection.txt
             backend/ci-artifacts/jg023-release-contracts.xml
+            backend/ci-artifacts/c07-backend-regression-collection.txt
+            backend/ci-artifacts/c07-backend-regressions.xml
+            backend/ci-artifacts/pytest-collection.txt
             backend/ci-artifacts/pytest.xml
 
       - name: Upload backend failure artifacts
