@@ -1,0 +1,114 @@
+name: C-07 SQLite Release
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  sqlite-release:
+    name: Backend Tests (SQLite)
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DATABASE_URL: sqlite:////tmp/jobgrid-c07-release.sqlite3
+      TEST_AUTH: "true"
+      SECRET_KEY: c07-sqlite-release-test-secret-not-production
+      FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
+      ENVIRONMENT: test
+      RUN_MAINTENANCE_JOBS: "false"
+      RUN_REMINDER_WORKER: "false"
+      REMINDER_EMAIL_DELIVERY_ENABLED: "false"
+      JOB_URL_CHECKS_ENABLED: "false"
+      SMTP_HOST: ""
+      DOCUMENT_STORAGE_DIR: /tmp/jobgrid-c07-sqlite-documents
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Record SQLite release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          {
+            echo "source_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "python=$(python --version 2>&1)"
+            echo "pip=$(python -m pip --version)"
+            echo "sqlite=$(python -c 'import sqlite3; print(sqlite3.sqlite_version)')"
+            echo "requirements_sha256=$(sha256sum requirements.txt | awk '{print $1}')"
+            python - <<'PY'
+          import importlib.metadata as metadata
+          for package in ("fastapi", "sqlalchemy", "alembic", "pytest"):
+              print(f"{package}={metadata.version(package)}")
+          PY
+          } > ci-artifacts/sqlite-release-evidence.txt
+
+      - name: Verify PostgreSQL-only exclusions are nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest tests/ -m postgresql --collect-only -q | tee ci-artifacts/postgresql-only-collection.txt
+          if ! grep -Eq '[1-9][0-9]* tests? collected' ci-artifacts/postgresql-only-collection.txt; then
+            echo "Expected explicit @pytest.mark.postgresql release exclusions were not collected."
+            exit 1
+          fi
+          cat > ci-artifacts/sqlite-explicit-deselects.txt <<'EOF'
+          tests/test_database_dialects.py::test_both_dialect_api_responses_are_200
+          tests/test_cleanup_job.py::test_postgresql_advisory_lock_contention_is_skipped_and_recoverable
+          tests/test_today_api.py::test_today_postgres_query_plans_use_owner_due_indexes
+          EOF
+
+      - name: Verify SQLite collection is nonempty
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest tests/ -m "not postgresql" \
+            --deselect tests/test_database_dialects.py::test_both_dialect_api_responses_are_200 \
+            --deselect tests/test_cleanup_job.py::test_postgresql_advisory_lock_contention_is_skipped_and_recoverable \
+            --deselect tests/test_today_api.py::test_today_postgres_query_plans_use_owner_due_indexes \
+            --collect-only -q | tee ci-artifacts/sqlite-collection.txt
+          if ! grep -Eq '[1-9][0-9]* tests? collected' ci-artifacts/sqlite-collection.txt; then
+            echo "SQLite release collection is empty."
+            exit 1
+          fi
+
+      - name: Run SQLite release suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest tests/ -m "not postgresql" \
+            --deselect tests/test_database_dialects.py::test_both_dialect_api_responses_are_200 \
+            --deselect tests/test_cleanup_job.py::test_postgresql_advisory_lock_contention_is_skipped_and_recoverable \
+            --deselect tests/test_today_api.py::test_today_postgres_query_plans_use_owner_due_indexes \
+            -v --tb=short --junitxml=ci-artifacts/sqlite-release.xml
+          python ../scripts/verify_junit.py ci-artifacts/sqlite-release.xml \
+            --label "SQLite release suite" --min-tests 1 --max-skips 0
+
+      - name: Upload SQLite release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c07-sqlite-release-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            backend/ci-artifacts/sqlite-release-evidence.txt
+            backend/ci-artifacts/postgresql-only-collection.txt
+            backend/ci-artifacts/sqlite-explicit-deselects.txt
+            backend/ci-artifacts/sqlite-collection.txt
+            backend/ci-artifacts/sqlite-release.xml
