@@ -1,6 +1,6 @@
 # C-05 — SQLite Timestamp Contracts
 
-Status: implementation complete pending hosted CI on the C-05 pull request.
+Status: **complete**. PR #163 was validated and merged into `main` at `57f6e1767f96bc00c6c97109050fb78f42c54f57`.
 
 Baseline: `4d2222e75ea1070977cff8710b9ae8c0770a7a59` (`main`, after C-04 / PR #162).
 
@@ -86,15 +86,20 @@ C-05 does not:
 - change reminder retry, delivery, or immutability state transitions
 - introduce a second backup timestamp format
 
-## Completion proof required before merge
+## Completion proof
 
-The C-05 PR must show:
+PR #163 passed the full hosted CI run before merge:
 
-- the original backup snooze regression passing on PostgreSQL and SQLite
-- the original reminder `sent_at` regression passing on PostgreSQL and SQLite
-- focused C-05 timestamp tests passing
-- related Today/reminder/backup tests passing
-- backend compile/test CI green
-- no migration or schema diff
+- 615 backend pytest tests passed against PostgreSQL.
+- The two original C-05 regressions also passed in the explicit SQLite subprocess launched by `test_c05_original_regressions_execute_against_sqlite`.
+- All focused C-05 timestamp-contract tests passed.
+- Backend compile check passed.
+- Frontend production build passed.
+- The tab-opening unit helper passed 8/8 tests.
+- The focused release-workflow Playwright subset passed 2/2 tests.
+- The full Chromium Playwright suite passed 181/181 tests across 30 files.
+- Alembic remained at revision 018 and the C-05 diff contained no model or migration changes.
 
-After those checks are green, this document is the requirement-level evidence for C-05. `development.md` can be reconciled to checked/completed state during the normal completion-documentation pass without changing the technical contract recorded here.
+The validated C-05 head was `0ec4b162586a8e38adf9b292e0a645364af2201b`. It was merged as `57f6e1767f96bc00c6c97109050fb78f42c54f57`.
+
+This document is the requirement-level evidence for C-05. `development.md` can be reconciled to checked/completed state during the normal C-11 completion-documentation pass without changing the technical contract recorded here.
