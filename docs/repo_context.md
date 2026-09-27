@@ -1,8 +1,8 @@
-# Repo Context — JobGrid — 2026-09-25
+# Repo Context — JobGrid — 2026-09-27
 
-Baseline: `7684cbc0f8d3a4e131bd986d21a05d15ccea8e63` on `main` after PR #159 merged JG-001–JG-010 recovery and acceptance work.
+Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by the C-04 mixed-source Today pagination repair in PR #162.
 
-This file is the compact repository context for implementation agents. It describes the current codebase, contracts, active risks, and completion state. Read `development.md` for the full completion plan and ticket-level closeout instructions. Historical planning files may contain stale proposed names or completion labels, so current code plus `development.md` take precedence.
+This file is the compact repository context for implementation agents. It describes the current codebase, contracts, active risks, and completion state. Read `development.md` for the full completion plan and ticket-level closeout instructions. Historical planning files may contain stale proposed names or completion labels, so current code plus the completion evidence docs take precedence.
 
 ## Stack and runtime
 
@@ -85,7 +85,7 @@ Do not reintroduce page-local top-five selection, unsafe protocols, `window.open
 
 Today is implemented across `backend/app/services/today.py`, `today_f8.py`, the Today router/schema, and `frontend/src/pages/Today.jsx`. The F8 extension adds interview preparation into the established Today contract through composition in `backend/app/main.py`.
 
-Known completion risk: mixed-source Today pagination still needs the C-04 repair described in `development.md`. The current audit found that interviews can be merged after the base queue has already been paginated, which can make later items unreachable or produce an incorrect cursor. Do not treat existing Today implementation as final acceptance until C-04 closes.
+C-04 replaces split base/interview pagination with one mixed-source continuation contract. Manual actions, follow-ups, deadlines, and interview preparation share the established ordering tuple `(due_is_null, due_at, -priority, type, id)`. The signed v2 cursor freezes `as_of`, binds continuation to the authenticated account, account timezone, and `include_snoozed` setting, and is emitted from the final mixed item only when another visible item exists. Each source applies the cursor boundary before a bounded candidate read, counts are computed from the same eligible population, and old v1 cursors are intentionally rejected with a refresh path. Mutation between pages is best-effort current-state behavior, not an immutable database snapshot. See `docs/C04_TODAY_PAGINATION.md`.
 
 Reminder scheduling and delivery are separate activation gates. `RUN_REMINDER_WORKER` and `REMINDER_EMAIL_DELIVERY_ENABLED` default off. Maintenance jobs also default off. Tests and local work must not accidentally send real email or run destructive background work.
 
@@ -146,7 +146,7 @@ Backend tests are under `backend/tests` and use pytest. Frontend browser tests a
 - Backend Compile Check
 - Backend Tests (pytest) with PostgreSQL 16
 
-PR #159's head passed hosted CI after the JG-001–JG-010 recovery changes. The implementation evidence records 598 PostgreSQL tests passing, a scoped SQLite suite of 110 passed with one PostgreSQL-only skip, 13 focused Chromium checks, 8 tab-helper checks, and a successful frontend production build. Those results verify the first ten tickets locally/through that PR, not the whole remaining roadmap.
+C-04 adds focused mixed-source backend coverage for source ordering, cursor termination, signed context, snoozes, account-local midnight, old cursor rejection, mutation-between-pages behavior, and a 250-row bounded-query fixture. It also adds a Playwright flow that forces a two-item Today page against the real backend, clicks the actual Load more control, reaches all three interview actions, and preserves application navigation. Existing interview browser coverage still verifies cancellation removes the Today action.
 
 Critical test safety: `backend/tests/conftest.py` can recreate/drop PostgreSQL tables. `DATABASE_URL` and `TEST_DATABASE_URL` used by tests must always point to disposable test databases. Never point pytest or browser fixtures at production or the only copy of staging data.
 
@@ -166,17 +166,18 @@ This topology is deployment preparation, not proof of production readiness. Real
 
 ## Current completion state
 
-`development.md` is the primary completion guide.
+`development.md` is the primary completion guide, and focused completion evidence lives under `docs/`.
 
 - JG-001–JG-010 are verified complete at the current local/PR acceptance level after PR #159.
-- The guide currently classifies the remaining original tickets as 42 implemented with requirement-level verification pending, 10 needing repair, and 2 externally blocked.
-- The immediate engineering sequence is C-04 mixed-source Today pagination, C-05 SQLite timestamp contracts, C-06 deterministic browser-time tests, and C-07 corrected release CI.
+- C-01 through C-03 were closed in the recovery sequence through PR #161.
+- C-04 mixed-source Today pagination is closed by the mixed-source cursor/query repair and the acceptance evidence in `docs/C04_TODAY_PAGINATION.md`.
+- The immediate engineering sequence is now C-05 SQLite timestamp contracts, C-06 deterministic browser-time tests, and C-07 corrected release CI.
 - C-08 is broad product acceptance across the existing implementation. Do not rebuild features that already satisfy their contracts.
 - C-09/C-10 are real staging and external-provider gates.
-- C-11 reconciles ticket/documentation evidence only after acceptance.
+- C-11 reconciles ticket/documentation evidence after acceptance.
 - C-12 is the actual production release, observation, rollback-readiness, and closure gate.
 
-A historical `COMPLETED` label in a roadmap file is not enough to claim release completion. Use current code, concrete tests/evidence, `development.md`, and the release acceptance runbook.
+A historical `COMPLETED` label in a roadmap file is not enough to claim release completion. Use current code, concrete tests/evidence, `development.md`, focused completion evidence, and the release acceptance runbook.
 
 ## High-risk landmines for builders
 
@@ -186,6 +187,7 @@ A historical `COMPLETED` label in a roadmap file is not enough to claim release 
 - Do not weaken authenticated account scoping when joining contacts, documents, imports, backups, evidence, Today, or undo records.
 - Do not add independent commits inside composed backup restore layers.
 - Do not change backup wire formats, cursor formats, timestamp semantics, or public API contracts silently.
+- Do not replace the C-04 mixed-source cursor with page-local source cursors or merge interviews after base pagination.
 - Do not reactivate automatic purge, reminder email, URL checking, or maintenance jobs by default.
 - Do not store private documents in the repository, a served directory, or ephemeral production temp storage.
 - Do not treat mocked browser tests, dev login, queued SMTP, or a green local suite as staging/production evidence.
