@@ -9,7 +9,14 @@ from ..contact_models import Interview
 from ..models import JobTrack, WorkItemOverride
 from ..today_schemas import canonical_utc_timestamp
 from .lifecycle import local_day_utc_bounds
-from .today import TodayServiceError, build_today_queue as build_base_today_queue, snooze_action as snooze_base_action
+from .today import (
+    TodayServiceError,
+    _decode_cursor,
+    _encode_cursor,
+    _item_sort_key,
+    build_today_queue as build_base_today_queue,
+    snooze_action as snooze_base_action,
+)
 
 
 MAX_SNOOZE_DAYS = 365
@@ -81,9 +88,12 @@ def build_today_queue_with_interviews(
         now=now,
     )
 
-    # Keep legacy Today behavior byte-for-byte when there are no actionable
-    # interviews. This minimizes regression risk for the existing queue.
-    as_of = _aware_utc(now or datetime.now(timezone.utc))
+    # The base queue owns cursor validation and freezes `as_of` on continuation
+    # pages. Reuse that exact instant for interview eligibility so all sources
+    # share the same account-local day boundary across pagination.
+    as_of = _aware_utc(
+        datetime.fromisoformat(str(result["as_of"]).replace("Z", "+00:00"))
+    )
     _, day_end_naive = local_day_utc_bounds(timezone_name, reference=as_of)
     interviews = (
         db.query(Interview, JobTrack)
@@ -101,46 +111,64 @@ def build_today_queue_with_interviews(
     if not interviews:
         return result
 
-    # A continuation cursor was produced from the base queue's signed ordering.
-    # Interview actions are added on the first page only until JG-056 performs
-    # the full mixed-source pagination acceptance pass.
-    if cursor:
-        return result
-
-    keys = [interview_action_key(interview.id, interview.starts_at) for interview, _track in interviews]
+    keys = [
+        interview_action_key(interview.id, interview.starts_at)
+        for interview, _track in interviews
+    ]
     overrides = {
         row.action_key: row
-        for row in db.query(WorkItemOverride).filter(
+        for row in db.query(WorkItemOverride)
+        .filter(
             WorkItemOverride.user_id == user_id,
             WorkItemOverride.action_key.in_(keys),
-        ).all()
+        )
+        .all()
     }
-    added = []
+    added: list[dict[str, Any]] = []
     for interview, track in interviews:
-        item = _interview_item(interview, track, overrides.get(interview_action_key(interview.id, interview.starts_at)))
+        item = _interview_item(
+            interview,
+            track,
+            overrides.get(interview_action_key(interview.id, interview.starts_at)),
+        )
         if not include_snoozed and item["snoozed_until"]:
-            snoozed_until = datetime.fromisoformat(item["snoozed_until"].replace("Z", "+00:00"))
+            snoozed_until = datetime.fromisoformat(
+                item["snoozed_until"].replace("Z", "+00:00")
+            )
             if snoozed_until > as_of:
                 continue
         added.append(item)
 
-    def sort_key(item: dict[str, Any]):
-        return (
-            1 if item.get("due_at") is None else 0,
-            item.get("due_at") or "",
-            -int(item.get("priority") or 0),
-            str(item["type"]),
-            int(item["id"]),
-        )
+    if not added:
+        return result
 
-    merged = list(result["items"]) + added
-    merged.sort(key=sort_key)
-    result["items"] = merged[:limit]
+    # Counts describe the complete eligible population, not only this page.
     result["counts"] = dict(result.get("counts") or {})
     result["counts"]["total"] = int(result["counts"].get("total", 0)) + len(added)
     result["counts"]["due_today"] = int(result["counts"].get("due_today", 0)) + len(added)
-    # If the merge itself exceeds the requested first page, advertise the base
-    # cursor when available. JG-056 owns exhaustive mixed-source cursor testing.
+
+    last_key = None
+    if cursor:
+        _cursor_as_of, last_key = _decode_cursor(secret_key, cursor)
+        added = [item for item in added if _item_sort_key(item) > last_key]
+
+    # The base service already returns at most `limit` candidates after the
+    # cursor and tells us whether more base candidates exist. Merge those with
+    # interview candidates, then page once using the shared ordering tuple. A
+    # base item displaced by an interview is recovered on the next request
+    # because the next cursor is based on the final mixed-source emitted item.
+    base_has_more = bool(result.get("next_cursor"))
+    merged = list(result["items"]) + added
+    merged.sort(key=_item_sort_key)
+    page = merged[:limit]
+    has_more = base_has_more or len(merged) > limit
+
+    result["items"] = page
+    result["next_cursor"] = (
+        _encode_cursor(secret_key, as_of=as_of, item=page[-1])
+        if has_more and page
+        else None
+    )
     return result
 
 
