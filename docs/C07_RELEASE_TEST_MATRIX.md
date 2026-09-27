@@ -12,6 +12,8 @@ C-07 converts the repaired recovery, pagination, timestamp, and browser-time con
 
 The release candidate is accepted only when every required GitHub status check is green on the exact source SHA and `main` is protected so those checks cannot be bypassed by an ordinary merge.
 
+This file is the repository-level C-07 release-matrix record. `docs/RELEASE_ACCEPTANCE.md` remains the JG-024 staging/external-provider runbook. A green C-07 matrix is a prerequisite for those later staging gates; it does not turn blocked OAuth, SMTP, restore, deployment, or rollback gates into PASS.
+
 ## Required status checks
 
 The intended protected-branch checks are the actual hosted job names:
@@ -63,7 +65,16 @@ This prevents CI from sending email, starting destructive/external workers, chec
 - any test error
 - skips beyond the job's declared allowance
 
-The PostgreSQL and SQLite executed release suites allow zero skips. SQLite PostgreSQL-only behavior is removed from that execution deliberately through the existing `postgresql` marker plus a small recorded legacy deselection list for dialect-dependent assertions that have not historically carried that marker. The workflow separately collects the marked PostgreSQL-only population so a disappearing exclusion set is visible.
+The PostgreSQL and SQLite executed release suites allow zero skips. SQLite PostgreSQL-only behavior is removed from that execution deliberately through the existing `postgresql` marker plus a small recorded explicit deselection list for dialect/primary-runtime assertions that are PostgreSQL-specific but historically unmarked. The workflow separately collects the marked PostgreSQL-only population so a disappearing exclusion set is visible.
+
+The recorded unmarked PostgreSQL-only assertions are:
+
+- `test_both_dialect_api_responses_are_200`
+- `test_postgresql_advisory_lock_contention_is_skipped_and_recoverable`
+- `test_primary_runtime_numeric_sort_is_numeric_not_lexical`
+- `test_today_postgres_query_plans_use_owner_due_indexes`
+
+The first hosted SQLite execution proved the distinction matters: 604 supported tests passed and the only failure was `test_primary_runtime_numeric_sort_is_numeric_not_lexical`, whose contract explicitly asserts that the primary runtime dialect is PostgreSQL. C-07 therefore records/deselects that assertion rather than changing runtime product code or weakening SQLite behavior.
 
 Browser and backend collections are listed before execution and must contain tests. Migration/readiness failures exit nonzero. Failure artifacts preserve Playwright traces/results and sanitized backend logs.
 
@@ -79,17 +90,23 @@ Browser and backend collections are listed before execution and must contain tes
 | C-07.06 | Nonempty collection guards, JUnit verifier, migration/readiness checks, and artifact `if-no-files-found` policy reject missing evidence or unexpected outcomes. |
 | C-07.07 | Hosted jobs record source/workflow SHA, migration revision where applicable, runtime/dependency versions, JUnit/collection outputs, browser reports/results, and sanitized failure logs. |
 | C-07.08 | **Pending final repository-setting verification.** `main` must require the actual check names listed above. |
-| C-07.09 | **Pending final hosted validation.** Record the exact final PR head SHA and green workflow run IDs below after the last documentation/code change. |
+| C-07.09 | **Pending final hosted validation.** Record the exact final PR head SHA and green workflow run IDs in issue #168 / PR #169 after the last repository change. |
+
+## Branch-protection procedure
+
+GitHub repository administrators must protect `main` and require the six actual status-check names listed above. The connected repository automation used for C-07 exposes protection reads but not protection writes, so this setting must be applied through an authorized GitHub repository-settings surface if it is not already present.
+
+After changing the setting, verify the GitHub branch response reports `protected: true` and that the protection/ruleset requires the intended C-07 job names. Do not merge by bypassing a red or missing release check.
 
 ## Hosted validation
 
-Final source SHA: **PENDING**  
-Standard CI run: **PENDING**  
-SQLite release run: **PENDING**  
-C-06 browser-time run: **PENDING**  
-Branch protection: **PENDING**
+Final source SHA: **record in issue #168 / PR #169 after final run**  
+Standard CI run: **record after final run**  
+SQLite release run: **record after final run**  
+C-06 browser-time run: **record after final run**  
+Branch protection: **PENDING repository setting**
 
-Do not replace these placeholders with a passing claim until the final source SHA has completed all required hosted jobs.
+Keeping exact run IDs in the GitHub tracking record avoids a documentation-only commit invalidating the exact-SHA evidence after the final matrix completes.
 
 ## Rollback
 
