@@ -35,6 +35,8 @@ Archive behavior is unchanged by C-04. Durable pending manual actions remain act
 - timezone and `include_snoozed` context mismatch;
 - frozen account-local day boundaries across pages.
 
+`backend/tests/test_today_mixed_cursor_contract.py` proves the old v1 cursor format is rejected with a refresh instruction and defines mutation-between-pages behavior. A cancelled item after page 1 disappears from page 2, the frozen `as_of` remains unchanged, counts reflect the current eligible population, and the continuation terminates without replaying earlier actions.
+
 `backend/tests/test_today_mixed_boundedness.py` builds 250 eligible manual actions, requests a two-item page, records SQL SELECTs, verifies the returned total is still 250, verifies candidate object reads contain a SQL `LIMIT`, and asserts the measured SELECT count stays within a fixed ceiling independent of fixture row count.
 
 `frontend/tests/today-mixed-pagination.spec.ts` keeps the production Today UI and real backend path, reduces only the requested page size to two, creates three scheduled interviews, verifies the first page contains two interview actions and the correct total, clicks the actual **Load more** control, verifies all three actions become reachable with no remaining continuation, and verifies application navigation still works.
