@@ -62,6 +62,13 @@ def test_sqlite_release_job_is_nonempty_and_rejects_runtime_skips():
     assert "--max-skips 0" in workflow
     assert "sqlite-release.xml" in workflow
     assert "source_sha=" in workflow
+    for postgres_only in (
+        "test_both_dialect_api_responses_are_200",
+        "test_postgresql_advisory_lock_contention_is_skipped_and_recoverable",
+        "test_primary_runtime_numeric_sort_is_numeric_not_lexical",
+        "test_today_postgres_query_plans_use_owner_due_indexes",
+    ):
+        assert postgres_only in workflow
 
 
 def test_timezone_release_job_covers_all_declared_zones_and_evidence():
