@@ -13,6 +13,7 @@ from app.reminder_schemas import (
     reminder_occurrence_key,
     validate_preference_for_timezone,
 )
+from app.time_utils import normalize_utc_instant
 
 
 def _user_and_track(db_session, suffix: str):
@@ -125,18 +126,40 @@ def test_illegal_state_transition_rejected(db_session):
     assert delivery.status == "sending"
     assert delivery.version == 2
 
-    accepted_at = datetime(2026, 9, 25, 15, 0, 5, tzinfo=timezone.utc)
+    accepted_at = datetime(2026, 9, 25, 15, 0, 5, 123456, tzinfo=timezone.utc)
     apply_delivery_transition(delivery, "sent", sent_at=accepted_at)
     assert delivery.status == "sent"
     assert delivery.sent_at == accepted_at
     assert delivery.version == 3
+    delivery_id = delivery.id
     db_session.commit()
+
+    # Force a persistence reload. SQLite drops tzinfo for DateTime(timezone=True),
+    # while PostgreSQL returns an aware value. Both represent the same UTC instant.
+    db_session.expire_all()
+    delivery = db_session.get(ReminderDelivery, delivery_id)
+    assert normalize_utc_instant(delivery.sent_at) == accepted_at
+    assert normalize_utc_instant(delivery.sent_at).microsecond == 123456
+
+    # Repeating the accepted transition with the same instant is idempotent even
+    # after SQLite reloads the stored value as naive UTC.
+    apply_delivery_transition(delivery, "sent", sent_at=accepted_at)
+    assert delivery.status == "sent"
+    assert delivery.version == 3
+
+    with pytest.raises(ReminderContractError) as ambiguous:
+        apply_delivery_transition(
+            delivery,
+            "sent",
+            sent_at=accepted_at.replace(tzinfo=None),
+        )
+    assert ambiguous.value.code == "sent_at_timezone_required"
 
     with pytest.raises(ReminderContractError) as illegal:
         apply_delivery_transition(delivery, "failed")
     assert illegal.value.code in {"illegal_delivery_transition", "sent_at_immutable"}
     assert delivery.status == "sent"
-    assert delivery.sent_at == accepted_at
+    assert normalize_utc_instant(delivery.sent_at) == accepted_at
 
     with pytest.raises(ReminderContractError) as immutable:
         apply_delivery_transition(
@@ -145,4 +168,4 @@ def test_illegal_state_transition_rejected(db_session):
             sent_at=datetime(2026, 9, 25, 15, 0, 6, tzinfo=timezone.utc),
         )
     assert immutable.value.code == "sent_at_immutable"
-    assert delivery.sent_at == accepted_at
+    assert normalize_utc_instant(delivery.sent_at) == accepted_at
