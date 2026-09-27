@@ -253,6 +253,7 @@ def _after_cursor_filter(
     priority: int | None = None,
     priority_column=None,
     nullable_due: bool = False,
+    aware_due: bool = False,
 ):
     if last_key is None:
         return true()
@@ -278,7 +279,8 @@ def _after_cursor_filter(
             return false()
         return and_(due_column.is_(None), suffix)
 
-    last_due_at = _naive_utc(_parse_iso_utc(last_due))
+    parsed_due = _parse_iso_utc(last_due)
+    last_due_at = parsed_due if aware_due else _naive_utc(parsed_due)
     dated_after = or_(
         due_column > last_due_at,
         and_(due_column == last_due_at, suffix),
@@ -298,20 +300,22 @@ def _eligible_counts(
     *,
     user_id: int,
     as_of: datetime,
+    day_start: datetime,
+    day_end: datetime,
     day_start_naive: datetime,
     day_end_naive: datetime,
 ) -> dict[str, int]:
     manual = _aggregate_counts(
         db.query(
             func.count(WorkItem.id),
-            func.sum(case((WorkItem.due_at < day_start_naive, 1), else_=0)),
+            func.sum(case((WorkItem.due_at < day_start, 1), else_=0)),
             func.sum(
                 case(
                     (
                         and_(
                             WorkItem.due_at.isnot(None),
-                            WorkItem.due_at >= day_start_naive,
-                            WorkItem.due_at < day_end_naive,
+                            WorkItem.due_at >= day_start,
+                            WorkItem.due_at < day_end,
                         ),
                         1,
                     ),
@@ -322,7 +326,7 @@ def _eligible_counts(
         ).filter(
             WorkItem.user_id == user_id,
             WorkItem.state == "pending",
-            or_(WorkItem.due_at.is_(None), WorkItem.due_at < day_end_naive),
+            or_(WorkItem.due_at.is_(None), WorkItem.due_at < day_end),
         )
     )
     followup = _aggregate_counts(
@@ -425,27 +429,43 @@ def _decrement_counts_for_due(
         counts["due_today"] -= 1
 
 
-def _active_snooze_overrides(
+def _active_hidden_overrides(
     db: Session,
     *,
     user_id: int,
     as_of: datetime,
     include_snoozed: bool,
-) -> tuple[dict[str, WorkItemOverride], dict[str, WorkItemOverride]]:
+) -> dict[str, WorkItemOverride]:
+    if include_snoozed:
+        return {}
     rows = (
         db.query(WorkItemOverride)
-        .filter(WorkItemOverride.user_id == user_id)
+        .filter(
+            WorkItemOverride.user_id == user_id,
+            WorkItemOverride.snoozed_until > as_of,
+        )
         .all()
     )
-    overrides = {row.action_key: row for row in rows}
-    if include_snoozed:
-        return overrides, {}
-    hidden = {
+    return {row.action_key: row for row in rows}
+
+
+def _candidate_overrides(
+    db: Session,
+    *,
+    user_id: int,
+    action_keys: list[str],
+) -> dict[str, WorkItemOverride]:
+    if not action_keys:
+        return {}
+    return {
         row.action_key: row
-        for row in rows
-        if row.snoozed_until is not None and _aware_utc(row.snoozed_until) > as_of
+        for row in db.query(WorkItemOverride)
+        .filter(
+            WorkItemOverride.user_id == user_id,
+            WorkItemOverride.action_key.in_(action_keys),
+        )
+        .all()
     }
-    return overrides, hidden
 
 
 def _subtract_hidden_counts(
@@ -490,7 +510,7 @@ def _subtract_hidden_counts(
                 WorkItem.user_id == user_id,
                 WorkItem.id.in_(manual_ids),
                 WorkItem.state == "pending",
-                or_(WorkItem.due_at.is_(None), WorkItem.due_at < day_end_naive),
+                or_(WorkItem.due_at.is_(None), WorkItem.due_at < day_end),
             )
             .all()
         )
@@ -623,16 +643,15 @@ def build_today_queue_with_interviews(
     day_start = day_start_naive.replace(tzinfo=timezone.utc)
     day_end = day_end_naive.replace(tzinfo=timezone.utc)
 
-    overrides, hidden_overrides = _active_snooze_overrides(
+    hidden_overrides = _active_hidden_overrides(
         db,
         user_id=user_id,
         as_of=as_of,
         include_snoozed=include_snoozed,
     )
-    # At most every active hidden override can occupy a position before the
-    # requested visible window. Adding that bounded allowance guarantees that
-    # each source can still contribute limit+1 visible candidates without
-    # loading its full account history.
+    # At most every currently hidden action can occupy a position before the
+    # requested visible window. The allowance is derived only from active
+    # snoozes, not expired override history.
     candidate_limit = limit + 1 + len(hidden_overrides)
 
     first_row_per_url = (
@@ -664,6 +683,7 @@ def build_today_queue_with_interviews(
                 last_key=last_key,
                 priority_column=WorkItem.priority,
                 nullable_due=True,
+                aware_due=True,
             ),
         )
         .order_by(
@@ -754,6 +774,25 @@ def build_today_queue_with_interviews(
         .all()
     )
 
+    action_keys = [manual_action_key(item.id) for item in manual_items]
+    action_keys.extend(
+        followup_action_key(track.id, track.follow_up_at)
+        for track in followups
+    )
+    action_keys.extend(
+        deadline_action_key(availability.id, availability.deadline_at)
+        for availability, _track, _row in deadline_contexts
+    )
+    action_keys.extend(
+        interview_action_key(interview.id, interview.starts_at)
+        for interview, _track in interviews
+    )
+    overrides = _candidate_overrides(
+        db,
+        user_id=user_id,
+        action_keys=action_keys,
+    )
+
     items = [
         serialize_work_item(item, overrides.get(manual_action_key(item.id)))
         for item in manual_items
@@ -797,6 +836,8 @@ def build_today_queue_with_interviews(
         db,
         user_id=user_id,
         as_of=as_of,
+        day_start=day_start,
+        day_end=day_end,
         day_start_naive=day_start_naive,
         day_end_naive=day_end_naive,
     )
