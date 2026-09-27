@@ -1,6 +1,6 @@
 # Repo Context — JobGrid — 2026-09-27
 
-Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by the C-04 mixed-source Today pagination repair in PR #162.
+Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162 and the C-05 SQLite timestamp-contract repair in PR #163.
 
 This file is the compact repository context for implementation agents. It describes the current codebase, contracts, active risks, and completion state. Read `development.md` for the full completion plan and ticket-level closeout instructions. Historical planning files may contain stale proposed names or completion labels, so current code plus the completion evidence docs take precedence.
 
@@ -148,6 +148,8 @@ Backend tests are under `backend/tests` and use pytest. Frontend browser tests a
 
 C-04 adds focused mixed-source backend coverage for source ordering, cursor termination, signed context, snoozes, account-local midnight, old cursor rejection, mutation-between-pages behavior, and a 250-row bounded-query fixture. It also adds a Playwright flow that forces a two-item Today page against the real backend, clicks the actual Load more control, reaches all three interview actions, and preserves application navigation. Existing interview browser coverage still verifies cancellation removes the Today action.
 
+C-05 adds `backend/tests/test_timestamp_contracts.py` for UTC/offset/DST/legacy-naive persistence behavior, SQLite reload/serialization, reminder same-instant idempotency, and backup/restore round trips. The original snooze and reminder regressions are also executed explicitly against SQLite while ordinary hosted backend CI exercises PostgreSQL.
+
 Critical test safety: `backend/tests/conftest.py` can recreate/drop PostgreSQL tables. `DATABASE_URL` and `TEST_DATABASE_URL` used by tests must always point to disposable test databases. Never point pytest or browser fixtures at production or the only copy of staging data.
 
 Current release gaps: CI does not yet enforce the complete C-07 matrix, including the supported SQLite path and explicit multi-zone browser projects. The `main` branch is currently unprotected and has no required status-check enforcement, so branch protection remains part of C-07 rather than an assumed repository guarantee.
@@ -171,7 +173,8 @@ This topology is deployment preparation, not proof of production readiness. Real
 - JG-001–JG-010 are verified complete at the current local/PR acceptance level after PR #159.
 - C-01 through C-03 were closed in the recovery sequence through PR #161.
 - C-04 mixed-source Today pagination is closed by the mixed-source cursor/query repair and the acceptance evidence in `docs/C04_TODAY_PAGINATION.md`.
-- The immediate engineering sequence is now C-05 SQLite timestamp contracts, C-06 deterministic browser-time tests, and C-07 corrected release CI.
+- C-05 SQLite timestamp contracts are closed by PR #163 and the acceptance evidence in `docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md`. Persisted naive SQLite values for UTC-instant columns are normalized as UTC at the Python/wire boundary; request inputs that require offsets remain strict.
+- The immediate engineering sequence is now C-06 deterministic browser-time tests and C-07 corrected release CI.
 - C-08 is broad product acceptance across the existing implementation. Do not rebuild features that already satisfy their contracts.
 - C-09/C-10 are real staging and external-provider gates.
 - C-11 reconciles ticket/documentation evidence after acceptance.
