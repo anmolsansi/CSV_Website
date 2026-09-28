@@ -1,17 +1,18 @@
-# Repo Context — JobGrid — 2026-09-27
+# Repo Context — JobGrid — 2026-09-28
 
-Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162, the C-05 SQLite timestamp-contract repair in PR #163, and the C-06 browser-time determinism package in PR #167.
+Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162, C-05 in PR #163, C-06 in PR #167, C-07 in PR #169, and C-08 in PR #171.
 
-This file is the compact repository context for implementation agents. It describes the current codebase, contracts, active risks, and completion state. Read `development.md` for the full completion plan and ticket-level closeout instructions. Historical planning files may contain stale proposed names or completion labels, so current code plus the completion evidence docs take precedence.
+This file is the compact repository context for implementation agents. Read `development.md` for the full completion plan, while honoring newer accepted architecture decisions recorded in focused C-package evidence. Historical planning text can describe an earlier infrastructure choice; the user-selected C-09 zero-dollar constraint is recorded in `docs/C09_STAGING_OPERATIONS.md` and PR #173 and supersedes the earlier paid Render-disk assumption for C-09 implementation.
 
 ## Stack and runtime
 
 - Frontend: React 18, Vite 5, React Router 7, Axios, TanStack Table, Playwright.
 - Backend: Python 3.12, FastAPI 0.111, SQLAlchemy 2.0, Alembic, APScheduler.
-- Database: PostgreSQL is the deployment target. SQLite is also an explicitly supported/tested runtime path and has connection-level foreign-key and numeric-sort adapters in `backend/app/database.py`.
+- Database: PostgreSQL is the deployment target. SQLite is also an explicitly supported/tested runtime path.
 - Auth: server-side session cookies. Google, Microsoft, and Apple OAuth configuration lives in `backend/app/config.py`. `TEST_AUTH` exists only for test/dev flows and must be false in production.
 - Observability: FastAPI metrics middleware plus optional Sentry.
-- Main migration head: `018_bulk_undo_foundation.py`. Migrations 001–018 cover the initial schema, backup identity, lifecycle events, user timezone, archive/maintenance state, Today, identity, evidence, reminders, documents, capture, availability, contacts/interviews, import previews, and undo foundation.
+- Main migration head: `018_bulk_undo_foundation.py`.
+- Production document bytes: private S3-compatible object storage through `backend/app/services/document_storage.py`; current C-09 target is Supabase Storage Free. Local/dev tests may still use the filesystem adapter.
 
 Pinned dependencies live in `backend/requirements.txt` and `frontend/package-lock.json`.
 
@@ -36,7 +37,7 @@ Backend routes are split across `backend/app/routers/`:
 - `backup.py`: portable backup export, preview, restore, JSON/ZIP handling.
 - `auth_router.py` and `email.py`: authentication and supported email flows.
 
-Important service modules live in `backend/app/services/`. Do not move business logic back into route handlers when an owning service already exists. Major service boundaries include `row_queries.py`, `validation.py`, `lifecycle.py`, `today.py`, `today_f8.py`, `reminders.py`, `retention.py`, `job_identity.py`, `evidence.py`, `documents.py`, `capture.py`, `availability.py`, `contacts.py`, `imports.py`, `bulk_actions.py`, `undo_foundation.py`, and the backup services.
+Important service modules live in `backend/app/services/`. Do not move business logic back into route handlers when an owning service already exists. Major service boundaries include `row_queries.py`, `validation.py`, `lifecycle.py`, `today.py`, `today_f8.py`, `reminders.py`, `retention.py`, `job_identity.py`, `evidence.py`, `documents.py`, `document_storage.py`, `capture.py`, `availability.py`, `contacts.py`, `imports.py`, `bulk_actions.py`, `undo_foundation.py`, and the backup services.
 
 ## Frontend structure
 
@@ -59,45 +60,47 @@ Important service modules live in `backend/app/services/`. Do not move business 
 
 `frontend/src/api/client.js` is the primary Axios client. Contacts and import flows also have focused API modules under `frontend/src/api/`. Shared query serialization lives in `queryParams.js`, and top-five opening behavior is isolated in `openJobs.js`.
 
-Application detail functionality is composed from focused components including `ApplicationTimeline`, `ApplicationDocuments`, `ApplicationPeople`, `ApplicationInterviews`, and `JobAvailability`. Backup/restore, reminders, retention settings, import preview, archive/undo status, navigation, command palette, and accessibility helpers also have dedicated components.
-
 ## Data and ownership contracts
 
-These are hard invariants for future work:
+Hard invariants:
 
-1. `CsvRow` and `JobTrack` are different identities. A CSV row represents imported discovery data. A JobTrack is the durable application/job memory. Never substitute one ID for the other.
-2. Visit state is not application state. Opening a URL or setting row click state must not imply that the user applied.
-3. Deleting or archiving source CSV data must not erase durable application history. JobTrack retains its own company/title/URL snapshot and may outlive its source row.
-4. Private reads and writes are account-scoped. Never accept a user ID from the client as authority. Resolve ownership from the authenticated user and verify related IDs belong to that same account.
-5. Lifecycle/evidence/history writes are durable product data. Preserve idempotency, ordering, and transaction boundaries when adding new writers.
-6. Optimistic versions and undo journals protect concurrent writes. A stale undo or stale mutation must conflict instead of silently overwriting newer state.
-7. Timestamps represent different concepts. UTC instants, account-local day boundaries, date-only deadlines, and local scheduled wall times must not be treated as interchangeable.
+1. `CsvRow` and `JobTrack` are different identities.
+2. Visit state is not application state.
+3. Deleting or archiving source CSV data must not erase durable application history.
+4. Private reads and writes are account-scoped. Never accept a user ID from the client as authority.
+5. Lifecycle/evidence/history writes are durable product data. Preserve idempotency, ordering, and transaction boundaries.
+6. Optimistic versions and undo journals protect concurrent writes.
+7. UTC instants, account-local day boundaries, date-only deadlines, and local scheduled wall times are different concepts.
 
 ## Filtering and top-five opening
 
-`backend/app/services/row_queries.py` is the shared account-scoped filtering/query boundary used to keep list/export behavior aligned. Frontend query serialization is centralized under `frontend/src/api/queryParams.js`.
+`backend/app/services/row_queries.py` is the shared account-scoped filtering/query boundary. Frontend query serialization is centralized under `frontend/src/api/queryParams.js`.
 
-The top-five workflow operates on the complete active filtered/sorted server result, not only the visible page. `frontend/src/api/openJobs.js` contains the browser-side tab helper. Opening a job marks only a successful navigation/visit, not an application.
-
-Do not reintroduce page-local top-five selection, unsafe protocols, `window.opener` access, or filter serialization drift.
+The top-five workflow operates on the complete active filtered/sorted server result, not only the visible page. Opening a job marks only a successful navigation/visit, not an application.
 
 ## Today, reminders, and time
 
-Today is implemented across `backend/app/services/today.py`, `today_f8.py`, the Today router/schema, and `frontend/src/pages/Today.jsx`. The F8 extension adds interview preparation into the established Today contract through composition in `backend/app/main.py`.
+C-04 provides one mixed-source continuation contract across manual actions, follow-ups, deadlines, and interview preparation. C-05 defines SQLite/PostgreSQL timestamp behavior. C-06 makes browser-time acceptance deterministic across UTC, Asia/Kolkata, and America/New_York.
 
-C-04 replaces split base/interview pagination with one mixed-source continuation contract. Manual actions, follow-ups, deadlines, and interview preparation share the established ordering tuple `(due_is_null, due_at, -priority, type, id)`. The signed v2 cursor freezes `as_of`, binds continuation to the authenticated account, account timezone, and `include_snoozed` setting, and is emitted from the final mixed item only when another visible item exists. Each source applies the cursor boundary before a bounded candidate read, counts are computed from the same eligible population, and old v1 cursors are intentionally rejected with a refresh path. Mutation between pages is best-effort current-state behavior, not an immutable database snapshot. See `docs/C04_TODAY_PAGINATION.md`.
-
-Reminder scheduling and delivery are separate activation gates. `RUN_REMINDER_WORKER` and `REMINDER_EMAIL_DELIVERY_ENABLED` default off. Maintenance jobs also default off. Tests and local work must not accidentally send real email or run destructive background work.
-
-C-06 makes browser-time acceptance deterministic without changing product-time semantics. The primary `chromium` Playwright project is explicitly UTC, while `chromium-kolkata` and `chromium-new-york` repeat the `@time-zone` contract scenarios in `Asia/Kolkata` and `America/New_York`. Tests freeze the browser clock where needed and keep browser-local `datetime-local` wall time separate from expected UTC payload/persistence. They also verify account timezone versus device timezone, day-boundary behavior, failure/cancel/focus paths, reload persistence, and real-API snooze/reschedule round trips. `.github/workflows/c06-browser-timezones.yml` enforces the targeted three-zone matrix. See `docs/C06_BROWSER_TIME_DETERMINISM.md`.
+Reminder scheduling and delivery are separate activation gates. `RUN_REMINDER_WORKER` and `REMINDER_EMAIL_DELIVERY_ENABLED` default off. Maintenance jobs and job URL checks also default off.
 
 ## Documents and private storage
 
-Documents are private immutable versions stored outside the database. Database rows own metadata, selections, checksums, and lifecycle state. Bytes live under `DOCUMENT_STORAGE_DIR`.
+Documents are private immutable versions stored outside the application database. Database rows own metadata, selections, checksums, state, and opaque `storage_key` values.
 
-Production configuration rejects repository/public/temp storage paths. If `DOCUMENT_STORAGE_DIR` is absent, document upload/download functionality is unavailable while the rest of JobGrid can remain healthy. A production deployment must provide durable private storage and prove survival across restart/redeploy before release acceptance.
+`backend/app/services/document_storage.py` owns the storage-adapter boundary:
 
-Do not put uploaded files under `frontend/public`, the repository tree, or a production temp directory. Do not expose storage paths or object names as authorization tokens.
+- filesystem backend for local development/tests;
+- S3-compatible backend for production C-09;
+- transient local cache/staging for S3 objects;
+- safe key validation, private object publish/download/delete/move/list operations;
+- storage readiness without exposing provider credentials.
+
+The user-selected C-09 requirement is **zero-dollar infrastructure**. Production therefore stays on Render Free and uses the existing Supabase Free project for a private `jobgrid-documents` Storage bucket through Supabase's S3-compatible endpoint. Render local files are disposable and must never be treated as durable document state.
+
+JobGrid retains the existing 100 MiB per-account document quota. The C-09 storage audit reports aggregate object usage and a 900 MB warning threshold beneath the current 1 GB Supabase Free Storage allowance.
+
+Never put uploaded files in the repository, `frontend/public`, a public bucket, or a browser-readable secret. S3 access keys are server-only high-privilege credentials.
 
 ## Backup and recovery
 
@@ -107,20 +110,22 @@ Current behavior after PR #159:
 
 - JSON v2 is records-only and explicitly excludes document bytes.
 - ZIP is the complete user-facing backup path and contains the composed v2 metadata graph plus verified immutable document bytes.
-- Base backup records, contact/interview/link extensions, import mappings, supported undo/audit metadata, and document metadata are composed through the current backup services.
-- `backend/app/services/backup_sessions.py` owns shared restore transaction and export snapshot helpers.
-- Restore validation happens before writes. Supported child restore layers join the same owned transaction rather than committing independently.
-- Failed bundle restore removes files published by that failed attempt where possible. Filesystem and database state are still not one ACID transaction, so crash reconciliation remains an operational concern.
+- Restore validation happens before writes.
+- Supported restore layers join one caller-owned transaction.
+- Failed bundle restore removes files/objects published by that failed attempt where possible.
+- PostgreSQL and private object storage are still not one ACID transaction, so crash reconciliation remains an operational concern.
+
+The storage adapter preserves this portable contract regardless of whether the active backend is filesystem or S3-compatible object storage.
 
 Do not bypass the composed export/restore path by calling an older base exporter directly. Do not use source database integer IDs as portable cross-section references.
 
 ## Imports, contacts, and undo/archive
 
-External imports use a preview -> deliberate commit flow with private previews, reusable mappings, row/byte limits, reconciliation decisions, and replay/concurrency protections. Keep preview parsing separate from final writes.
+External imports use a preview → deliberate commit flow with private previews, reusable mappings, row/byte limits, reconciliation decisions, and replay/concurrency protections.
 
 Contacts and interviews are account-owned and may be linked to applications. Calendar output must preserve stable identifiers, escaping, timezone meaning, cancellations/reschedules, and ownership boundaries.
 
-Archive/undo uses `BulkAction` / `BulkActionEffect` plus optimistic version checks. Restored undo history is evidence only and must not become executable destructive state. Automatic purge is not an assumed product behavior and remains disabled unless explicitly approved.
+Archive/undo uses `BulkAction` / `BulkActionEffect` plus optimistic version checks. Restored undo history is evidence only and must not become executable destructive state.
 
 ## Production safety and configuration
 
@@ -131,81 +136,74 @@ Archive/undo uses `BulkAction` / `BulkActionEffect` plus optimistic version chec
 - public HTTPS `FRONTEND_URL` and `OAUTH_REDIRECT_BASE`
 - explicitly configured public HTTPS CORS origins
 
-Retention, reminder email delivery, maintenance work, and external job URL checks are intentionally disabled by default and require explicit operator activation.
+C-09 deployment readiness additionally requires database connectivity and the configured private object-store bucket through `/ready`.
 
-Never commit database URLs, OAuth secrets, SMTP credentials, session cookies, private keys, user backups, or inbox contents.
+Never commit database URLs, OAuth secrets, email credentials, S3 credentials, session cookies, private keys, user backups, or private document contents.
 
 ## Testing and CI
 
-Backend tests are under `backend/tests` and use pytest. Frontend browser tests are under `frontend/tests` and use Playwright. `frontend/unit/open-jobs.test.mjs` covers the tab-opening helper. The frontend production check is `npm run build`.
+Backend tests are under `backend/tests`, browser tests under `frontend/tests`, and the frontend production check is `npm run build`.
 
-`.github/workflows/ci.yml` currently runs:
+The release matrix includes PostgreSQL-backed backend/E2E coverage, SQLite coverage, explicit browser timezone coverage, migration evidence, frontend build, and focused release workflow checks.
 
-- Frontend Build
-- E2E Tests (Playwright) against a migrated PostgreSQL-backed local API
-- Backend Compile Check
-- Backend Tests (pytest) with PostgreSQL 16
+C-09 adds:
 
-C-04 adds focused mixed-source backend coverage for source ordering, cursor termination, signed context, snoozes, account-local midnight, old cursor rejection, mutation-between-pages behavior, and a 250-row bounded-query fixture. It also adds a Playwright flow that forces a two-item Today page against the real backend, clicks the actual Load more control, reaches all three interview actions, and preserves application navigation. Existing interview browser coverage still verifies cancellation removes the Today action.
+- zero-dollar Render Blueprint assertions;
+- storage-adapter readiness tests;
+- S3 publish/cache-loss/move/delete/key-safety tests;
+- backend-neutral storage-audit tests;
+- continued existing document/backup recovery regressions through the same public contracts.
 
-C-05 adds `backend/tests/test_timestamp_contracts.py` for UTC/offset/DST/legacy-naive persistence behavior, SQLite reload/serialization, reminder same-instant idempotency, and backup/restore round trips. The original snooze and reminder regressions are also executed explicitly against SQLite while ordinary hosted backend CI exercises PostgreSQL.
-
-C-06 adds `frontend/tests/c06-browser-time.spec.ts`, repairs the original Today wall-time fixtures, and adds `.github/workflows/c06-browser-timezones.yml`. The accepted C-06 run collected and passed 16 tests across UTC, Asia/Kolkata, and America/New_York, including real migrated-backend snooze/reschedule persistence. The accompanying full CI run passed 603 PostgreSQL backend tests, all 186 explicit-UTC Chromium tests, 8 tab-helper tests, the focused JG-023 browser workflow, frontend production build, backend compile, and Alembic revision 018 startup.
-
-Critical test safety: `backend/tests/conftest.py` can recreate/drop PostgreSQL tables. `DATABASE_URL` and `TEST_DATABASE_URL` used by tests must always point to disposable test databases. Never point pytest or browser fixtures at production or the only copy of staging data.
-
-Current release gaps belong to C-07: the release policy still needs explicit hosted enforcement for the supported SQLite path, exact deployable-SHA/evidence handling, and branch protection/required status checks. C-06's dedicated multi-zone workflow is targeted browser-time evidence, not a substitute for C-07's complete release-policy matrix. The `main` branch is currently unprotected and has no required status-check enforcement.
+Critical test safety: disposable test databases only. Never point pytest or browser fixtures at production or the only copy of staging data.
 
 ## Deployment topology
 
-The checked-in cloud runbook currently targets:
+Current C-09 target:
 
-- Vercel for the React/Vite frontend
-- Render for the FastAPI backend
-- Supabase as managed PostgreSQL only
+- Vercel Free for React/Vite frontend
+- Render Free for FastAPI backend
+- Supabase Free PostgreSQL
+- Supabase Free private Storage for document bytes
 
-`render.yaml`, `frontend/vercel.json`, `backend/.python-version`, and `docs/CLOUD_DEPLOYMENT_VERCEL_RENDER_SUPABASE.md` are the primary deployment assets/runbook. Alembic remains the only schema migration system. Do not introduce Supabase Auth, Realtime, or a second migration path merely because Supabase hosts PostgreSQL.
+`render.yaml`, `frontend/vercel.json`, `backend/.python-version`, `backend/app/services/document_storage.py`, and `docs/CLOUD_DEPLOYMENT_VERCEL_RENDER_SUPABASE.md` are the primary deployment assets/runbook.
 
-This topology is deployment preparation, not proof of production readiness. Real OAuth, SMTP receipt, durable document storage, staging restore, restart/durability, old-code rollback, and production smoke/observation remain external acceptance gates under C-09 through C-12.
+This topology is deployment preparation, not proof of production readiness. Real OAuth, controlled email receipt, real storage credential/bucket verification, staging recovery, restart/durability, rollback, and production smoke/observation remain external acceptance gates under C-09 through C-12.
 
 ## Current completion state
 
-`development.md` is the primary completion guide, and focused completion evidence lives under `docs/`.
-
-- JG-001–JG-010 are verified complete at the current local/PR acceptance level after PR #159.
-- C-01 through C-03 were closed in the recovery sequence through PR #161.
-- C-04 mixed-source Today pagination is closed by the mixed-source cursor/query repair and the acceptance evidence in `docs/C04_TODAY_PAGINATION.md`.
-- C-05 SQLite timestamp contracts are closed by PR #163 and the acceptance evidence in `docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md`. Persisted naive SQLite values for UTC-instant columns are normalized as UTC at the Python/wire boundary; request inputs that require offsets remain strict.
-- C-06 deterministic browser-time tests are closed by PR #167 and the acceptance evidence in `docs/C06_BROWSER_TIME_DETERMINISM.md`. Product wall-time semantics are unchanged; the test harness now proves the same payload/persistence contract in UTC, Asia/Kolkata, and America/New_York.
-- The immediate engineering sequence is now C-07 corrected release CI.
-- C-08 is broad product acceptance across the existing implementation. Do not rebuild features that already satisfy their contracts.
-- C-09/C-10 are real staging and external-provider gates.
+- JG-001–JG-010 are verified complete after PR #159.
+- C-01 through C-03 were closed through PR #161.
+- C-04 mixed-source Today pagination is closed.
+- C-05 SQLite timestamp contracts are closed.
+- C-06 deterministic browser-time tests are closed.
+- C-07 corrected release CI is closed.
+- C-08 local product acceptance is closed by PR #171.
+- C-09 repository work is in PR #173. The architecture is now zero-dollar and the private Supabase bucket has been created, but S3 server credentials and live restart/redeploy/recovery evidence remain external steps.
+- C-10 is real-provider/deployed acceptance.
 - C-11 reconciles ticket/documentation evidence after acceptance.
-- C-12 is the actual production release, observation, rollback-readiness, and closure gate.
+- C-12 is production release, observation, rollback-readiness, and closure.
 
-A historical `COMPLETED` label in a roadmap file is not enough to claim release completion. Use current code, concrete tests/evidence, `development.md`, focused completion evidence, and the release acceptance runbook.
+A historical `COMPLETED` label is not enough to claim release completion. Use current code, concrete tests/evidence, focused C-package evidence, and release acceptance.
 
-## High-risk landmines for builders
+## High-risk landmines
 
 - Do not confuse CsvRow IDs with JobTrack IDs.
 - Do not make click/open mean applied.
 - Do not cascade source-row deletion into application history.
-- Do not weaken authenticated account scoping when joining contacts, documents, imports, backups, evidence, Today, or undo records.
+- Do not weaken account scoping.
 - Do not add independent commits inside composed backup restore layers.
-- Do not change backup wire formats, cursor formats, timestamp semantics, or public API contracts silently.
-- Do not replace the C-04 mixed-source cursor with page-local source cursors or merge interviews after base pagination.
-- Do not make browser-time tests deterministic by forcing the host process to UTC or by comparing stripped UTC text with local `datetime-local` input. Keep wall time, UTC instant, account timezone, and browser timezone explicit.
+- Do not change backup, cursor, timestamp, or public API contracts silently.
 - Do not reactivate automatic purge, reminder email, URL checking, or maintenance jobs by default.
-- Do not store private documents in the repository, a served directory, or ephemeral production temp storage.
-- Do not treat mocked browser tests, dev login, queued SMTP, or a green local suite as staging/production evidence.
-- Do not add new frameworks, queues, databases, storage providers, or auth systems unless the owning requirement proves the existing architecture cannot satisfy it.
+- Do not depend on Render Free local files for durable documents.
+- Do not make the Supabase bucket public.
+- Do not expose S3 credentials to the browser.
+- Do not treat mocked tests, dev login, queued email, or green local CI as live staging/production evidence.
+- Do not silently upgrade a provider to a paid plan to solve a free-tier limitation.
 
 ## Where to start for future work
 
-1. Read this file for repository boundaries and current landmines.
-2. Read the relevant C package and JG closeout section in `development.md`.
-3. Inspect the actual owning router, service, model/schema, frontend API/page/component, tests, migration history, and recent relevant commits before editing.
-4. Reuse existing implementation and conventions. Capture a failing reproduction before repairing a confirmed defect.
-5. Make the smallest coherent change, run the narrowest relevant validation, then broader affected checks.
-6. Update documentation when behavior or operating contracts change.
-7. Do not mark work complete without concrete evidence at the exact SHA being claimed.
+1. Read this file for current boundaries.
+2. Read the relevant C package plus `docs/C09_STAGING_OPERATIONS.md` for the zero-dollar infrastructure decision.
+3. Inspect the actual router/service/model/schema/frontend/tests/provider evidence before editing.
+4. Reuse existing implementation and conventions.
+5. Make the smallest coherent change and run the complete affected release gates.
