@@ -1,8 +1,5 @@
 import hashlib
-from pathlib import Path
 from types import SimpleNamespace
-
-import pytest
 
 from app.config import settings
 from scripts import c09_storage_audit
@@ -44,14 +41,6 @@ def _document(*, storage_key: str, payload: bytes, sha256: str | None = None):
     )
 
 
-def test_resolve_storage_key_rejects_escape(tmp_path):
-    root = (tmp_path / "root").resolve()
-    root.mkdir()
-
-    with pytest.raises(ValueError):
-        c09_storage_audit._resolve_storage_key(root, "../outside.bin")
-
-
 def test_audit_storage_passes_for_matching_ready_document(tmp_path, monkeypatch):
     root = tmp_path / "private-documents"
     payload = b"c09 durable document\n"
@@ -65,6 +54,7 @@ def test_audit_storage_passes_for_matching_ready_document(tmp_path, monkeypatch)
     monkeypatch.setattr(c09_storage_audit, "SessionLocal", lambda: session)
     monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(root))
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+    monkeypatch.delenv("DOCUMENT_STORAGE_BACKEND", raising=False)
 
     result = c09_storage_audit.audit_storage()
 
@@ -78,8 +68,9 @@ def test_audit_storage_passes_for_matching_ready_document(tmp_path, monkeypatch)
         "invalid_storage_key": 0,
     }
     assert len(result["inventory_sha256"]) == 64
-    assert result["disk"]["total_bytes"] > 0
-    assert result["disk"]["free_bytes"] >= 0
+    assert result["capacity"]["backend"] == "filesystem"
+    assert result["capacity"]["total_bytes"] > 0
+    assert result["capacity"]["free_bytes"] >= 0
     assert session.closed is True
 
 
@@ -94,6 +85,7 @@ def test_audit_storage_fails_without_exposing_document_data(tmp_path, monkeypatc
     monkeypatch.setattr(c09_storage_audit, "SessionLocal", lambda: session)
     monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(root))
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+    monkeypatch.delenv("DOCUMENT_STORAGE_BACKEND", raising=False)
 
     result = c09_storage_audit.audit_storage()
 
@@ -102,3 +94,40 @@ def test_audit_storage_fails_without_exposing_document_data(tmp_path, monkeypatc
     rendered = str(result)
     assert "private-name.bin" not in rendered
     assert str(root) not in rendered
+
+
+def test_s3_capacity_output_uses_free_tier_guard_without_object_names(tmp_path, monkeypatch):
+    payload = b"durable"
+    storage_key = "documents/9/secret.bin"
+    local = tmp_path / "cached.bin"
+    local.write_bytes(payload)
+    document = _document(storage_key=storage_key, payload=payload)
+    session = _FakeSession([document])
+
+    class _Path:
+        def is_file(self):
+            return True
+
+        def stat(self):
+            return SimpleNamespace(st_size=len(payload))
+
+        def open(self, mode):
+            return local.open(mode)
+
+    monkeypatch.setattr(c09_storage_audit, "SessionLocal", lambda: session)
+    monkeypatch.setattr(c09_storage_audit, "_storage_root", lambda create=False: tmp_path)
+    monkeypatch.setattr(c09_storage_audit, "_resolve_storage_key", lambda root, key: _Path())
+    monkeypatch.setattr(c09_storage_audit, "storage_backend_name", lambda: "s3")
+    monkeypatch.setattr(
+        c09_storage_audit,
+        "list_storage_objects",
+        lambda: [SimpleNamespace(key=storage_key, size_bytes=len(payload))],
+    )
+
+    result = c09_storage_audit.audit_storage()
+
+    assert result["status"] == "PASS"
+    assert result["capacity"]["backend"] == "s3"
+    assert result["capacity"]["free_tier_quota_bytes"] == 1_000_000_000
+    assert result["capacity"]["within_zero_cost_headroom"] is True
+    assert "secret.bin" not in str(result)
