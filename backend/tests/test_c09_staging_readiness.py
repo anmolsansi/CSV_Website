@@ -29,7 +29,7 @@ def test_liveness_contract_remains_compatible():
 def test_readiness_requires_database_and_private_storage(tmp_path, monkeypatch):
     storage = tmp_path / "private-documents"
     monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(storage))
-    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
 
     response = readiness(_HealthyDb())
 
@@ -58,7 +58,7 @@ def test_readiness_rejects_missing_document_storage(monkeypatch):
 
 def test_readiness_rejects_database_failure_without_leaking_exception(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(tmp_path / "private-documents"))
-    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
 
     response = readiness(_UnavailableDb())
 
