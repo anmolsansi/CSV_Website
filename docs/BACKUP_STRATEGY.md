@@ -1,6 +1,6 @@
 # JobGrid Backup and Recovery Strategy
 
-Last verified against repository behavior: **2026-09-27**  
+Last verified against repository behavior: **2026-09-28**  
 Portable backup schema: **v2.0 / revision 2.13.0**
 
 JobGrid has two different recovery layers. They solve different problems and must not be treated as substitutes for one another.
@@ -60,7 +60,7 @@ The code-level source of truth for base-model field coverage is `MODEL_FIELD_INV
 | Saved external-import mappings | Exported in the checksummed `f9_import_mappings` extension. Uploaded import previews, rejected-row payloads, expiry state, and raw transient preview data are deliberately excluded. |
 | Bulk action / undo history | Bounded audit metadata is exported in `f10_bulk_action_metadata`. Executable before-images/effects are deliberately excluded. Restored actions are forced to expired/non-actionable state and cannot execute an old Undo against new destination data. |
 | Upload/capture/evidence idempotency receipts, request counters, job-check requests, maintenance state | Deliberately excluded as transient operational/replay state. |
-| OAuth identities, session cookies, provider secrets, signing keys, SMTP credentials | Deliberately excluded. Authentication identity is not portable account data. |
+| OAuth identities, session cookies, provider secrets, signing keys, email credentials, object-storage credentials | Deliberately excluded. Authentication identity and infrastructure credentials are not portable account data. |
 
 ## Snapshot and transaction contract
 
@@ -82,19 +82,21 @@ A late validation, relationship, constraint, or commit failure must leave no par
 
 PostgreSQL restore serializes account-level destination changes where required. SQLite follows the supported application transaction path and is covered separately in the release matrix.
 
-## Document-file transaction boundary
+## Document-object transaction boundary
 
-PostgreSQL and a filesystem are not one ACID transaction. ZIP restore therefore uses a staged-file protocol:
+PostgreSQL and private object storage are not one ACID transaction. ZIP restore therefore uses a staged-object protocol:
 
 1. validate the full metadata graph and ZIP structure;
-2. stage each document under attempt-owned private staging paths;
+2. stage each uploaded document in transient private local staging;
 3. verify expected size and SHA-256 before publication;
 4. execute metadata restore under the owned database transaction;
-5. publish only the document files required by that attempt;
+5. publish only the private document objects required by that attempt through the configured storage adapter;
 6. commit the database transaction;
-7. on failure, roll back database state and remove attempt-owned staged/newly published files where possible.
+7. on failure, roll back database state and remove attempt-owned staged/newly published objects where possible.
 
-A process can still die between filesystem publication and database commit. That crash window is an operational reconciliation case, not something the application should describe as cross-resource ACID. Existing document reconciliation and a retry of the same idempotent backup are the recovery path. Cleanup errors must be visible in logs/operation evidence and must never justify deleting a preexisting immutable file.
+A process can still die between object publication and database commit. That crash window is an operational reconciliation case, not something the application should describe as cross-resource ACID. Existing document reconciliation and a retry of the same idempotent backup are the recovery path. Cleanup errors must be visible in logs/operation evidence and must never justify deleting a preexisting immutable object.
+
+Production currently targets private Supabase Storage through its S3-compatible endpoint because Render Free local storage is ephemeral. Local development/tests may continue using the filesystem adapter. The portable backup contract is intentionally independent of which private-storage adapter is active.
 
 ## Compatibility contract
 
@@ -116,7 +118,7 @@ Expected operator/user behavior after a failed portable restore:
 2. Read the structured error code rather than retrying by manually deleting destination records.
 3. Correct destination conflicts or storage availability if the error is environmental.
 4. Retry the same backup. The restore identity and mapping receipts are designed to return existing results instead of duplicating relationships.
-5. If a process interruption may have occurred during ZIP publication, run document-storage reconciliation or inspect the private staging/trash areas before broad cleanup. Remove only files proven to belong to the failed attempt.
+5. If an interruption may have occurred during object publication, run document-storage reconciliation or inspect the private staging/trash state before broad cleanup. Remove only objects proven to belong to the failed attempt.
 6. Never repair a partial-looking account by deleting the whole user. Investigate against a disposable copy first.
 
 Restore does not authorize outbound side effects. It must not send reminder email, re-enable reminder preferences, run URL checks, or turn restored undo history into executable operations.
@@ -132,8 +134,9 @@ The release suite must keep these failures as permanent regressions:
 - restore into empty and nonempty destinations, then repeat the restore without duplicates;
 - reject wrong-account/broken portable references and changed-content replay;
 - reject ZIP traversal, symlink, duplicate/unknown members, missing members, changed hashes, and size/member-limit violations;
-- inject document publish/commit failures and prove database/file rollback or a documented retryable reconciliation state;
-- run a real browser download → upload → preview → restore flow and download restored documents to verify bytes.
+- inject document publish/commit failures and prove database/object rollback or a documented retryable reconciliation state;
+- run a real browser download → upload → preview → restore flow and download restored documents to verify bytes;
+- for the production S3 backend, prove a document remains available after the Render local cache is deleted/restarted.
 
 Current implementation evidence for JG-001–JG-010 is recorded in `docs/JG001_010_EXECUTION.md`. `development.md` owns the broader C-package release status.
 
@@ -141,26 +144,34 @@ Current implementation evidence for JG-001–JG-010 is recorded in `docs/JG001_0
 
 Portable account backups do not replace environment recovery. A production recovery plan must protect both:
 
-- the PostgreSQL database; and
-- the private document directory configured by `DOCUMENT_STORAGE_DIR`.
+- PostgreSQL; and
+- the private document-object store configured by the active storage adapter.
 
-The repository contains `scripts/backup.sh`, `scripts/restore.sh`, `scripts/portable-backup.sh`, and `scripts/portable-restore.sh`. Treat them as operator tooling, not proof that a production schedule, remote destination, encryption policy, or retention policy is configured.
+For the zero-dollar C-09 topology, that means Supabase PostgreSQL plus the private Supabase Storage bucket. The same provider does not make them one backup unit.
+
+The repository contains `scripts/backup.sh`, `scripts/restore.sh`, `scripts/portable-backup.sh`, and `scripts/portable-restore.sh`. Treat them as operator tooling, not proof that a production schedule, remote destination, encryption policy, or retention policy is configured. The Docker Compose database scripts do not copy object bytes.
 
 For a disaster-recovery rehearsal:
 
-1. use a controlled write pause or another method that gives a database/document snapshot with a known consistency point;
-2. capture PostgreSQL using the approved provider backup or compatible logical backup;
-3. capture the matching private document tree and manifest/hashes;
-4. store the recovery package outside the service/disk being protected with appropriate access controls;
+1. use a controlled write pause or another method that gives database/document state a known consistency point;
+2. capture PostgreSQL using an approved provider backup or compatible logical backup;
+3. inventory/copy the matching private Storage bucket through the S3 protocol or another supported Storage export path;
+4. store the recovery package outside the only environment being protected with appropriate access controls;
 5. restore to a separate disposable environment;
-6. compare nonempty record counts, normalized relationships, schema revision, document inventory, and file hashes;
+6. compare nonempty record counts, normalized relationships, schema revision, object inventory, byte sizes, and hashes;
 7. measure elapsed recovery time against the release's recorded RPO/RTO objectives;
 8. verify the previous compatible application build can still read the migrated schema before claiming rollback readiness.
 
 Do not run destructive restore commands against production merely to prove the runbook. Staging/disposable rehearsal evidence is the release gate; production restore is an incident action.
 
+## Zero-dollar storage guard
+
+The production C-09 target uses Supabase Free Storage, currently limited to 1 GB. JobGrid's existing per-account document quota is 100 MiB. `backend/scripts/c09_storage_audit.py` reports aggregate S3 object bytes and flags whether usage remains below a 900 MB operating-warning threshold.
+
+This is a capacity guard, not a billing authorization. If usage approaches the free-tier limit, archive/delete deliberately or revisit architecture explicitly. Do not silently upgrade the provider plan.
+
 ## Deployment requirements
 
-A production document backup is only meaningful when document storage itself is durable. Ephemeral process/container filesystems do not satisfy JobGrid's document durability requirement. Before release, staging must prove that an uploaded document survives process restart and redeployment and remains included in a complete ZIP export.
+A production document backup is meaningful only when document bytes are durable outside Render's ephemeral filesystem. Before release, staging must prove that an uploaded document survives local cache loss, process restart/spin-down, and redeployment and remains included in a complete ZIP export.
 
-Secrets belong in provider secret stores. Never commit database DSNs, OAuth credentials, SMTP credentials, signing secrets, session cookies, private keys, user backup payloads, or private document contents to this repository or CI artifacts.
+Secrets belong in provider secret stores. Never commit database DSNs, OAuth credentials, email credentials, S3 access keys, signing secrets, session cookies, private keys, user backup payloads, or private document contents to this repository or CI artifacts.
