@@ -11,7 +11,7 @@ It deliberately distinguishes **repository-ready** work from **live external pro
 - Base branch: `main`
 - Work branch: `c09-staging-durable-operations`
 - Intake / previous known-good SHA: `cd1150384483d8296eacf5affdec56880c8ec871`
-- Candidate SHA: record the exact final PR head in private release evidence after the branch is fixed
+- Candidate SHA: use the final green PR head in private release evidence
 - Deployment owner: release operator with authorized Vercel, Render, Supabase, OAuth, and controlled-inbox access
 
 ## User-selected infrastructure constraint
@@ -122,7 +122,7 @@ Recorded:
 Blocked:
 
 - actual active JobGrid Vercel frontend URL
-- final candidate SHA until the branch is fixed
+- final green candidate SHA until CI completes
 
 ### C-09.02 — durable private document storage
 
