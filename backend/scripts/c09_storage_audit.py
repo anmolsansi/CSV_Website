@@ -5,10 +5,9 @@ Run from the backend directory on the Render service instance:
 
     python scripts/c09_storage_audit.py
 
-The command never prints document names, user IDs, storage paths, or file content.
-It verifies every ready DocumentVersion against the configured private filesystem
-and emits only aggregate counts, capacity, and an inventory digest suitable for
-restart/redeploy/recovery evidence.
+The command never prints document names, user IDs, object keys, endpoints, or file
+content. It verifies every ready DocumentVersion against the active storage backend
+and emits only aggregate counts, capacity information, and an inventory digest.
 """
 from __future__ import annotations
 
@@ -22,15 +21,18 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.config import validate_document_storage_path, settings
 from app.database import SessionLocal
 from app.models import DocumentVersion
+from app.services.document_storage import list_storage_objects, storage_backend_name
+from app.services.documents import _resolve_storage_key, _storage_root
 
 
 CHUNK_BYTES = 64 * 1024
+SUPABASE_FREE_STORAGE_BYTES = 1_000_000_000
+ZERO_COST_WARNING_BYTES = 900_000_000
 
 
-def _sha256_file(path: Path) -> str:
+def _sha256_file(path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while True:
@@ -41,22 +43,9 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _resolve_storage_key(root: Path, storage_key: str) -> Path:
-    candidate = (root / storage_key).resolve(strict=False)
-    if root != candidate and root not in candidate.parents:
-        raise ValueError("invalid storage key")
-    return candidate
-
-
 def audit_storage() -> dict[str, object]:
-    root = validate_document_storage_path(
-        settings.DOCUMENT_STORAGE_DIR,
-        environment=settings.ENVIRONMENT,
-    )
-    if not root.is_dir():
-        raise RuntimeError("document storage root is unavailable")
-
-    usage = shutil.disk_usage(root)
+    root = _storage_root(create=False)
+    backend = storage_backend_name()
     counters = {
         "ready_records": 0,
         "files_checked": 0,
@@ -80,27 +69,29 @@ def audit_storage() -> dict[str, object]:
         for document in documents:
             try:
                 path = _resolve_storage_key(root, document.storage_key)
-            except ValueError:
+            except Exception:
                 counters["invalid_storage_key"] += 1
                 continue
 
-            if not path.is_file():
+            try:
+                if not path.is_file():
+                    counters["missing"] += 1
+                    continue
+                counters["files_checked"] += 1
+                actual_size = path.stat().st_size
+                if actual_size != int(document.size_bytes):
+                    counters["size_mismatch"] += 1
+                    continue
+                actual_hash = _sha256_file(path)
+            except OSError:
                 counters["missing"] += 1
                 continue
 
-            counters["files_checked"] += 1
-            actual_size = path.stat().st_size
-            if actual_size != int(document.size_bytes):
-                counters["size_mismatch"] += 1
-                continue
-
-            actual_hash = _sha256_file(path)
             if actual_hash != document.sha256:
                 counters["hash_mismatch"] += 1
                 continue
 
-            # The digest is deterministic but does not expose any individual
-            # document identifier or storage key in command output.
+            # Deterministic aggregate evidence without disclosing identifiers.
             inventory_rows.append(
                 f"{document.id}:{document.size_bytes}:{document.sha256}"
             )
@@ -120,15 +111,31 @@ def audit_storage() -> dict[str, object]:
         )
     )
 
+    if backend == "s3":
+        objects = list_storage_objects()
+        object_bytes = sum(item.size_bytes for item in objects)
+        capacity = {
+            "backend": "s3",
+            "object_count": len(objects),
+            "object_bytes": object_bytes,
+            "free_tier_quota_bytes": SUPABASE_FREE_STORAGE_BYTES,
+            "zero_cost_warning_bytes": ZERO_COST_WARNING_BYTES,
+            "within_zero_cost_headroom": object_bytes < ZERO_COST_WARNING_BYTES,
+        }
+    else:
+        usage = shutil.disk_usage(root)
+        capacity = {
+            "backend": "filesystem",
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "free_bytes": usage.free,
+        }
+
     return {
         "status": "PASS" if failed == 0 else "FAIL",
         "counts": counters,
         "inventory_sha256": inventory_digest,
-        "disk": {
-            "total_bytes": usage.total,
-            "used_bytes": usage.used,
-            "free_bytes": usage.free,
-        },
+        "capacity": capacity,
     }
 
 
@@ -136,7 +143,6 @@ def main() -> int:
     try:
         result = audit_storage()
     except Exception as exc:
-        # Keep operator output useful without printing paths, DSNs, or document data.
         print(json.dumps({"status": "FAIL", "error": type(exc).__name__}, sort_keys=True))
         return 1
 
