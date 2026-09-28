@@ -96,18 +96,24 @@ def test_render_blueprint_enforces_zero_dollar_durable_storage_and_safe_workers(
     assert "disk:" not in blueprint
     assert "mountPath:" not in blueprint
     assert "sizeGB:" not in blueprint
-    assert "- key: DOCUMENT_STORAGE_BACKEND\n        value: s3" in blueprint
-    assert "- key: DOCUMENT_STORAGE_S3_BUCKET\n        value: jobgrid-documents" in blueprint
+
+    assert "- key: DOCUMENT_STORAGE_BACKEND\n        value: gateway" in blueprint
+    assert "- key: DOCUMENT_STORAGE_GATEWAY_URL" in blueprint
+    assert "functions/v1/jobgrid-storage" in blueprint
     assert "- key: DOCUMENT_STAGING_DIR\n        value: /tmp/jobgrid-document-cache" in blueprint
 
-    for secret_key in (
+    # Gateway authentication is derived from the existing DATABASE_URL password
+    # at process start. No additional storage credential is stored in Render.
+    assert "jobgrid-storage-v1:" in blueprint
+    assert "DOCUMENT_STORAGE_GATEWAY_TOKEN\n" not in blueprint
+    for forbidden_key in (
         "DOCUMENT_STORAGE_S3_ENDPOINT",
         "DOCUMENT_STORAGE_S3_REGION",
         "DOCUMENT_STORAGE_S3_ACCESS_KEY_ID",
         "DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY",
+        "DOCUMENT_STORAGE_S3_BUCKET",
     ):
-        marker = f"- key: {secret_key}\n        sync: false"
-        assert marker in blueprint
+        assert forbidden_key not in blueprint
 
     for disabled_key in (
         "TEST_AUTH",
