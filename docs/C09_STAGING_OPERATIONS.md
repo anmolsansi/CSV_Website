@@ -74,6 +74,13 @@ Repository contract after the zero-dollar pivot:
 
 Selected provider: Supabase Storage on the existing Free project.
 
+Live action completed during C-09:
+
+- private bucket `jobgrid-documents` created on the existing `jobgrid` project
+- bucket `public=false`
+- bucket file-size limit set to 10 MiB, matching JobGrid's application upload limit
+- no paid project, branch, disk, or storage resource was created
+
 Supabase Free currently includes 1 GB of Storage. JobGrid preserves its 100 MiB per-account document quota and the C-09 storage audit reports an early warning at 900 MB aggregate object usage.
 
 The production adapter uses Supabase's S3-compatible endpoint. Required server-only inputs are:
@@ -85,6 +92,8 @@ The production adapter uses Supabase's S3-compatible endpoint. Required server-o
 - secret access key
 
 Generated Supabase S3 access keys have broad bucket access and bypass RLS. They must remain in Render secrets and never appear in the frontend, repository, logs, screenshots, or public evidence.
+
+The current connected Supabase integration does not expose S3 access-key generation, so that credential-generation step remains an explicit dashboard/operator action.
 
 ### Frontend
 
@@ -117,7 +126,7 @@ Blocked:
 
 ### C-09.02 — durable private document storage
 
-**Status: REPOSITORY-READY / BLOCKED live provider proof**
+**Status: REPOSITORY-READY / partial live provider proof**
 
 Implemented on the branch:
 
@@ -133,18 +142,21 @@ Implemented on the branch:
 - `/ready` checks the active private-storage backend
 - `c09_storage_audit.py` verifies ready-document size/hash integrity and aggregate capacity without exposing object names
 
-Blocked until Supabase Storage is configured:
+Live proof completed:
 
-- private `jobgrid-documents` bucket creation
-- S3 protocol activation
-- generated server-only S3 credentials entered into Render
+- private Supabase bucket exists and is non-public
+- 10 MiB provider-side file-size limit is configured
+
+Blocked until server-only S3 credentials are generated/configured:
+
+- real S3 readiness on Render
 - real upload/download against the bucket
 - Render spin-down/restart/redeploy durability proof
 - real ZIP export using remote document bytes
 
 ### C-09.03 — production-mode configuration
 
-**Status: REPOSITORY-READY / BLOCKED final frontend/OAuth values**
+**Status: REPOSITORY-READY / BLOCKED final storage/frontend/OAuth secrets**
 
 Repository safeguards:
 
@@ -165,6 +177,7 @@ https://jobgrid-api.onrender.com
 
 Blocked:
 
+- generated S3 access-key pair and exact endpoint entered into Render secrets
 - active JobGrid frontend origin
 - real OAuth provider configuration/test identity
 
@@ -266,7 +279,7 @@ Runbook checks cover:
 - reminder delivery history/logs
 - backup/recovery evidence
 
-A safe induced-failure procedure must be executed only after the real bucket and secrets are configured.
+A safe induced-failure procedure must be executed only after the real S3 credentials are configured.
 
 ### C-09.09 — release evidence
 
@@ -313,19 +326,18 @@ The final fixed candidate must pass:
 
 After repository CI is green, C-09 becomes externally complete only when the release operator:
 
-1. creates private Supabase bucket `jobgrid-documents`
-2. enables Supabase Storage S3 access and generates a server-only access-key pair
-3. sets the endpoint/region/access credentials in Render secrets
-4. syncs/deploys `jobgrid-api` while keeping `plan: free`
-5. verifies `/ready`
-6. uploads and downloads a synthetic document and records its SHA-256
-7. runs `c09_storage_audit.py`
-8. loses the Render local cache through restart/spin-down and proves the document remains downloadable
-9. redeploys the same candidate and repeats the proof
-10. exports a complete ZIP and verifies the remote document bytes are included
-11. records the real Vercel frontend origin
-12. agrees RPO/RTO and private backup destination/retention
-13. rehearses database + object recovery against disposable staging
-14. prepares the private release-evidence file for C-10
+1. generates the Supabase server-only S3 access-key pair and records the exact endpoint/region privately
+2. sets those values in Render secrets without exposing them
+3. syncs/deploys `jobgrid-api` while keeping `plan: free`
+4. verifies `/ready`
+5. uploads and downloads a synthetic document and records its SHA-256
+6. runs `c09_storage_audit.py`
+7. loses the Render local cache through restart/spin-down and proves the document remains downloadable
+8. redeploys the same candidate and repeats the proof
+9. exports a complete ZIP and verifies the remote document bytes are included
+10. records the real Vercel frontend origin
+11. agrees RPO/RTO and private backup destination/retention
+12. rehearses database + object recovery against disposable staging
+13. prepares the private release-evidence file for C-10
 
 Until those actions are executed, the honest C-09 state is **repository-ready with external provider actions remaining**, not staging-accepted.
