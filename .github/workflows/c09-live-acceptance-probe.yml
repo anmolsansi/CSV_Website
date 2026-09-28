@@ -1,0 +1,49 @@
+name: C-09 Live Acceptance Probe
+
+on:
+  push:
+    branches:
+      - c09-live-acceptance-probe
+
+permissions:
+  contents: read
+
+jobs:
+  live-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live health and durable-storage readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          health_file="$(mktemp)"
+          ready_file="$(mktemp)"
+
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors \
+            --max-time 30 \
+            https://jobgrid-api.onrender.com/health > "$health_file"
+
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors \
+            --max-time 30 \
+            https://jobgrid-api.onrender.com/ready > "$ready_file"
+
+          python - "$health_file" "$ready_file" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              health = json.load(handle)
+          with open(sys.argv[2], encoding="utf-8") as handle:
+              ready = json.load(handle)
+
+          assert health == {"status": "ok"}, health
+          assert ready.get("status") == "ready", ready
+          assert ready.get("checks") == {
+              "database": "ready",
+              "document_storage": "ready",
+          }, ready
+          print("C-09 live readiness PASS")
+          PY
