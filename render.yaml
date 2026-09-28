@@ -6,7 +6,8 @@ services:
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: >-
+      export DOCUMENT_STORAGE_GATEWAY_TOKEN="$(python -c 'import hashlib, os; from urllib.parse import unquote, urlsplit; password = unquote(urlsplit(os.environ["DATABASE_URL"]).password or ""); print(hashlib.sha256(("jobgrid-storage-v1:" + password).encode()).hexdigest())')" && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /ready
     autoDeployTrigger: checksPass
     # Render Free cannot scale beyond one instance. Keeping this explicit also
@@ -36,13 +37,13 @@ services:
         sync: false
       # Render Free storage is ephemeral. Durable document bytes live in the
       # private Supabase Storage bucket through the JobGrid-only Edge Function
-      # gateway. No Supabase service/secret key is exposed to Render.
+      # gateway. No Supabase service/secret key or additional shared secret is
+      # exposed to Render; gateway auth is derived at process start from the
+      # existing DATABASE_URL password that both server-side runtimes already own.
       - key: DOCUMENT_STORAGE_BACKEND
         value: gateway
       - key: DOCUMENT_STORAGE_GATEWAY_URL
         value: https://hzcycquvfkqwbqrbvnhe.supabase.co/functions/v1/jobgrid-storage
-      - key: DOCUMENT_STORAGE_GATEWAY_TOKEN
-        sync: false
       # Local disk is transient staging/cache only and is safe to lose on a
       # Render Free spin-down, restart, or deploy.
       - key: DOCUMENT_STAGING_DIR
