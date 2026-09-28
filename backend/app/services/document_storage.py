@@ -27,7 +27,7 @@ class StorageObjectInfo:
     modified_at: datetime | None
 
 
-def storage_backend_name() -> str:
+def _configured_storage_backend_name() -> str:
     value = str(os.getenv("DOCUMENT_STORAGE_BACKEND", "filesystem") or "filesystem")
     value = value.strip().lower()
     if value not in {"filesystem", "s3", "gateway"}:
@@ -35,8 +35,26 @@ def storage_backend_name() -> str:
     return value
 
 
+def storage_backend_name() -> str:
+    """Return the legacy storage class used by existing document-service branches.
+
+    The zero-cost gateway is remote object storage just like S3, so expose it as
+    ``s3`` to older callers that only distinguish filesystem versus remote.
+    Transport-specific operations use ``_configured_storage_backend_name``.
+    """
+    value = _configured_storage_backend_name()
+    return "s3" if value == "gateway" else value
+
+
 def is_remote_storage_backend() -> bool:
-    return storage_backend_name() in {"s3", "gateway"}
+    return storage_backend_name() == "s3"
+
+
+def _remote_transport_name() -> str:
+    value = _configured_storage_backend_name()
+    if value not in {"s3", "gateway"}:
+        raise DocumentStorageError("remote operation requires a remote backend")
+    return value
 
 
 def _safe_storage_key(storage_key: str) -> str:
@@ -221,12 +239,10 @@ def _head_gateway_object(storage_key: str) -> dict[str, Any] | None:
 
 
 def _head_remote_object(storage_key: str) -> dict[str, Any] | None:
-    backend = storage_backend_name()
-    if backend == "s3":
+    transport = _remote_transport_name()
+    if transport == "s3":
         return _head_s3_object(storage_key)
-    if backend == "gateway":
-        return _head_gateway_object(storage_key)
-    raise DocumentStorageError("remote object lookup requires a remote backend")
+    return _head_gateway_object(storage_key)
 
 
 def storage_object_exists(storage_key: str) -> bool:
@@ -294,14 +310,11 @@ def _download_gateway_object(storage_key: str, local_path: Path) -> None:
 
 
 def _download_remote_object(storage_key: str, local_path: Path) -> None:
-    backend = storage_backend_name()
-    if backend == "s3":
+    transport = _remote_transport_name()
+    if transport == "s3":
         _download_s3_object(storage_key, local_path)
         return
-    if backend == "gateway":
-        _download_gateway_object(storage_key, local_path)
-        return
-    raise DocumentStorageError("remote object download requires a remote backend")
+    _download_gateway_object(storage_key, local_path)
 
 
 def _upload_s3_file(storage_key: str, local_path: Path) -> None:
@@ -332,14 +345,11 @@ def _upload_gateway_file(storage_key: str, local_path: Path) -> None:
 
 
 def _upload_remote_file(storage_key: str, local_path: Path) -> None:
-    backend = storage_backend_name()
-    if backend == "s3":
+    transport = _remote_transport_name()
+    if transport == "s3":
         _upload_s3_file(storage_key, local_path)
         return
-    if backend == "gateway":
-        _upload_gateway_file(storage_key, local_path)
-        return
-    raise DocumentStorageError("remote object upload requires a remote backend")
+    _upload_gateway_file(storage_key, local_path)
 
 
 def delete_storage_object(storage_key: str) -> None:
@@ -356,18 +366,17 @@ def delete_storage_object(storage_key: str) -> None:
         candidate.unlink(missing_ok=True)
         return
 
-    if backend == "s3":
+    transport = _remote_transport_name()
+    if transport == "s3":
         client, bucket = _s3_client()
         try:
             client.delete_object(Bucket=bucket, Key=key)
         except Exception as exc:
             raise DocumentStorageError("private object could not be deleted") from exc
-    elif backend == "gateway":
+    else:
         response = _gateway_request("DELETE", key=key)
         if response.status_code not in {200, 204, 404}:
             raise DocumentStorageError("private object could not be deleted")
-    else:
-        raise DocumentStorageError("unsupported document storage backend")
 
     cache = storage_cache_root(create=True) / key
     cache.unlink(missing_ok=True)
@@ -392,7 +401,8 @@ def move_storage_object(source_key: str, target_key: str) -> None:
         os.replace(source_path, target_path)
         return
 
-    if backend == "s3":
+    transport = _remote_transport_name()
+    if transport == "s3":
         client, bucket = _s3_client()
         try:
             client.copy_object(
@@ -406,7 +416,7 @@ def move_storage_object(source_key: str, target_key: str) -> None:
             if _is_missing_s3_error(exc):
                 return
             raise DocumentStorageError("private object could not be moved") from exc
-    elif backend == "gateway":
+    else:
         response = _gateway_request(
             "POST",
             action="move",
@@ -414,8 +424,6 @@ def move_storage_object(source_key: str, target_key: str) -> None:
         )
         if response.status_code not in {200, 204}:
             raise DocumentStorageError("private object could not be moved")
-    else:
-        raise DocumentStorageError("unsupported document storage backend")
 
     root = storage_cache_root(create=True)
     source_local = root / source
@@ -453,7 +461,7 @@ def list_storage_objects(prefix: str = "", *, limit: int | None = None) -> list[
                     break
         return rows
 
-    if backend == "gateway":
+    if backend == "s3" and _remote_transport_name() == "gateway":
         safe_limit = max(1, min(int(limit or 500), 500))
         response = _gateway_request(
             "GET",
@@ -489,7 +497,7 @@ def list_storage_objects(prefix: str = "", *, limit: int | None = None) -> list[
             )
         return rows
 
-    if backend != "s3":
+    if backend != "s3" or _remote_transport_name() != "s3":
         raise DocumentStorageError("unsupported document storage backend")
 
     client, bucket = _s3_client()
@@ -642,15 +650,16 @@ def document_storage_readiness(runtime_settings=None, *, create: bool = False) -
             return {"ready": True, "code": "ready"}
 
         storage_cache_root(create=True)
-        if backend == "s3":
+        if backend != "s3":
+            raise DocumentStorageError("unsupported document storage backend")
+        transport = _remote_transport_name()
+        if transport == "s3":
             client, bucket = _s3_client()
             client.head_bucket(Bucket=bucket)
-        elif backend == "gateway":
+        else:
             response = _gateway_request("GET", action="ready")
             if response.status_code != 200:
                 raise DocumentStorageError("private object gateway is unavailable")
-        else:
-            raise DocumentStorageError("unsupported document storage backend")
         return {"ready": True, "code": "ready"}
     except Exception:
         # The route must not reveal endpoints, bucket names, keys, or provider errors.
