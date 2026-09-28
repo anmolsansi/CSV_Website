@@ -1,6 +1,8 @@
+import hashlib
 import json
 from pathlib import Path
 
+import app
 import app.main as main_module
 from app.main import health, readiness
 
@@ -86,12 +88,38 @@ def test_readiness_rejects_database_failure_without_leaking_exception(monkeypatc
     assert "database unavailable" not in response.body.decode("utf-8")
 
 
+def test_gateway_token_bootstraps_from_existing_database_secret(monkeypatch):
+    monkeypatch.setenv("DOCUMENT_STORAGE_BACKEND", "gateway")
+    monkeypatch.delenv("DOCUMENT_STORAGE_GATEWAY_TOKEN", raising=False)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://jobgrid:p%40ssword@example.invalid:5432/jobgrid",
+    )
+
+    app._bootstrap_storage_gateway_token()
+
+    expected = hashlib.sha256(b"jobgrid-storage-v1:p@ssword").hexdigest()
+    assert app.os.environ["DOCUMENT_STORAGE_GATEWAY_TOKEN"] == expected
+
+
+def test_gateway_bootstrap_preserves_explicit_token(monkeypatch):
+    monkeypatch.setenv("DOCUMENT_STORAGE_BACKEND", "gateway")
+    monkeypatch.setenv("DOCUMENT_STORAGE_GATEWAY_TOKEN", "explicit-token")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:other@example.invalid/db")
+
+    app._bootstrap_storage_gateway_token()
+
+    assert app.os.environ["DOCUMENT_STORAGE_GATEWAY_TOKEN"] == "explicit-token"
+
+
 def test_render_blueprint_enforces_zero_dollar_durable_storage_and_safe_workers():
     blueprint = (REPO_ROOT / "render.yaml").read_text(encoding="utf-8")
+    bootstrap = (REPO_ROOT / "backend" / "app" / "__init__.py").read_text(encoding="utf-8")
 
     assert "plan: free" in blueprint
     assert "plan: 0.5c-512mb" not in blueprint
-    assert "healthCheckPath: /ready" in blueprint
+    assert "healthCheckPath: /health" in blueprint
+    assert "startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT" in blueprint
     assert "numInstances: 1" in blueprint
     assert "disk:" not in blueprint
     assert "mountPath:" not in blueprint
@@ -102,9 +130,9 @@ def test_render_blueprint_enforces_zero_dollar_durable_storage_and_safe_workers(
     assert "functions/v1/jobgrid-storage" in blueprint
     assert "- key: DOCUMENT_STAGING_DIR\n        value: /tmp/jobgrid-document-cache" in blueprint
 
-    # Gateway authentication is derived from the existing DATABASE_URL password
-    # at process start. No additional storage credential is stored in Render.
-    assert "jobgrid-storage-v1:" in blueprint
+    # Gateway authentication is derived inside app startup from DATABASE_URL.
+    # No additional storage credential is stored in Render.
+    assert "jobgrid-storage-v1:" in bootstrap
     assert "DOCUMENT_STORAGE_GATEWAY_TOKEN\n" not in blueprint
     for forbidden_key in (
         "DOCUMENT_STORAGE_S3_ENDPOINT",

@@ -119,7 +119,7 @@ test.describe('JG-027 Today screen', () => {
     await expect(page.getByRole('heading', { name: 'Undated' })).toBeVisible()
     await expect(page.getByText('Prepare networking notes')).toBeVisible()
     await expect(page.getByText('Tomorrow Co')).toHaveCount(0)
-    await expect(page.getByText('America/New_York')).toBeVisible()
+    await expect(page.getByText('Your next useful actions in America/New_York.', { exact: true })).toBeVisible()
   })
 
   test('keyboard_snooze_persists_after_reload', async ({ page }) => {
