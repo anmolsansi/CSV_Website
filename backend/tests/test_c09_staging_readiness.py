@@ -56,6 +56,22 @@ def test_readiness_rejects_missing_document_storage(monkeypatch):
     assert "DOCUMENT_STORAGE_DIR" not in response.body.decode("utf-8")
 
 
+def test_readiness_rejects_ephemeral_production_storage(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(tmp_path / "documents"))
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+
+    response = readiness(_HealthyDb())
+
+    assert response.status_code == 503
+    assert _response_json(response) == {
+        "status": "unavailable",
+        "checks": {
+            "database": "ready",
+            "document_storage": "document_storage_unavailable",
+        },
+    }
+
+
 def test_readiness_rejects_database_failure_without_leaking_exception(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(tmp_path / "private-documents"))
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
