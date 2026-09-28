@@ -2,7 +2,7 @@ services:
   - type: web
     name: jobgrid-api
     runtime: python
-    plan: 0.5c-512mb
+    plan: free
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -10,10 +10,6 @@ services:
     healthCheckPath: /ready
     autoDeployTrigger: checksPass
     numInstances: 1
-    disk:
-      name: jobgrid-documents
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -36,10 +32,26 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: DOCUMENT_STORAGE_DIR
-        value: /var/data/jobgrid-documents
-      # C-09 keeps automated destructive/external work opt-in. The single
-      # backend instance is the designated scheduler owner when C-10 enables it.
+      # Render Free storage is ephemeral. Durable document bytes therefore live
+      # in private S3-compatible object storage (Supabase Storage for C-09).
+      - key: DOCUMENT_STORAGE_BACKEND
+        value: s3
+      - key: DOCUMENT_STORAGE_S3_ENDPOINT
+        sync: false
+      - key: DOCUMENT_STORAGE_S3_REGION
+        sync: false
+      - key: DOCUMENT_STORAGE_S3_BUCKET
+        value: jobgrid-documents
+      - key: DOCUMENT_STORAGE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY
+        sync: false
+      # Local disk is transient staging/cache only and is safe to lose on a
+      # Render Free spin-down, restart, or deploy.
+      - key: DOCUMENT_STAGING_DIR
+        value: /tmp/jobgrid-document-cache
+      # C-09 keeps automated destructive/external work opt-in. Render Free is
+      # a single instance; it is the designated scheduler owner when enabled.
       - key: RUN_MAINTENANCE_JOBS
         value: "false"
       - key: RUN_REMINDER_WORKER
