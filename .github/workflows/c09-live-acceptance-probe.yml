@@ -13,37 +13,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify live health and durable-storage readiness after origin alignment
+      - name: Verify live health, readiness, and durable storage canary
         shell: bash
         run: |
           set -euo pipefail
           health_file="$(mktemp)"
           ready_file="$(mktemp)"
+          canary_file="$(mktemp)"
 
           curl --fail --silent --show-error \
-            --retry 6 --retry-delay 5 --retry-all-errors \
-            --max-time 30 \
+            --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
             https://jobgrid-api.onrender.com/health > "$health_file"
 
           curl --fail --silent --show-error \
-            --retry 6 --retry-delay 5 --retry-all-errors \
-            --max-time 30 \
+            --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
             https://jobgrid-api.onrender.com/ready > "$ready_file"
 
-          python - "$health_file" "$ready_file" <<'PY'
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
+            'https://hzcycquvfkqwbqrbvnhe.supabase.co/functions/v1/jobgrid-storage?action=c09-canary' > "$canary_file"
+
+          python - "$health_file" "$ready_file" "$canary_file" <<'PY'
           import json
           import sys
 
-          with open(sys.argv[1], encoding="utf-8") as handle:
-              health = json.load(handle)
-          with open(sys.argv[2], encoding="utf-8") as handle:
-              ready = json.load(handle)
+          health = json.load(open(sys.argv[1], encoding='utf-8'))
+          ready = json.load(open(sys.argv[2], encoding='utf-8'))
+          canary = json.load(open(sys.argv[3], encoding='utf-8'))
 
-          assert health == {"status": "ok"}, health
-          assert ready.get("status") == "ready", ready
-          assert ready.get("checks") == {
-              "database": "ready",
-              "document_storage": "ready",
+          assert health == {'status': 'ok'}, health
+          assert ready.get('status') == 'ready', ready
+          assert ready.get('checks') == {
+              'database': 'ready',
+              'document_storage': 'ready',
           }, ready
-          print("C-09 live readiness PASS")
+          assert canary.get('status') == 'ready', canary
+          assert canary.get('state') in {'created', 'verified'}, canary
+          assert canary.get('size_bytes') == 33, canary
+          print('C-09 live readiness PASS; canary=' + canary['state'])
           PY
