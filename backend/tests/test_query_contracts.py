@@ -212,3 +212,127 @@ def test_page_boundaries_and_ties_are_deterministic(db_session):
 
     assert page_one + page_two + page_three == expected
     assert len(set(page_one + page_two + page_three)) == 5
+
+
+def test_confirmed_usa_accepts_only_explicit_affirmative_values(db_session):
+    user = _user(db_session, "confirmed-usa@jobgrid.test")
+    affirmative = [
+        _row(db_session, user, "usa-true", is_usa_role="true"),
+        _row(db_session, user, "usa-yes", is_usa_role=" YES "),
+        _row(db_session, user, "usa-one", is_usa_role="1"),
+    ]
+    _row(db_session, user, "usa-false", is_usa_role="false")
+    _row(db_session, user, "usa-no", is_usa_role="no")
+    _row(db_session, user, "usa-zero", is_usa_role="0")
+    _row(db_session, user, "usa-empty", is_usa_role="")
+    _row(db_session, user, "usa-null", is_usa_role=None)
+
+    actual = set(_row_ids(db_session, user.id, RowQuery(confirmed_usa=True)))
+    assert actual == {row.id for row in affirmative}
+
+
+def test_unique_company_keeps_first_row_in_active_sort_and_keeps_unknowns(db_session):
+    user = _user(db_session, "unique-company@jobgrid.test")
+    alpha = _row(
+        db_session,
+        user,
+        "acme-alpha",
+        company_guess="Acme",
+        title="Alpha Engineer",
+    )
+    zulu = _row(
+        db_session,
+        user,
+        "acme-zulu",
+        company_guess=" acme ",
+        title="Zulu Engineer",
+    )
+    other = _row(
+        db_session,
+        user,
+        "other",
+        company_guess="Other Co",
+        title="Middle Engineer",
+    )
+    blank = _row(db_session, user, "blank", company_guess="", title="Blank Company")
+    missing = _row(db_session, user, "missing", company_guess=None, title="Missing Company")
+
+    ascending = _row_ids(
+        db_session,
+        user.id,
+        RowQuery(unique_company=True, sort_by="title", sort_dir="asc"),
+    )
+    descending = _row_ids(
+        db_session,
+        user.id,
+        RowQuery(unique_company=True, sort_by="title", sort_dir="desc"),
+    )
+
+    assert alpha.id in ascending
+    assert zulu.id not in ascending
+    assert zulu.id in descending
+    assert alpha.id not in descending
+    assert {other.id, blank.id, missing.id}.issubset(set(ascending))
+    assert {other.id, blank.id, missing.id}.issubset(set(descending))
+
+
+def test_unique_company_and_confirmed_usa_compose_with_ats_filter(db_session):
+    user = _user(db_session, "combined-filters@jobgrid.test")
+    expected = _row(
+        db_session,
+        user,
+        "ashby-acme-a",
+        ats_group="ashby",
+        company_guess="Acme",
+        title="A Engineer",
+        is_usa_role="yes",
+    )
+    _row(
+        db_session,
+        user,
+        "ashby-acme-z",
+        ats_group="ashby",
+        company_guess=" ACME ",
+        title="Z Engineer",
+        is_usa_role="true",
+    )
+    other = _row(
+        db_session,
+        user,
+        "ashby-other",
+        ats_group="ashby",
+        company_guess="Other Co",
+        title="B Engineer",
+        is_usa_role="1",
+    )
+    _row(
+        db_session,
+        user,
+        "ashby-non-usa",
+        ats_group="ashby",
+        company_guess="Outside Co",
+        title="C Engineer",
+        is_usa_role="false",
+    )
+    _row(
+        db_session,
+        user,
+        "greenhouse-usa",
+        ats_group="greenhouse",
+        company_guess="Greenhouse Co",
+        title="D Engineer",
+        is_usa_role="true",
+    )
+
+    actual = _row_ids(
+        db_session,
+        user.id,
+        RowQuery(
+            ats_group="ASHBY",
+            unique_company=True,
+            confirmed_usa=True,
+            sort_by="title",
+            sort_dir="asc",
+        ),
+    )
+    assert actual == [expected.id, other.id]
