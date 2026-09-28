@@ -5,7 +5,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import BinaryIO, Any
 from uuid import UUID, uuid4
@@ -33,6 +33,16 @@ from ..models import (
     DocumentVersion,
     JobTrack,
     User,
+)
+from .document_storage import (
+    DocumentStorageError,
+    delete_storage_object,
+    list_storage_objects,
+    move_storage_object,
+    resolve_storage_key,
+    storage_backend_name,
+    storage_cache_root,
+    storage_object_exists,
 )
 
 
@@ -81,6 +91,9 @@ def _utc_iso(value: datetime | None) -> str | None:
 
 
 def _storage_root(*, create: bool = False) -> Path:
+    """Return the durable filesystem root or the transient cache root for S3."""
+    if storage_backend_name() == "s3":
+        return storage_cache_root(create=create)
     try:
         root = validate_document_storage_path(
             settings.DOCUMENT_STORAGE_DIR,
@@ -113,15 +126,15 @@ def _storage_root(*, create: bool = False) -> Path:
     return root
 
 
-def _resolve_storage_key(root: Path, storage_key: str) -> Path:
-    candidate = (root / storage_key).resolve(strict=False)
-    if root != candidate and root not in candidate.parents:
+def _resolve_storage_key(root: Path, storage_key: str):
+    try:
+        return resolve_storage_key(root, storage_key)
+    except DocumentStorageError as exc:
         raise DocumentServiceError(
             "invalid_storage_key",
             "Stored document location is invalid.",
             status_code=500,
-        )
-    return candidate
+        ) from exc
 
 
 def safe_display_filename(value: str | None) -> str:
@@ -453,6 +466,10 @@ def create_document(
         document.state = "failed"
         receipt.status = "failed"
         try:
+            final_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        try:
             staged.path.unlink(missing_ok=True)
         except OSError:
             pass
@@ -474,9 +491,9 @@ def document_availability(document: DocumentVersion) -> str:
     try:
         root = _storage_root(create=False)
         path = _resolve_storage_key(root, document.storage_key)
-    except DocumentServiceError:
+        return "ready" if path.is_file() else "missing"
+    except (DocumentServiceError, OSError):
         return "missing"
-    return "ready" if path.is_file() else "missing"
 
 
 def serialize_document(document: DocumentVersion) -> dict[str, Any]:
@@ -518,7 +535,7 @@ def list_documents(session: Session, *, user_id: int) -> dict[str, Any]:
 
 def download_target(
     session: Session, *, user_id: int, document_id: str
-) -> tuple[DocumentVersion, Path]:
+) -> tuple[DocumentVersion, Any]:
     document = _owned_document(
         session, user_id=user_id, document_id=document_id
     )
@@ -530,7 +547,15 @@ def download_target(
         )
     root = _storage_root(create=False)
     path = _resolve_storage_key(root, document.storage_key)
-    if not path.is_file():
+    try:
+        available = path.is_file()
+    except OSError as exc:
+        raise DocumentServiceError(
+            "document_storage_unavailable",
+            "Private document storage is temporarily unavailable.",
+            status_code=503,
+        ) from exc
+    if not available:
         raise DocumentServiceError(
             "document_bytes_missing",
             "Document metadata exists, but its private file bytes require recovery.",
@@ -781,23 +806,29 @@ def delete_document(
             context={"applications": references["items"]},
         )
 
-    root = _storage_root(create=True)
-    source = _resolve_storage_key(root, document.storage_key)
-    if source.exists():
-        trash_dir = root / "trash" / str(user_id)
-        trash_dir.mkdir(parents=True, exist_ok=True)
-        target = trash_dir / f"{document.id}-{uuid4().hex}.bin"
-        try:
-            os.replace(source, target)
-        except OSError as exc:
-            raise DocumentServiceError(
-                "document_delete_failed",
-                "Document bytes could not be moved into private retention storage.",
-                status_code=500,
-            ) from exc
+    target_key = f"trash/{user_id}/{document.id}-{uuid4().hex}.bin"
+    try:
+        if storage_object_exists(document.storage_key):
+            move_storage_object(document.storage_key, target_key)
+    except (DocumentStorageError, DocumentStorageConfigurationError, OSError) as exc:
+        raise DocumentServiceError(
+            "document_delete_failed",
+            "Document bytes could not be moved into private retention storage.",
+            status_code=500,
+        ) from exc
     document.state = "deleted"
     session.flush()
     return document
+
+
+def _older_than(value: datetime | None, cutoff: datetime) -> bool:
+    if value is None:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    return value < cutoff
 
 
 def reconcile_document_storage(
@@ -840,16 +871,20 @@ def reconcile_document_storage(
         .all()
     )
     for document in pending:
-        path = _resolve_storage_key(root, document.storage_key)
-        if path.is_file():
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if digest == document.sha256 and path.stat().st_size == document.size_bytes:
-                document.state = "ready"
-                counters["pending_ready"] += 1
+        try:
+            path = _resolve_storage_key(root, document.storage_key)
+            if path.is_file():
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                if digest == document.sha256 and path.stat().st_size == document.size_bytes:
+                    document.state = "ready"
+                    counters["pending_ready"] += 1
+                else:
+                    document.state = "failed"
+                    counters["pending_failed"] += 1
             else:
                 document.state = "failed"
                 counters["pending_failed"] += 1
-        else:
+        except OSError:
             document.state = "failed"
             counters["pending_failed"] += 1
 
@@ -861,43 +896,63 @@ def reconcile_document_storage(
         .all()
     )
     for document in ready:
-        path = _resolve_storage_key(root, document.storage_key)
-        if not path.is_file():
+        try:
+            path = _resolve_storage_key(root, document.storage_key)
+            if not path.is_file():
+                counters["missing_ready"] += 1
+        except OSError:
             counters["missing_ready"] += 1
 
-    known_keys = {
-        value
-        for (value,) in session.query(DocumentVersion.storage_key).all()
-    }
-    document_root = root / "documents"
-    scanned = 0
-    if document_root.exists():
-        for path in document_root.rglob("*.bin"):
+    known_keys = {value for (value,) in session.query(DocumentVersion.storage_key).all()}
+    if storage_backend_name() == "s3":
+        try:
+            objects = list_storage_objects("documents", limit=safe_limit)
+            for item in objects:
+                if item.key not in known_keys and _older_than(item.modified_at, grace):
+                    delete_storage_object(item.key)
+                    counters["orphan_removed"] += 1
+        except OSError:
+            pass
+    else:
+        document_root = root / "documents"
+        scanned = 0
+        if document_root.exists():
+            for path in document_root.rglob("*.bin"):
+                if scanned >= safe_limit:
+                    break
+                scanned += 1
+                try:
+                    rel = path.resolve().relative_to(root).as_posix()
+                    modified = datetime.utcfromtimestamp(path.stat().st_mtime)
+                    if rel not in known_keys and modified < grace:
+                        path.unlink(missing_ok=True)
+                        counters["orphan_removed"] += 1
+                except (OSError, ValueError):
+                    continue
+
+    trash_cutoff = now - timedelta(hours=TRASH_RETENTION_HOURS)
+    if storage_backend_name() == "s3":
+        try:
+            objects = list_storage_objects("trash", limit=safe_limit)
+            for item in objects:
+                if _older_than(item.modified_at, trash_cutoff):
+                    delete_storage_object(item.key)
+                    counters["trash_removed"] += 1
+        except OSError:
+            pass
+    else:
+        scanned = 0
+        for path in (root / "trash").rglob("*.bin"):
             if scanned >= safe_limit:
                 break
             scanned += 1
             try:
-                rel = path.resolve().relative_to(root).as_posix()
                 modified = datetime.utcfromtimestamp(path.stat().st_mtime)
-                if rel not in known_keys and modified < grace:
+                if modified < trash_cutoff:
                     path.unlink(missing_ok=True)
-                    counters["orphan_removed"] += 1
-            except (OSError, ValueError):
+                    counters["trash_removed"] += 1
+            except OSError:
                 continue
-
-    trash_cutoff = now - timedelta(hours=TRASH_RETENTION_HOURS)
-    scanned = 0
-    for path in (root / "trash").rglob("*.bin"):
-        if scanned >= safe_limit:
-            break
-        scanned += 1
-        try:
-            modified = datetime.utcfromtimestamp(path.stat().st_mtime)
-            if modified < trash_cutoff:
-                path.unlink(missing_ok=True)
-                counters["trash_removed"] += 1
-        except OSError:
-            continue
 
     session.flush()
     return counters

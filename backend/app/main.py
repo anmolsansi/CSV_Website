@@ -13,12 +13,14 @@ from fastapi import FastAPI, UploadFile, File, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .backup_schemas import MAX_BACKUP_JSON_BYTES
 from .config import cookie_security_options, settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
+from .services.document_storage import document_storage_readiness
 from .services.reminders import run_reminder_worker_once
 from .services.today_f8 import build_today_queue_with_interviews, snooze_action_with_interviews
 from .services.import_backups import (
@@ -216,7 +218,35 @@ app.include_router(email.router)
 
 @app.get("/health")
 def health():
+    """Process liveness only. Preserve the historical lightweight contract."""
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def readiness(db: Session = Depends(get_db)):
+    """Staging/production readiness without exposing secrets or storage paths."""
+    checks: dict[str, str] = {}
+
+    try:
+        db.execute(text("SELECT 1"))
+        checks["database"] = "ready"
+    except Exception:
+        logger.exception("readiness_check component=database outcome=failed")
+        checks["database"] = "unavailable"
+
+    storage = document_storage_readiness(settings, create=True)
+    checks["document_storage"] = str(storage["code"])
+
+    if checks["database"] != "ready" or not bool(storage["ready"]):
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "checks": checks},
+        )
+
+    return {
+        "status": "ready",
+        "checks": {"database": "ready", "document_storage": "ready"},
+    }
 
 
 if settings.TEST_AUTH:
