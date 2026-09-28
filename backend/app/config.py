@@ -41,7 +41,7 @@ def validate_document_storage_path(
     *,
     environment: str | None,
 ) -> Path:
-    """Resolve a private filesystem root for local/dev filesystem storage."""
+    """Resolve a private storage root and reject served/repo/production-temp paths."""
     raw = str(storage_dir or "").strip()
     if not raw:
         raise DocumentStorageConfigurationError(
@@ -76,6 +76,26 @@ def validate_document_storage_path(
             )
 
     return candidate
+
+
+def document_storage_readiness(runtime_settings, *, create: bool = False) -> dict[str, object]:
+    """Return a safe readiness result without exposing the configured path."""
+    try:
+        root = validate_document_storage_path(
+            getattr(runtime_settings, "DOCUMENT_STORAGE_DIR", ""),
+            environment=getattr(runtime_settings, "ENVIRONMENT", ""),
+        )
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+            for child in ("staging", "documents", "trash"):
+                (root / child).mkdir(parents=True, exist_ok=True)
+        if not root.exists() or not root.is_dir():
+            return {"ready": False, "code": "document_storage_missing"}
+        if not os.access(root, os.R_OK | os.W_OK | os.X_OK):
+            return {"ready": False, "code": "document_storage_not_writable"}
+        return {"ready": True, "code": "ready"}
+    except (DocumentStorageConfigurationError, OSError):
+        return {"ready": False, "code": "document_storage_unavailable"}
 
 
 _INSECURE_SECRET_VALUES = {
@@ -155,65 +175,91 @@ def validate_runtime_settings(runtime_settings) -> None:
             "CORS_ORIGINS must be explicitly configured in production"
         )
 
-    origins = list(getattr(runtime_settings, "CORS_ORIGINS", []) or [])
-    if not origins:
+    cors_origins = list(getattr(runtime_settings, "CORS_ORIGINS", []) or [])
+    if not cors_origins:
         raise ProductionConfigurationError(
-            "CORS_ORIGINS must include at least one public HTTPS origin in production"
+            "CORS_ORIGINS must contain at least one production origin"
         )
-    for origin in origins:
+
+    for origin in cors_origins:
         _validate_public_https_url("CORS_ORIGINS", origin)
 
 
+_EXPLICIT_CORS_ORIGINS = (
+    _split_env_list(os.getenv("CORS_ORIGINS"))
+    or _split_env_list(os.getenv("FRONTEND_URLS"))
+)
+
+
 class Settings:
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data.db")
-    # APP_SECRET_KEY intentionally takes precedence over the historical
-    # SECRET_KEY variable so hosted services can rotate away from an old value.
-    SECRET_KEY = os.getenv("APP_SECRET_KEY") or os.getenv(
-        "SECRET_KEY", "change-me-to-a-long-random-string"
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/csvapp",
+    )
+    # APP_SECRET_KEY is the deployment-managed signing secret. Prefer it when
+    # present so a stale legacy SECRET_KEY value cannot override a newly
+    # generated production secret. SECRET_KEY remains supported for local and
+    # non-Render deployments.
+    SECRET_KEY = (
+        os.getenv("APP_SECRET_KEY")
+        or os.getenv("SECRET_KEY")
+        or "dev-secret-change-me"
     )
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-    TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
-    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
-    OAUTH_REDIRECT_BASE = os.getenv(
-        "OAUTH_REDIRECT_BASE", "http://localhost:8000"
-    ).rstrip("/")
-
-    _raw_cors = os.getenv("CORS_ORIGINS")
-    CORS_ORIGINS_EXPLICIT = bool(_raw_cors and _raw_cors.strip())
-    CORS_ORIGINS = _split_env_list(_raw_cors) or [FRONTEND_URL]
-
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
     MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
     MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET", "")
-    APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "")
-    APPLE_CLIENT_SECRET = os.getenv("APPLE_CLIENT_SECRET", "")
+    # Use 'common' for multi-tenant + personal accounts, or a specific tenant id.
+    MICROSOFT_TENANT = os.getenv("MICROSOFT_TENANT", "common")
 
-    SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+    # Apple: client secret is a signed JWT generated from the .p8 key below.
+    APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "")  # Services ID
+    APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID", "")
+    APPLE_KEY_ID = os.getenv("APPLE_KEY_ID", "")
+    # Path to the .p8 private key file downloaded from Apple Developer.
+    APPLE_PRIVATE_KEY_PATH = os.getenv("APPLE_PRIVATE_KEY_PATH", "")
 
-    RUN_MAINTENANCE_JOBS = os.getenv("RUN_MAINTENANCE_JOBS", "false").lower() == "true"
-    CLEANUP_INTERVAL_MINUTES = max(
-        1, int(os.getenv("CLEANUP_INTERVAL_MINUTES", "60"))
-    )
-    AUTO_ARCHIVE_AFTER_DAYS = max(
-        0, int(os.getenv("AUTO_ARCHIVE_AFTER_DAYS", "0"))
-    )
-    AUTO_PURGE_AFTER_DAYS = max(
-        0, int(os.getenv("AUTO_PURGE_AFTER_DAYS", "0"))
-    )
-    JOB_URL_CHECKS_ENABLED = os.getenv("JOB_URL_CHECKS_ENABLED", "false").lower() == "true"
+    OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8000")
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    CORS_ORIGINS_EXPLICIT = bool(_EXPLICIT_CORS_ORIGINS)
+    CORS_ORIGINS = _EXPLICIT_CORS_ORIGINS or [
+        FRONTEND_URL,
+        "http://127.0.0.1:5173",
+    ]
+    CLEANUP_INTERVAL_MINUTES = int(os.getenv("CLEANUP_INTERVAL_MINUTES", "60"))
 
+    # JG-012 retention contract. These new controls are deliberately disabled
+    # by default and are not derived from the legacy DELETE_AFTER_DAYS value.
+    AUTO_ARCHIVE_AFTER_DAYS = int(os.getenv("AUTO_ARCHIVE_AFTER_DAYS", "0"))
+    AUTO_PURGE_AFTER_DAYS = int(os.getenv("AUTO_PURGE_AFTER_DAYS", "0"))
+    RUN_MAINTENANCE_JOBS = (
+        os.getenv("RUN_MAINTENANCE_JOBS", "false").lower() == "true"
+    )
+
+    # Deprecated compatibility setting. JG-013 removes the legacy cleanup
+    # behavior that still references this name. Do not map it into either new
+    # retention control, because that could silently activate destructive work.
+    DELETE_AFTER_DAYS = int(os.getenv("DELETE_AFTER_DAYS", "2"))
+    TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
+
+    # Email / SMTP
+    EMAIL_FROM = os.getenv("EMAIL_FROM", "")
     SMTP_HOST = os.getenv("SMTP_HOST", "")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER = os.getenv("SMTP_USER", "")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-    SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
-    EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+    SMTP_PASS = os.getenv("SMTP_PASS", "")
 
-    RUN_REMINDER_WORKER = os.getenv("RUN_REMINDER_WORKER", "false").lower() == "true"
-    REMINDER_EMAIL_DELIVERY_ENABLED = os.getenv(
-        "REMINDER_EMAIL_DELIVERY_ENABLED", "false"
-    ).lower() == "true"
+    # F4 reminders. Scheduling and external email activation are intentionally
+    # separate gates. Both default off so roadmap implementation never sends
+    # real email merely because a worker process starts.
+    RUN_REMINDER_WORKER = (
+        os.getenv("RUN_REMINDER_WORKER", "false").lower() == "true"
+    )
+    REMINDER_EMAIL_DELIVERY_ENABLED = (
+        os.getenv("REMINDER_EMAIL_DELIVERY_ENABLED", "false").lower() == "true"
+    )
     REMINDER_WORKER_INTERVAL_SECONDS = max(
         30, int(os.getenv("REMINDER_WORKER_INTERVAL_SECONDS", "60"))
     )
@@ -221,10 +267,26 @@ class Settings:
         30, int(os.getenv("REMINDER_LEASE_SECONDS", "300"))
     )
 
-    # Local/dev filesystem document storage. Production C-09 uses the S3
-    # adapter configured through DOCUMENT_STORAGE_BACKEND and provider secrets.
+    # F5 private document storage. Empty means uploads/downloads are unavailable;
+    # the rest of JobGrid stays healthy until a durable private volume is configured.
     DOCUMENT_STORAGE_DIR = os.getenv("DOCUMENT_STORAGE_DIR", "")
+
+    # F7 job-link checks are user-invoked only and remain disabled unless an
+    # operator explicitly enables the pinned-destination transport. Manual
+    # deadline/close/reopen behavior does not depend on this flag.
+    JOB_URL_CHECKS_ENABLED = (
+        os.getenv("JOB_URL_CHECKS_ENABLED", "false").lower() == "true"
+    )
+    JOB_URL_CHECK_LEASE_SECONDS = max(
+        30, min(600, int(os.getenv("JOB_URL_CHECK_LEASE_SECONDS", "120")))
+    )
+
+    # Sentry
+    SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 
 
 settings = Settings()
+
+# Validate as soon as configuration is loaded so unsafe production settings fail
+# before database initialization, route registration, or background-job startup.
 validate_runtime_settings(settings)
