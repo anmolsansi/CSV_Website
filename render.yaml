@@ -9,6 +9,8 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /ready
     autoDeployTrigger: checksPass
+    # Render Free cannot scale beyond one instance. Keeping this explicit also
+    # makes this web service the only possible in-process scheduler owner.
     numInstances: 1
     envVars:
       - key: ENVIRONMENT
@@ -50,8 +52,7 @@ services:
       # Render Free spin-down, restart, or deploy.
       - key: DOCUMENT_STAGING_DIR
         value: /tmp/jobgrid-document-cache
-      # C-09 keeps automated destructive/external work opt-in. Render Free is
-      # a single instance; it is the designated scheduler owner when enabled.
+      # C-09 keeps automated destructive/external work opt-in.
       - key: RUN_MAINTENANCE_JOBS
         value: "false"
       - key: RUN_REMINDER_WORKER
