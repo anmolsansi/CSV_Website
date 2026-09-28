@@ -2,13 +2,18 @@ services:
   - type: web
     name: jobgrid-api
     runtime: python
-    plan: free
+    plan: 0.5c-512mb
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    healthCheckPath: /ready
     autoDeployTrigger: checksPass
+    numInstances: 1
+    disk:
+      name: jobgrid-documents
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -31,3 +36,19 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: DOCUMENT_STORAGE_DIR
+        value: /var/data/jobgrid-documents
+      # C-09 keeps automated destructive/external work opt-in. The single
+      # backend instance is the designated scheduler owner when C-10 enables it.
+      - key: RUN_MAINTENANCE_JOBS
+        value: "false"
+      - key: RUN_REMINDER_WORKER
+        value: "false"
+      - key: REMINDER_EMAIL_DELIVERY_ENABLED
+        value: "false"
+      - key: JOB_URL_CHECKS_ENABLED
+        value: "false"
+      - key: AUTO_ARCHIVE_AFTER_DAYS
+        value: "0"
+      - key: AUTO_PURGE_AFTER_DAYS
+        value: "0"
