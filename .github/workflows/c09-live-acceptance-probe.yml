@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify live health and durable-storage readiness
+      - name: Verify live health and durable-storage readiness after origin alignment
         shell: bash
         run: |
           set -euo pipefail
