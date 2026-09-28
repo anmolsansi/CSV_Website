@@ -49,6 +49,54 @@ test.describe('JG-007 browser/export query parity', () => {
     expect(exported.has('page_size')).toBeFalsy();
   });
 
+  test('unique-company and confirmed-USA filters survive navigation and reach top-five', async ({ page }) => {
+    const initialRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/rows?')) return false;
+      const params = new URL(request.url()).searchParams;
+      return params.get('unique_company') === 'true' && params.get('confirmed_usa') === 'true';
+    });
+
+    await page.goto('/?ats_group=ashby&unique_company=true&confirmed_usa=true');
+    const initial = new URL((await initialRequest).url()).searchParams;
+    expect(initial.get('ats_group')).toBe('ashby');
+    expect(initial.get('unique_company')).toBe('true');
+    expect(initial.get('confirmed_usa')).toBe('true');
+    await expect(page.getByLabel('Unique company')).toBeChecked();
+    await expect(page.getByLabel('Confirmed USA')).toBeChecked();
+
+    const topFiveRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/rows?')) return false;
+      const params = new URL(request.url()).searchParams;
+      return params.get('unopened_only') === 'true' && params.get('openable_only') === 'true';
+    });
+    await page.getByRole('button', { name: 'Open top 5 unopened' }).click();
+    const topFive = new URL((await topFiveRequest).url()).searchParams;
+    expect(topFive.get('ats_group')).toBe('ashby');
+    expect(topFive.get('unique_company')).toBe('true');
+    expect(topFive.get('confirmed_usa')).toBe('true');
+    expect(topFive.get('page')).toBe('1');
+    expect(topFive.get('page_size')).toBe('5');
+
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page.getByLabel('Unique company')).not.toBeChecked();
+    await expect(page.getByLabel('Confirmed USA')).not.toBeChecked();
+  });
+
+  test('new dashboard filters are included in filtered export query parity', async ({ page }) => {
+    await page.goto('/?unique_company=true&confirmed_usa=true');
+    await expect(page.getByLabel('Unique company')).toBeChecked();
+    await expect(page.getByLabel('Confirmed USA')).toBeChecked();
+
+    await page.locator('.export-bar select').nth(1).selectOption('filtered');
+    const exportRequest = page.waitForRequest((request) => request.url().includes('/crm/export/dashboard?'));
+    await page.locator('.export-bar button', { hasText: 'Download' }).click();
+    const exported = new URL((await exportRequest).url()).searchParams;
+
+    expect(exported.get('scope')).toBe('filtered');
+    expect(exported.get('unique_company')).toBe('true');
+    expect(exported.get('confirmed_usa')).toBe('true');
+  });
+
   test('applications saved-view URL and filtered export share the same query contract', async ({ page }) => {
     const browseRequest = page.waitForRequest((request) => {
       if (!request.url().includes('/crm/applications')) return false;
