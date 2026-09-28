@@ -17,9 +17,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .backup_schemas import MAX_BACKUP_JSON_BYTES
-from .config import cookie_security_options, document_storage_readiness, settings
+from .config import cookie_security_options, settings
 from .database import Base, engine, get_db
 from .jobs import cleanup_clicked_rows
+from .services.document_storage import document_storage_readiness
 from .services.reminders import run_reminder_worker_once
 from .services.today_f8 import build_today_queue_with_interviews, snooze_action_with_interviews
 from .services.import_backups import (
