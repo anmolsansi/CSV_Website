@@ -34,19 +34,14 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      # Render Free storage is ephemeral. Durable document bytes therefore live
-      # in private S3-compatible object storage (Supabase Storage for C-09).
+      # Render Free storage is ephemeral. Durable document bytes live in the
+      # private Supabase Storage bucket through the JobGrid-only Edge Function
+      # gateway. No Supabase service/secret key is exposed to Render.
       - key: DOCUMENT_STORAGE_BACKEND
-        value: s3
-      - key: DOCUMENT_STORAGE_S3_ENDPOINT
-        sync: false
-      - key: DOCUMENT_STORAGE_S3_REGION
-        sync: false
-      - key: DOCUMENT_STORAGE_S3_BUCKET
-        value: jobgrid-documents
-      - key: DOCUMENT_STORAGE_S3_ACCESS_KEY_ID
-        sync: false
-      - key: DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY
+        value: gateway
+      - key: DOCUMENT_STORAGE_GATEWAY_URL
+        value: https://hzcycquvfkqwbqrbvnhe.supabase.co/functions/v1/jobgrid-storage
+      - key: DOCUMENT_STORAGE_GATEWAY_TOKEN
         sync: false
       # Local disk is transient staging/cache only and is safe to lose on a
       # Render Free spin-down, restart, or deploy.
