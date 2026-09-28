@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Literal
 
-from sqlalchemy import asc, desc, func, or_
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Query, Session
 
 from ..models import CSV_COLUMNS, CsvRow, JobTrack
@@ -31,6 +31,8 @@ class RowQuery:
     has_error: bool = False
     jd_missing: bool = False
     openable_only: bool = False
+    unique_company: bool = False
+    confirmed_usa: bool = False
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,45 @@ def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
     if params.openable_only:
         url = func.lower(func.trim(CsvRow.url))
         query = query.filter(url.like("https://%") | url.like("http://%"))
+    if params.confirmed_usa:
+        normalized_usa = func.lower(func.trim(CsvRow.is_usa_role))
+        query = query.filter(normalized_usa.in_(("true", "yes", "1")))
+
+    if params.unique_company:
+        # Deduplicate only after every ordinary predicate has been applied. This
+        # makes "unique company" compose with ATS, USA, search, opened state,
+        # and the rest of the Dashboard contract instead of selecting a global
+        # company representative that may not match the active filters.
+        company_key = func.lower(func.trim(CsvRow.company_guess))
+        sort_column = resolve_row_sort_column(params.sort_by)
+        order_func = asc if params.sort_dir == "asc" else desc
+        ranked_companies = (
+            query.with_entities(
+                CsvRow.id.label("row_id"),
+                func.row_number().over(
+                    partition_by=company_key,
+                    order_by=(
+                        order_func(sort_column).nullslast(),
+                        CsvRow.id.desc(),
+                    ),
+                ).label("company_rank"),
+            )
+            .filter(
+                CsvRow.company_guess.isnot(None),
+                func.trim(CsvRow.company_guess) != "",
+            )
+            .subquery()
+        )
+        selected_company_rows = select(ranked_companies.c.row_id).where(
+            ranked_companies.c.company_rank == 1
+        )
+        query = query.filter(
+            or_(
+                CsvRow.company_guess.is_(None),
+                func.trim(CsvRow.company_guess) == "",
+                CsvRow.id.in_(selected_company_rows),
+            )
+        )
 
     return query
 
