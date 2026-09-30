@@ -67,7 +67,7 @@ JobGrid is complete for this scope when the two original workflows and all 17 ro
 <a id="audit-evidence"></a>
 ## 2. Evidence baseline and its limits
 
-These results were obtained in the preceding audit on the exact SHA above, using synthetic users and disposable databases. They are not results from executing this guide's future tasks.
+These historical results were obtained in the September 23 audit at `31d51d3e2d61626a13c1b02bc6c4126d3710e542`, using synthetic users and disposable databases. They are not the September 30 results; use the current evidence links above and focused C-package records for resolved defects.
 
 | Check | Recorded result | Meaning |
 |---|---|---|
