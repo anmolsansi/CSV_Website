@@ -1,23 +1,45 @@
 # JobGrid — Development, Verification, and Deployment Guide
 
-> **2026-09-27 C-05 closeout:** C-05 is completed. PR #163 normalized SQLite-reloaded persisted UTC instants at the Python/wire boundary without a schema migration. Hosted CI passed the PostgreSQL suite, explicit SQLite regressions, frontend build, and full Chromium browser suite. Requirement-level evidence is recorded in [docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md](docs/C05_SQLITE_TIMESTAMP_CONTRACTS.md).
+Updated: **2026-09-30**\
+Audited main: **`c56cb83195ab1ac5cd691860c77cf1e85e1805dc`**\
+Overall: **Local product acceptance complete; branch enforcement, live operations, staging acceptance, and final release closeout remain.**
 
-> **2026-09-27 C-01–C-03 closeout:** C-01, C-02, and C-03 are completed at the local/hosted-CI recovery-contract level. PR #159 supplied the atomic restore and complete composed ZIP recovery implementation; the C-01 closeout branch adds the missing three-interview Today cursor regression/fix and refreshes `docs/BACKUP_STRATEGY.md` to the current portable recovery contract. C-04 remains open for the broader mixed-source pagination contract (bounded interview candidate queries, cursor context/version hardening, and exhaustive mixed-source acceptance); this closeout does not claim C-04 complete.
+This is the primary execution guide. C-01–C-06 and C-08 are completed for their repository/local scope. C-07 workflows pass, but branch protection is missing. C-09 is repository-ready with external proof outstanding; C-10–C-12 remain open. A historical deployment does not establish complete staging or release acceptance.
 
-> **2026-09-24 update:** JG-001–JG-010 are completed and verified locally. See [implementation and acceptance evidence](docs/JG001_010_EXECUTION.md). Earlier audit findings below are historical unless updated in those ticket entries. JG-011–JG-064 and the broader C packages retain their separate acceptance gates. This update is not hosted CI or deployment evidence.
+The September 30 audit compared current source, merged PRs, hosted checks, open issues, and repository settings. It did not rerun the full application suite or certify all live providers. The two unrelated untracked files were preserved. Older audit findings below are historical, not a fresh list of defects.
 
-Prepared: **2026-09-24**\
-Audited baseline: **`31d51d3e2d61626a13c1b02bc6c4126d3710e542` on main**\
-Overall status: **Not completed — completed recovery and SQLite timestamp-contract closeouts are recorded below; the remaining open packages continue through queue/browser-time/CI/product/staging/release acceptance.**
+Current hosted evidence at the audited SHA:
 
-This is the primary execution guide for finishing the existing JobGrid scope. It consolidates the requirements and completion work from [jg.md](jg.md), which remains a historical planning reference. It explains what remains, why it matters, when to start, where to work, how to implement and verify the change, and what evidence closes it. It does not expand the product into another speculative feature roadmap.
+- [Standard CI](https://github.com/anmolsansi/CSV_Website/actions/runs/36488146501): success.
+- [SQLite release](https://github.com/anmolsansi/CSV_Website/actions/runs/36488146479): success.
+- [Browser timezones](https://github.com/anmolsansi/CSV_Website/actions/runs/36488146485): success.
+- GitHub reports `main` unprotected and no repository rulesets.
+- No open PRs. Issues #172 (C-09) and #125 (JG-036) remain open; #125 is stale because PR #127 merged its implementation/tests.
+- The live `/ready` request timed out after 45 seconds. Readiness remains unverified by this audit; one timeout is not a confirmed outage.
 
-Documentation checkout inspected: **`80983814ea64cb27868cfa2b9ca3333997297c41`**. The application audit below remains the September 23 audit at `31d51d3`; application tests were not rerun while writing this file. Refresh remote main and recheck changed code before starting implementation.
+Use [C-08 acceptance](docs/C08_PRODUCT_ACCEPTANCE.md) for all 17 local feature packs. The [original specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md) and [jg.md](jg.md) retain historical planning detail. Their stale labels must not cause completed features to be rebuilt. Current `render.yaml` and PR #174 supersede older paid-disk and direct-S3 setup instructions.
 
-The original [64-ticket specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md) remains the detailed source for individual feature contracts. This guide supplies the current completion order and audit corrections. Its current findings take precedence over stale completion summaries in that specification. The Serviq document supplied earlier is a format reference only; none of its product requirements apply here.
+<a id="remaining-work"></a>
+## Remaining work in execution order
+
+Every item below is **Not completed**. Retain the existing C/JG IDs; these rows are execution steps, not new feature tickets.
+
+| Order | Owning task | What, why, and how | Completion proof |
+|---|---|---|---|
+| 1 | C-07.08 | Protect `main` and require Frontend Build, E2E Tests (Playwright), Backend Compile Check, Backend Tests (pytest), Backend Tests (SQLite), and C-06 Browser Timezones. Passing workflows currently do not prevent unchecked merges. | Read back protection/rulesets and verify the exact required job names. |
+| 2 | C-09.02/05 | Verify the deployed candidate's `/ready`, synthetic upload/download hash, storage audit, restart/cache loss, redeploy, and ZIP document bytes. Health alone proves only liveness. | Same candidate, matching hashes before/after restart and redeploy, readiness and backup evidence. |
+| 3 | C-09.02 | Record/version the actual storage gateway server source and deployment procedure in an agreed repository. This checkout contains the client and tests but no gateway server source. Include token rotation and rollback procedure without secrets. | Another operator can reproduce the deployed gateway and verify private access. |
+| 4 | C-09.01/03/06 | Resolve the active frontend URL/project; verify API proxy, HTTPS, CORS, cookies, OAuth callbacks, and controlled synthetic accounts. Keep staging isolated from production data. | Recorded environment inventory plus controlled real login/account-isolation evidence. |
+| 5 | C-09.07, C-10.01 | Agree RPO/RTO, backup schedule, retention, destination and owner; back up both PostgreSQL and private object bytes, then restore to disposable staging. Existing database-only scripts are insufficient for disaster recovery. | Compare schema, counts, relationships, object sizes/hashes and measured recovery time against agreed targets. |
+| 6 | JG-040, C-10.03/04 | Resolve email transport for the selected free hosting topology. Code currently uses SMTP; the C-09 runbook flags standard SMTP-port restrictions. Verify provider support before choosing a supported transport or implementing an HTTP email adapter. | Explicitly authorized controlled inbox receipt, correct timezone/content, bounded retry and restart/deduplication evidence. |
+| 7 | JG-024, C-10.02/05/06 | Run real OAuth and deployed original journeys, Today, imports, contacts, documents, backup and archive/undo on one candidate. Test actual Chrome popup allowance/blocking and capture in declared supported browsers. | Concrete expected/actual results with deployed frontend/backend revisions; local mocks are not provider proof. |
+| 8 | C-09.04/08, C-10.07/08 | Rehearse old-code rollback and return to current code; verify history/files, worker claims/restart behavior, and visibility of an induced safe failure. | Unchanged data/hash comparisons, no lost work, documented ambiguous sends, visible operator signal. |
+| 9 | C-11 | Reconcile remaining guides, roadmap labels, evidence links and issues. Close stale #125 against merged PR #127; rewrite #172's superseded paid-disk assumptions. Keep JG-024/JG-040 external gates open until proven. | Consistent status/evidence index and no contradictory topology or completion claims. |
+| 10 | C-12 | After mandatory staging gates pass, record exact deployed revisions/IDs, perform production smoke, observe a defined window including scheduled execution, and hand over ownership/runbooks. | Production acceptance, observation results, rollback criteria, backup and operational owners recorded. |
 
 ## Navigation
 
+- [Current remaining work](#remaining-work)
 - [Scope and completion](#completion-definition)
 - [Audit evidence](#audit-evidence)
 - [Status rules](#status-rules)
@@ -45,7 +67,7 @@ JobGrid is complete for this scope when the two original workflows and all 17 ro
 <a id="audit-evidence"></a>
 ## 2. Evidence baseline and its limits
 
-These results were obtained in the preceding audit on the exact SHA above, using synthetic users and disposable databases. They are not results from executing this guide's future tasks.
+These historical results were obtained in the September 23 audit at `31d51d3e2d61626a13c1b02bc6c4126d3710e542`, using synthetic users and disposable databases. They are not the September 30 results; use the current evidence links above and focused C-package records for resolved defects.
 
 | Check | Recorded result | Meaning |
 |---|---|---|
@@ -68,16 +90,17 @@ The audit did not establish real OAuth, actual SMTP delivery, production-sized p
 <a id="status-rules"></a>
 ## 3. Status, ownership, and execution rules
 
-Every C-01–C-12 completion package starts **Not completed**. The original JG tickets use a separate status vocabulary so implemented features are not presented as absent:
+C-package statuses below reflect the September 30 reconciliation. The original JG tickets use a separate status vocabulary so implemented features are not presented as absent:
 
 | Original-ticket status | Meaning | Next action |
 |---|---|---|
-| Verified complete | Every requirement has current code and acceptance evidence | Preserve as regression coverage |
+| Local acceptance passed | C-08 maps local requirements to code/tests; external gates remain separate | Preserve regressions and run deployed acceptance |
+| Local acceptance passed; external gate pending | Local code is accepted but provider/release proof is outstanding | Complete C-09/C-10 |
 | Implemented—verification pending | Implementation is present, but full requirement-level proof is missing | Verify existing behavior; repair only demonstrated gaps |
 | Needs repair | The audit demonstrated a failure affecting the ticket's acceptance | Reproduce, fix, and add regression coverage |
 | Externally blocked | Local tooling exists, but real staging/provider proof is missing | Complete the specified external gate |
 
-JG-001–JG-010 are now **Verified complete** locally; remaining ticket assessments refer to the earlier audited baseline. The prior roadmap label is retained separately. An integration defect can require repair without invalidating every part of an otherwise implemented ticket.
+All 64 tickets have mapped local acceptance in C-08. JG-024 and JG-040 retain explicit external gates; other deployed smoke and recovery requirements remain in C-09/C-10. The prior roadmap label and original implementation checklist are retained as historical references. An integration defect can require repair without invalidating every part of an otherwise implemented ticket.
 
 Use these evidence states in records: `not-started`, `in-progress`, `local-ready`, `staging-accepted`, `released`, `blocked`. Use **Completed** in the checklist only when the task's stated exit criteria are satisfied at a recorded SHA. Never count a blocked external gate as passed.
 
@@ -99,11 +122,11 @@ The original roadmap's sequential build order was appropriate before these featu
 | 1 | Completed | [C-01 — Preserve reproductions and freeze recovery contracts](#c-01) | None | JG-001–004, JG-023 |
 | 2 | Completed | [C-02 — Make every restore atomic](#c-02) | C-01 | JG-003, JG-056, JG-058, JG-064 |
 | 3 | Completed | [C-03 — Deliver one complete recoverable backup](#c-03) | C-02 | JG-002, JG-004, JG-044, JG-056–058, JG-064 |
-| 4 | Not completed | [C-04 — Fix mixed-source Today pagination](#c-04) | C-01 | JG-026–028, JG-051, JG-055–056 |
+| 4 | Completed (local) | [C-04 — Fix mixed-source Today pagination](#c-04) | C-01 | JG-026–028, JG-051, JG-055–056 |
 | 5 | Completed | [C-05 — Normalize SQLite timestamp contracts](#c-05) | C-02 | JG-010, JG-019–020, JG-025, JG-037 |
-| 6 | Not completed | [C-06 — Make browser time tests deterministic](#c-06) | C-04, C-05 | JG-010, JG-023, JG-027–028, JG-038–040 |
+| 6 | Completed (local) | [C-06 — Make browser time tests deterministic](#c-06) | C-04, C-05 | JG-010, JG-023, JG-027–028, JG-038–040 |
 | 7 | Not completed | [C-07 — Enforce the corrected release test matrix](#c-07) | C-02–06 | JG-019–023 |
-| 8 | Not completed | [C-08 — Close every product acceptance contract](#c-08) | C-07 | All 64 original tickets |
+| 8 | Completed (local) | [C-08 — Close every product acceptance contract](#c-08) | C-07 | All 64 original tickets |
 | 9 | Not completed | [C-09 — Prepare staging and prove durable operations](#c-09) | C-08 | JG-012–014, JG-022, JG-024, JG-040, JG-044, JG-064 |
 | 10 | Not completed | [C-10 — Execute real staging acceptance](#c-10) | C-09 | JG-024, JG-040, JG-048 |
 | 11 | Not completed | [C-11 — Reconcile documentation and ticket evidence](#c-11) | C-08–10 | All 64 original tickets |
@@ -134,7 +157,7 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 
 **Failure/retry:** fixtures must use fresh destinations or rolled-back test transactions. A prior failed restore may have polluted the destination; do not reuse it unknowingly. Never point tests at production.
 
-**Completion evidence (2026-09-27):** The late-extension checksum/partial-restore and composed-ZIP metadata failures were preserved and repaired in PR #159, with durable regression coverage in `backend/tests/test_complete_backup.py`, `test_backup_contract.py`, and `test_document_backup.py`. The remaining independent reproduction, three scheduled interviews with `limit=2`, is now versioned in `backend/tests/test_interview_today.py`; continuation freezes the base queue `as_of`, applies the signed ordering boundary to interview items, and emits the next cursor from the final mixed-source item. `backend/app/backup_schemas.py::MODEL_FIELD_INVENTORY` is the persisted-data coverage table, and `docs/BACKUP_STRATEGY.md` records portable coverage, deliberate exclusions, compatibility, side-effect rules, and retry/reconciliation behavior. C-04 remains open for the broader bounded/context-aware mixed-source pagination acceptance.
+**Completion evidence (2026-09-27):** The late-extension checksum/partial-restore and composed-ZIP metadata failures were preserved and repaired in PR #159, with durable regression coverage in `backend/tests/test_complete_backup.py`, `test_backup_contract.py`, and `test_document_backup.py`. The remaining independent reproduction, three scheduled interviews with `limit=2`, is now versioned in `backend/tests/test_interview_today.py`; continuation freezes the base queue `as_of`, applies the signed ordering boundary to interview items, and emits the next cursor from the final mixed-source item. `backend/app/backup_schemas.py::MODEL_FIELD_INVENTORY` is the persisted-data coverage table, and `docs/BACKUP_STRATEGY.md` records portable coverage, deliberate exclusions, compatibility, side-effect rules, and retry/reconciliation behavior. C-04 subsequently closed the broader bounded/context-aware mixed-source pagination acceptance; see its current evidence below.
 
 **Completion proof:** three independent baseline failures are reproduced, and the data-coverage/compatibility contract is reviewed. Capture deliberately failing regressions on the repair branch, then make them pass with C-02–C-06 before merging. Never merge a knowingly failing required CI check as a standalone foundation change. C-01 evidence can be ready before its dependent fixes; final publication requires the combined repair to be green.
 
@@ -209,27 +232,29 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-04"></a>
 ## C-04 — Fix mixed-source Today pagination
 
-**Priority:** P2 unreachable work. **When:** after reproductions are durable; before Today acceptance. **Owner:** backend implementer. **Status:** Not completed.
+**Priority:** P2 unreachable work. **When:** after reproductions are durable; before Today acceptance. **Owner:** backend implementer. **Status:** Completed (local).
 
 **Observed defect:** the interview wrapper merges interviews into only the first already-paginated base page, truncates to `limit`, and keeps the base cursor. With three interviews and limit two it returns two with no cursor. Mixed queues can also displace base items behind an incorrect cursor.
+
+**Current evidence:** [C04_TODAY_PAGINATION](docs/C04_TODAY_PAGINATION.md), plus the current green CI matrix. External acceptance remains C-09/C-10.
 
 **Where:** `backend/app/services/today.py`, `backend/app/services/today_f8.py`, existing Today schemas/routes, and Today/interview tests. Preserve the current public response shape unless a justified versioned change is required.
 
 **Implementation checkpoints:**
 
-- [ ] C-04.01 Define one ordering tuple across manual actions, follow-ups, deadlines, and interview preparation. Preserve due-time/null ordering, priority, source type, and stable source ID tie-breakers.
-- [ ] C-04.02 Use the same frozen `as_of`, account timezone, snooze policy, archive policy, and visibility filters across every source and continuation page.
-- [ ] C-04.03 Normalize source candidates before pagination. Remove the special case that skips interviews when a cursor is present.
-- [ ] C-04.04 Apply the decoded cursor's ordering boundary to every source. Fetch only the bounded candidates required to produce `limit + 1` merged results; do not scan an unbounded account graph just to fetch one page.
-- [ ] C-04.05 Merge and sort once. Emit at most `limit` items. Build the next cursor from the final **emitted mixed-source item** only when another item exists.
-- [ ] C-04.06 Validate and sign cursor contents. Bind account and relevant query context, including timezone/include-snoozed behavior, or explicitly reject incompatible reuse. Do not permit a cursor to widen ownership.
-- [ ] C-04.07 Version incompatible cursor formats. Document controlled rejection/reload of old cursors rather than silently returning the wrong page.
-- [ ] C-04.08 Calculate counts from the same eligible population; separate total from page length. Verify count semantics when snoozed/archived/terminal records are hidden.
-- [ ] C-04.09 Define mutation-between-pages behavior. Freezing `as_of` does not freeze mutable database rows; either document best-effort pagination with refresh or implement a justified stronger snapshot policy. Do not claim an immutable snapshot without storing one.
-- [ ] C-04.10 Test interview-only queues of size 0, 1, exactly limit, limit+1, and several pages. Test all source types mixed, identical due times, null due times, snoozes, cancellations, archive changes, and account-local midnight.
-- [ ] C-04.11 Traverse all pages of an unchanged fixture and compare the emitted ordered keys to the expected complete set: no missing items, no duplicates, no infinite cursor loop.
-- [ ] C-04.12 Test tampered/wrong-account/context-mismatched cursors. Inspect query counts and boundedness with a larger fixture; record measured results instead of inventing a latency guarantee.
-- [ ] C-04.13 Exercise actual Today Load more/navigation and an interview mutation in the browser. Verify refreshed cards, counts, focus, and empty states.
+- [x] C-04.01 Define one ordering tuple across manual actions, follow-ups, deadlines, and interview preparation. Preserve due-time/null ordering, priority, source type, and stable source ID tie-breakers.
+- [x] C-04.02 Use the same frozen `as_of`, account timezone, snooze policy, archive policy, and visibility filters across every source and continuation page.
+- [x] C-04.03 Normalize source candidates before pagination. Remove the special case that skips interviews when a cursor is present.
+- [x] C-04.04 Apply the decoded cursor's ordering boundary to every source. Fetch only the bounded candidates required to produce `limit + 1` merged results; do not scan an unbounded account graph just to fetch one page.
+- [x] C-04.05 Merge and sort once. Emit at most `limit` items. Build the next cursor from the final **emitted mixed-source item** only when another item exists.
+- [x] C-04.06 Validate and sign cursor contents. Bind account and relevant query context, including timezone/include-snoozed behavior, or explicitly reject incompatible reuse. Do not permit a cursor to widen ownership.
+- [x] C-04.07 Version incompatible cursor formats. Document controlled rejection/reload of old cursors rather than silently returning the wrong page.
+- [x] C-04.08 Calculate counts from the same eligible population; separate total from page length. Verify count semantics when snoozed/archived/terminal records are hidden.
+- [x] C-04.09 Define mutation-between-pages behavior. Freezing `as_of` does not freeze mutable database rows; either document best-effort pagination with refresh or implement a justified stronger snapshot policy. Do not claim an immutable snapshot without storing one.
+- [x] C-04.10 Test interview-only queues of size 0, 1, exactly limit, limit+1, and several pages. Test all source types mixed, identical due times, null due times, snoozes, cancellations, archive changes, and account-local midnight.
+- [x] C-04.11 Traverse all pages of an unchanged fixture and compare the emitted ordered keys to the expected complete set: no missing items, no duplicates, no infinite cursor loop.
+- [x] C-04.12 Test tampered/wrong-account/context-mismatched cursors. Inspect query counts and boundedness with a larger fixture; record measured results instead of inventing a latency guarantee.
+- [x] C-04.13 Exercise actual Today Load more/navigation and an interview mutation in the browser. Verify refreshed cards, counts, focus, and empty states.
 
 **Completion proof:** the three-interview reproduction returns a valid second page; mixed-source traversal is complete and stable for unchanged data; all old Today behavior remains covered.
 
@@ -262,20 +287,20 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-06"></a>
 ## C-06 — Make browser time tests deterministic
 
-**Priority:** P2 release confidence. **When:** after C-04/C-05. **Owner:** frontend implementer. **Status:** Not completed.
+**Priority:** P2 release confidence. **When:** after C-04/C-05. **Owner:** frontend implementer. **Status:** Completed (local).
 
 **Observed failures:** `keyboard_snooze_persists_after_reload` and `followup_reschedule_updates_application_drawer` in `frontend/tests/today.spec.ts`. A helper derives a `datetime-local` input using UTC `toISOString()`, and the assertion compares that wall-clock text directly with the outgoing UTC timestamp. Asia/Kolkata exposes the mismatch; UTC masks it.
 
 **Implementation checkpoints:**
 
-- [ ] C-06.01 Decide whether each fixture represents a local wall time or a fixed instant. Construct it accordingly using local calendar fields or an explicit conversion, never a UTC string with its timezone suffix removed by accident.
-- [ ] C-06.02 Compute the expected outgoing instant from the intended local input and configured browser timezone. Assert instant equality, then separately assert the displayed local value.
-- [ ] C-06.03 Configure browser-context timezone explicitly in Playwright for UTC, Asia/Kolkata, and a DST-observing zone such as America/New_York. Host `TZ` diagnostics alone are not a portable browser-timezone configuration.
-- [ ] C-06.04 Test account timezone differing from browser timezone, with expected day boundaries specified. Freeze a clock where midnight or “tomorrow” would make the test flaky.
-- [ ] C-06.05 Ensure mock handlers return responses and capture payloads for test assertions; do not hide a handler assertion as a dialog timeout.
-- [ ] C-06.06 Add coverage for valid future snooze, invalid/past input, reschedule, reload persistence, cancellation, failed request draft retention, and keyboard focus restoration.
-- [ ] C-06.07 Exercise at least one snooze and reschedule against the real API to separate serialization behavior from mock expectations.
-- [ ] C-06.08 Rerun the targeted failures in each configured timezone, then the complete required browser matrix. Do not enforce UTC-only execution as the fix.
+- [x] C-06.01 Decide whether each fixture represents a local wall time or a fixed instant. Construct it accordingly using local calendar fields or an explicit conversion, never a UTC string with its timezone suffix removed by accident.
+- [x] C-06.02 Compute the expected outgoing instant from the intended local input and configured browser timezone. Assert instant equality, then separately assert the displayed local value.
+- [x] C-06.03 Configure browser-context timezone explicitly in Playwright for UTC, Asia/Kolkata, and a DST-observing zone such as America/New_York. Host `TZ` diagnostics alone are not a portable browser-timezone configuration.
+- [x] C-06.04 Test account timezone differing from browser timezone, with expected day boundaries specified. Freeze a clock where midnight or “tomorrow” would make the test flaky.
+- [x] C-06.05 Ensure mock handlers return responses and capture payloads for test assertions; do not hide a handler assertion as a dialog timeout.
+- [x] C-06.06 Add coverage for valid future snooze, invalid/past input, reschedule, reload persistence, cancellation, failed request draft retention, and keyboard focus restoration.
+- [x] C-06.07 Exercise at least one snooze and reschedule against the real API to separate serialization behavior from mock expectations.
+- [x] C-06.08 Rerun the targeted failures in each configured timezone, then the complete required browser matrix. Do not enforce UTC-only execution as the fix.
 
 **Completion proof:** payload instant, persisted instant, and local display match the contract in all declared zones; no host-specific test failures remain.
 
@@ -284,21 +309,21 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-07"></a>
 ## C-07 — Enforce the corrected release test matrix
 
-**Priority:** release gate. **When:** after C-02–06. **Owner:** test/CI implementer. **Status:** Not completed.
+**Priority:** release gate. **When:** after C-02–06. **Owner:** test/CI implementer. **Status:** Not completed — workflows and hosted validation complete; C-07.08 branch enforcement remains.
 
 **Where:** `.github/workflows/ci.yml`, `frontend/playwright.config.ts`, existing test fixtures, `docs/RELEASE_ACCEPTANCE.md`.
 
 **Implementation checkpoints:**
 
-- [ ] C-07.01 Preserve a PostgreSQL job with real migrations and separate explicitly disposable databases for regular tests and migration/concurrency tests.
-- [ ] C-07.02 Add/retain a SQLite job with clear expected PostgreSQL-only skips. A supported SQLite runtime must not silently disappear from release coverage.
-- [ ] C-07.03 Enforce the new restore/backup/queue regression cases and multi-zone browser checks. Collect tests before running; an empty selection must fail.
-- [ ] C-07.04 Build with the intended API configuration. Start local E2E services with explicit frontend origin/CORS, disabled external workers, and isolated document storage; do not inherit hosted `.env` values accidentally.
-- [ ] C-07.05 Preserve unit/helper tests, production build, actual backend routes, and focused real-API browser workflows. Mark mocked tests clearly so they cannot substitute for integration acceptance.
-- [ ] C-07.06 Fail the job on test errors, failed migrations, failed readiness, unexpected skips, or missing required evidence. Retries must remain visible; repeated flaky retries are an issue, not proof of correctness.
-- [ ] C-07.07 Attach JUnit/browser reports, traces on failure, sanitized service logs, runtime/dependency versions, source SHA, and migration revision. Do not publish private backup contents or credentials.
+- [x] C-07.01 Preserve a PostgreSQL job with real migrations and separate explicitly disposable databases for regular tests and migration/concurrency tests.
+- [x] C-07.02 Add/retain a SQLite job with clear expected PostgreSQL-only skips. A supported SQLite runtime must not silently disappear from release coverage.
+- [x] C-07.03 Enforce the new restore/backup/queue regression cases and multi-zone browser checks. Collect tests before running; an empty selection must fail.
+- [x] C-07.04 Build with the intended API configuration. Start local E2E services with explicit frontend origin/CORS, disabled external workers, and isolated document storage; do not inherit hosted `.env` values accidentally.
+- [x] C-07.05 Preserve unit/helper tests, production build, actual backend routes, and focused real-API browser workflows. Mark mocked tests clearly so they cannot substitute for integration acceptance.
+- [x] C-07.06 Fail the job on test errors, failed migrations, failed readiness, unexpected skips, or missing required evidence. Retries must remain visible; repeated flaky retries are an issue, not proof of correctness.
+- [x] C-07.07 Attach JUnit/browser reports, traces on failure, sanitized service logs, runtime/dependency versions, source SHA, and migration revision. Do not publish private backup contents or credentials.
 - [ ] C-07.08 Ensure required status checks match the actual job names and protect the target branch using authorized repository settings. A workflow file alone does not establish branch protection.
-- [ ] C-07.09 Run the full matrix once for the final candidate. Repeat affected coverage after any subsequent change, then require green CI on the exact deployable SHA.
+- [x] C-07.09 Run the full matrix once for the final candidate. Repeat affected coverage after any subsequent change, then require green CI on the exact deployable SHA.
 
 **Completion proof:** no failures in supported local paths, all required CI checks green on the candidate, and new independent regressions are enforced rather than residing only in `/tmp`.
 
@@ -307,7 +332,9 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 <a id="c-08"></a>
 ## C-08 — Close every product acceptance contract
 
-**Priority:** required project acceptance. **When:** after corrected CI. **Owner:** feature implementer with reviewer. **Status:** Not completed.
+**Priority:** required project acceptance. **When:** after corrected CI. **Owner:** feature implementer with reviewer. **Status:** Completed (local).
+
+**Current evidence:** [C-08 acceptance](docs/C08_PRODUCT_ACCEPTANCE.md), plus the current green CI matrix.
 
 **What:** validate existing functionality rather than rebuilding it. Run the local portions of the 17 acceptance packs below plus the two original user journeys. Compare current code to every original ticket's acceptance checklist; a passing broad suite does not certify untested prose requirements. Record external portions as pending C-09/C-10; they do not block preparing staging, but they do block final ticket/release closeout. This distinction prevents a dependency cycle between local acceptance and staging setup.
 
@@ -376,6 +403,8 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 
 **Where:** [release acceptance](docs/RELEASE_ACCEPTANCE.md), [deployment runbook](docs/CLOUD_DEPLOYMENT_VERCEL_RENDER_SUPABASE.md), [backup strategy](docs/BACKUP_STRATEGY.md), existing deployment manifests and scripts. These documents describe repository configuration; verify current hosting capabilities and prices when executing. This guide does not assume a free hosting plan provides durable file storage.
 
+**Current implementation:** PRs #173/#174 supply repository readiness and private object storage through the gateway. Keep the zero-dollar topology; live durability/recovery proof remains open.
+
 **Implementation/operation checkpoints:**
 
 - [ ] C-09.01 Record the actual frontend/backend/database/storage providers, staging URLs, deployment owner, candidate SHA, previous known-good SHA, and intended runtime versions. Reuse the chosen deployment topology unless it cannot meet a requirement.
@@ -401,7 +430,7 @@ Test-harness preparation may happen while a feature is repaired, but dependent a
 
 - [ ] C-10.01 **Restore:** export a nonempty staging fixture, restore into a separate disposable destination, and compare normalized records/references plus file hashes. Record checksum, counts, elapsed time, and any exclusions. Include C-02's negative failure case.
 - [ ] C-10.02 **OAuth:** sign in through a configured real provider with a controlled account, verify callback and authenticated `/auth/me`, refresh/deep links, logout, cookie clearing, and cross-account isolation. Dev login is invalid evidence. Verify secure cookie/CORS behavior for the actual deployment topology.
-- [ ] C-10.03 **SMTP:** after explicit authorization to send to the controlled inbox, trigger the supported delivery flow, confirm actual inbox receipt, record provider/message identifier without secrets, and check content/timezone. `logged` or queued is not delivered.
+- [ ] C-10.03 **Email:** after verifying a supported transport for the selected runtime and obtaining explicit authorization to send to the controlled inbox, trigger the supported delivery flow, confirm actual inbox receipt, record provider/message identifier without secrets, and check content/timezone. `logged` or queued is not delivered.
 - [ ] C-10.04 **Reminder lifecycle:** opt in, schedule a due reminder, deliver once, restart/retry, and verify recorded state. Document ambiguous provider outcomes and deduplication limits; do not claim exactly-once external email without provider support.
 - [ ] C-10.05 **Deployment smoke:** exercise original journeys A/B and representative Today, import, people, documents, backup, archive/undo workflows through deployed frontend/backend. Refresh all 14 routes and inspect failures.
 - [ ] C-10.06 **Chrome/popup acceptance:** run the real top-five workflow in Chrome, including blocked-popup fallback. Execute capture in every declared supported browser; do not claim Safari/Firefox based on Chromium alone.
@@ -588,91 +617,91 @@ The entries below retain each ticket's original implementation scope and add its
 
 For every entry, execute C-08's requirement-to-evidence procedure, follow its acceptance pack above, and record proof using the evidence template. Dependencies mentioning C-09/C-10 apply to the final external closeout, not to the start of local verification in C-08. Use the linked original specification for its full contracts, file scope, and historical microtasks; revalidate historical proposed names against current code before acting.
 
-The index contains 64 original tickets: 10 are locally verified complete, 10 need repair, 2 are externally blocked, and 42 are implemented with requirement-level verification pending. Remaining assessments retain the earlier audit disposition; these counts are not percentage of code written.
+The index contains 64 original tickets with local acceptance mapped by C-08. JG-024 and JG-040 retain external acceptance gates. Other deployment/recovery obligations remain in C-09/C-10; local acceptance is not production certification.
 
 ### Ticket index
 
 | Ticket | Scope | Closeout status |
 |---|---|---|
-| [JG-001](#jg-001-closeout) | Freeze and validate the complete backup v2 record schema | Verified complete |
-| [JG-002](#jg-002-closeout) | Add import identity mapping and complete v2 export | Verified complete |
-| [JG-003](#jg-003-closeout) | Implement preflight and transactional full restore | Verified complete |
-| [JG-004](#jg-004-closeout) | Build restore preview and prove recoverability in the UI | Verified complete |
-| [JG-005](#jg-005-closeout) | Extract one account-scoped query builder without changing list behavior | Verified complete |
-| [JG-006](#jg-006-closeout) | Route every export through the shared filter contract | Verified complete |
-| [JG-007](#jg-007-closeout) | Unify browser and saved-view query serialization | Verified complete |
-| [JG-008](#jg-008-closeout) | Define metric semantics and add durable lifecycle event storage | Verified complete |
-| [JG-009](#jg-009-closeout) | Wire every mutation into the lifecycle ledger | Verified complete |
-| [JG-010](#jg-010-closeout) | Add user timezone and safely backfill known historical facts | Verified complete |
-| [JG-011](#jg-011-closeout) | Switch analytics goals weekly reports and digest to shared definitions | Implemented—verification pending |
-| [JG-012](#jg-012-closeout) | Introduce explicit archive timestamps and disabled-by-default retention | Implemented—verification pending |
-| [JG-013](#jg-013-closeout) | Replace broken cleanup with a bounded observable archive job | Implemented—verification pending |
-| [JG-014](#jg-014-closeout) | Expose retention policy and maintenance health safely | Implemented—verification pending |
-| [JG-015](#jg-015-closeout) | Create reusable status timestamp URL and bulk validators | Implemented—verification pending |
-| [JG-016](#jg-016-closeout) | Apply validation atomically to every application writer | Implemented—verification pending |
-| [JG-017](#jg-017-closeout) | Render field errors and fix asynchronous import feedback | Implemented—verification pending |
-| [JG-018](#jg-018-closeout) | Define one numeric parsing contract and dialect adapters | Implemented—verification pending |
-| [JG-019](#jg-019-closeout) | Register SQLite functions in app and test engines and add real schema checks | Needs repair |
-| [JG-020](#jg-020-closeout) | Document and verify both runtime paths | Needs repair |
-| [JG-021](#jg-021-closeout) | Correct CI paths readiness and PostgreSQL test composition | Implemented—verification pending |
-| [JG-022](#jg-022-closeout) | Add fail-fast production configuration checks | Implemented—verification pending |
-| [JG-023](#jg-023-closeout) | Promote audit reproductions into enforced release regressions | Needs repair |
-| [JG-024](#jg-024-closeout) | Run staging login delivery restore and rollback acceptance | Externally blocked |
-| [JG-025](#jg-025-closeout) | Model manual actions and follow-up overrides | Implemented—verification pending |
-| [JG-026](#jg-026-closeout) | Build the stable daily queue and guarded mutations | Needs repair |
-| [JG-027](#jg-027-closeout) | Build the Today screen and accessible action controls | Needs repair |
-| [JG-028](#jg-028-closeout) | Prove the daily queue improves a real work session | Needs repair |
-| [JG-029](#jg-029-closeout) | Implement conservative URL and company identity rules | Implemented—verification pending |
-| [JG-030](#jg-030-closeout) | Persist aliases and backfill derived identity safely | Implemented—verification pending |
-| [JG-031](#jg-031-closeout) | Expose matching and show applied-before context | Implemented—verification pending |
-| [JG-032](#jg-032-closeout) | Validate duplicate warnings against false positives | Implemented—verification pending |
-| [JG-033](#jg-033-closeout) | Add evidence records and immutable event payload rules | Implemented—verification pending |
-| [JG-034](#jg-034-closeout) | Build evidence mutations and merged timeline API | Implemented—verification pending |
-| [JG-035](#jg-035-closeout) | Build timeline and evidence entry in application detail | Implemented—verification pending |
-| [JG-036](#jg-036-closeout) | Prove history survives lifecycle and recovery operations | Implemented—verification pending |
-| [JG-037](#jg-037-closeout) | Model reminder preferences and delivery state machine | Implemented—verification pending |
-| [JG-038](#jg-038-closeout) | Implement clock-safe planning claiming and delivery | Implemented—verification pending |
-| [JG-039](#jg-039-closeout) | Expose opt-in preferences and delivery history | Implemented—verification pending |
-| [JG-040](#jg-040-closeout) | Verify reminder recovery and controlled real delivery | Externally blocked |
-| [JG-041](#jg-041-closeout) | Model immutable document versions and private storage boundaries | Implemented—verification pending |
-| [JG-042](#jg-042-closeout) | Implement bounded upload download and storage reconciliation | Implemented—verification pending |
-| [JG-043](#jg-043-closeout) | Add document library and per-application version selection | Implemented—verification pending |
-| [JG-044](#jg-044-closeout) | Extend recoverable backups to document bytes | Needs repair |
-| [JG-045](#jg-045-closeout) | Add manual capture schema and replay identity | Implemented—verification pending |
-| [JG-046](#jg-046-closeout) | Implement capture API with identity warnings | Implemented—verification pending |
-| [JG-047](#jg-047-closeout) | Build quick-add page and user-invoked bookmarklet | Implemented—verification pending |
-| [JG-048](#jg-048-closeout) | Validate capture across browsers and lifecycle transitions | Implemented—verification pending |
-| [JG-049](#jg-049-closeout) | Model explicit deadlines and availability evidence | Implemented—verification pending |
-| [JG-050](#jg-050-closeout) | Implement manual freshness and a disabled-by-default safe check adapter | Implemented—verification pending |
-| [JG-051](#jg-051-closeout) | Show deadlines freshness labels and Today actions | Implemented—verification pending |
-| [JG-052](#jg-052-closeout) | Validate freshness limits and false-closure resistance | Implemented—verification pending |
-| [JG-053](#jg-053-closeout) | Model contacts associations and scheduled interviews | Implemented—verification pending |
-| [JG-054](#jg-054-closeout) | Build private workspace APIs and safe calendar downloads | Implemented—verification pending |
-| [JG-055](#jg-055-closeout) | Build application people and interview panels | Needs repair |
-| [JG-056](#jg-056-closeout) | Verify contact privacy scheduling and recovery | Needs repair |
-| [JG-057](#jg-057-closeout) | Model private import previews and reusable column mappings | Implemented—verification pending |
-| [JG-058](#jg-058-closeout) | Implement preview parsing and transactional reconciliation | Implemented—verification pending |
-| [JG-059](#jg-059-closeout) | Build column mapping and deliberate commit preview | Implemented—verification pending |
-| [JG-060](#jg-060-closeout) | Validate reimport repeatability and bounded resource use | Implemented—verification pending |
-| [JG-061](#jg-061-closeout) | Add optimistic versions and bounded undo journals | Implemented—verification pending |
-| [JG-062](#jg-062-closeout) | Implement transactional bulk changes and conflict-aware undo | Implemented—verification pending |
-| [JG-063](#jg-063-closeout) | Build Archive and explicit Undo conflict handling | Implemented—verification pending |
-| [JG-064](#jg-064-closeout) | Prove recovery and decide whether automatic purge is safe | Needs repair |
+| [JG-001](#jg-001-closeout) | Freeze and validate the complete backup v2 record schema | Local acceptance passed |
+| [JG-002](#jg-002-closeout) | Add import identity mapping and complete v2 export | Local acceptance passed |
+| [JG-003](#jg-003-closeout) | Implement preflight and transactional full restore | Local acceptance passed |
+| [JG-004](#jg-004-closeout) | Build restore preview and prove recoverability in the UI | Local acceptance passed |
+| [JG-005](#jg-005-closeout) | Extract one account-scoped query builder without changing list behavior | Local acceptance passed |
+| [JG-006](#jg-006-closeout) | Route every export through the shared filter contract | Local acceptance passed |
+| [JG-007](#jg-007-closeout) | Unify browser and saved-view query serialization | Local acceptance passed |
+| [JG-008](#jg-008-closeout) | Define metric semantics and add durable lifecycle event storage | Local acceptance passed |
+| [JG-009](#jg-009-closeout) | Wire every mutation into the lifecycle ledger | Local acceptance passed |
+| [JG-010](#jg-010-closeout) | Add user timezone and safely backfill known historical facts | Local acceptance passed |
+| [JG-011](#jg-011-closeout) | Switch analytics goals weekly reports and digest to shared definitions | Local acceptance passed |
+| [JG-012](#jg-012-closeout) | Introduce explicit archive timestamps and disabled-by-default retention | Local acceptance passed |
+| [JG-013](#jg-013-closeout) | Replace broken cleanup with a bounded observable archive job | Local acceptance passed |
+| [JG-014](#jg-014-closeout) | Expose retention policy and maintenance health safely | Local acceptance passed |
+| [JG-015](#jg-015-closeout) | Create reusable status timestamp URL and bulk validators | Local acceptance passed |
+| [JG-016](#jg-016-closeout) | Apply validation atomically to every application writer | Local acceptance passed |
+| [JG-017](#jg-017-closeout) | Render field errors and fix asynchronous import feedback | Local acceptance passed |
+| [JG-018](#jg-018-closeout) | Define one numeric parsing contract and dialect adapters | Local acceptance passed |
+| [JG-019](#jg-019-closeout) | Register SQLite functions in app and test engines and add real schema checks | Local acceptance passed |
+| [JG-020](#jg-020-closeout) | Document and verify both runtime paths | Local acceptance passed |
+| [JG-021](#jg-021-closeout) | Correct CI paths readiness and PostgreSQL test composition | Local acceptance passed |
+| [JG-022](#jg-022-closeout) | Add fail-fast production configuration checks | Local acceptance passed |
+| [JG-023](#jg-023-closeout) | Promote audit reproductions into enforced release regressions | Local acceptance passed |
+| [JG-024](#jg-024-closeout) | Run staging login delivery restore and rollback acceptance | Local acceptance passed; external gate pending |
+| [JG-025](#jg-025-closeout) | Model manual actions and follow-up overrides | Local acceptance passed |
+| [JG-026](#jg-026-closeout) | Build the stable daily queue and guarded mutations | Local acceptance passed |
+| [JG-027](#jg-027-closeout) | Build the Today screen and accessible action controls | Local acceptance passed |
+| [JG-028](#jg-028-closeout) | Prove the daily queue improves a real work session | Local acceptance passed |
+| [JG-029](#jg-029-closeout) | Implement conservative URL and company identity rules | Local acceptance passed |
+| [JG-030](#jg-030-closeout) | Persist aliases and backfill derived identity safely | Local acceptance passed |
+| [JG-031](#jg-031-closeout) | Expose matching and show applied-before context | Local acceptance passed |
+| [JG-032](#jg-032-closeout) | Validate duplicate warnings against false positives | Local acceptance passed |
+| [JG-033](#jg-033-closeout) | Add evidence records and immutable event payload rules | Local acceptance passed |
+| [JG-034](#jg-034-closeout) | Build evidence mutations and merged timeline API | Local acceptance passed |
+| [JG-035](#jg-035-closeout) | Build timeline and evidence entry in application detail | Local acceptance passed |
+| [JG-036](#jg-036-closeout) | Prove history survives lifecycle and recovery operations | Local acceptance passed |
+| [JG-037](#jg-037-closeout) | Model reminder preferences and delivery state machine | Local acceptance passed |
+| [JG-038](#jg-038-closeout) | Implement clock-safe planning claiming and delivery | Local acceptance passed |
+| [JG-039](#jg-039-closeout) | Expose opt-in preferences and delivery history | Local acceptance passed |
+| [JG-040](#jg-040-closeout) | Verify reminder recovery and controlled real delivery | Local acceptance passed; external gate pending |
+| [JG-041](#jg-041-closeout) | Model immutable document versions and private storage boundaries | Local acceptance passed |
+| [JG-042](#jg-042-closeout) | Implement bounded upload download and storage reconciliation | Local acceptance passed |
+| [JG-043](#jg-043-closeout) | Add document library and per-application version selection | Local acceptance passed |
+| [JG-044](#jg-044-closeout) | Extend recoverable backups to document bytes | Local acceptance passed |
+| [JG-045](#jg-045-closeout) | Add manual capture schema and replay identity | Local acceptance passed |
+| [JG-046](#jg-046-closeout) | Implement capture API with identity warnings | Local acceptance passed |
+| [JG-047](#jg-047-closeout) | Build quick-add page and user-invoked bookmarklet | Local acceptance passed |
+| [JG-048](#jg-048-closeout) | Validate capture across browsers and lifecycle transitions | Local acceptance passed |
+| [JG-049](#jg-049-closeout) | Model explicit deadlines and availability evidence | Local acceptance passed |
+| [JG-050](#jg-050-closeout) | Implement manual freshness and a disabled-by-default safe check adapter | Local acceptance passed |
+| [JG-051](#jg-051-closeout) | Show deadlines freshness labels and Today actions | Local acceptance passed |
+| [JG-052](#jg-052-closeout) | Validate freshness limits and false-closure resistance | Local acceptance passed |
+| [JG-053](#jg-053-closeout) | Model contacts associations and scheduled interviews | Local acceptance passed |
+| [JG-054](#jg-054-closeout) | Build private workspace APIs and safe calendar downloads | Local acceptance passed |
+| [JG-055](#jg-055-closeout) | Build application people and interview panels | Local acceptance passed |
+| [JG-056](#jg-056-closeout) | Verify contact privacy scheduling and recovery | Local acceptance passed |
+| [JG-057](#jg-057-closeout) | Model private import previews and reusable column mappings | Local acceptance passed |
+| [JG-058](#jg-058-closeout) | Implement preview parsing and transactional reconciliation | Local acceptance passed |
+| [JG-059](#jg-059-closeout) | Build column mapping and deliberate commit preview | Local acceptance passed |
+| [JG-060](#jg-060-closeout) | Validate reimport repeatability and bounded resource use | Local acceptance passed |
+| [JG-061](#jg-061-closeout) | Add optimistic versions and bounded undo journals | Local acceptance passed |
+| [JG-062](#jg-062-closeout) | Implement transactional bulk changes and conflict-aware undo | Local acceptance passed |
+| [JG-063](#jg-063-closeout) | Build Archive and explicit Undo conflict handling | Local acceptance passed |
+| [JG-064](#jg-064-closeout) | Prove recovery and decide whether automatic purge is safe | Local acceptance passed |
 
 <a id="jg-001-closeout"></a>
 ### JG-001 — Freeze and validate the complete backup v2 record schema
 
 **Source entry points (present in inspected checkout):** [backups.py](backend/app/services/backups.py), [contact_backups.py](backend/app/services/contact_backups.py), [import_backups.py](backend/app/services/import_backups.py), [BackupRestore.jsx](frontend/src/components/BackupRestore.jsx). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-001 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-001).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-001.01 Create strict Pydantic v2 backup models with extra=forbid and an explicit section field allowlist
 - [x] JG-001.02 List every current model column as exported, reconstructed, deliberately excluded with reason, or an unresolved migration blocker; include UrlHistory and preference/goal rows
@@ -694,15 +723,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [backups.py](backend/app/services/backups.py), [contact_backups.py](backend/app/services/contact_backups.py), [import_backups.py](backend/app/services/import_backups.py), [BackupRestore.jsx](frontend/src/components/BackupRestore.jsx). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-002 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-002).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-002.01 Add BackupImportMap with account foreign key, backup UUID, section and source reference; unique index prevents duplicate replay identities
 - [x] JG-002.02 Generate deterministic per-record backup_ref values within the export without exposing them as reusable authorization identifiers
@@ -724,15 +753,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [backups.py](backend/app/services/backups.py), [contact_backups.py](backend/app/services/contact_backups.py), [import_backups.py](backend/app/services/import_backups.py), [BackupRestore.jsx](frontend/src/components/BackupRestore.jsx). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** PROPOSED / unchecked\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-003 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-003).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-003.01 Read at most 20 MiB plus one byte; use application body limits as a second guard and do not call unbounded file.read
 - [x] JG-003.02 Parse and validate the entire record graph and checksum before beginning destination writes
@@ -755,15 +784,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [backups.py](backend/app/services/backups.py), [contact_backups.py](backend/app/services/contact_backups.py), [import_backups.py](backend/app/services/import_backups.py), [BackupRestore.jsx](frontend/src/components/BackupRestore.jsx). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Recovery must preserve the complete private record graph and document bytes.\
 **When:** after C-02, C-03; close under C-08 / A01. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-004 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-004).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-004.01 Add export-v2 and restore entry points next to existing backup export; keep the ordinary data export separate
 - [x] JG-004.02 Present section counts, legacy limitations and merge policy after verify_only; require a deliberate Restore click to write
@@ -785,15 +814,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [row_queries.py](backend/app/services/row_queries.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** A filter must select the same account-owned population in every consumer.\
 **When:** after C-07; close under C-08 / A02. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-005 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-005).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-005.01 Capture all existing query arguments and expected defaults from active routes and client mapping
 - [x] JG-005.02 Create RowQuery and ApplicationQuery models separate from output serializers; bind user_id from get_current_user only
@@ -815,15 +844,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [row_queries.py](backend/app/services/row_queries.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** A filter must select the same account-owned population in every consumer.\
 **When:** after C-07; close under C-08 / A02. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-006 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-006).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-006.01 Add all shared filter parameters to dashboard and applications exports with documented aliases
 - [x] JG-006.02 Apply scope and ownership checks before querying; selected scope rejects absent, malformed or foreign IDs
@@ -845,15 +874,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [row_queries.py](backend/app/services/row_queries.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #45; CI run #70 passed\
 **Why:** A filter must select the same account-owned population in every consumer.\
 **When:** after C-07; close under C-08 / A02. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-007 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-007).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-007.01 Create one serializer for each shared query model with known camelCase aliases and explicit false/null handling
 - [x] JG-007.02 Use it for list loads, filtered export, top-five fetches and saved-view application
@@ -875,15 +904,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [lifecycle.py](backend/app/services/lifecycle.py), [models.py](backend/app/models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #47; CI run #74 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-008 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-008).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-008.01 Add the table, uniqueness constraints and user/time/kind composite index from CCR-LIFECYCLE-1
 - [x] JG-008.02 Implement write_event within a caller-owned transaction; never commit inside the helper
@@ -905,15 +934,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [lifecycle.py](backend/app/services/lifecycle.py), [models.py](backend/app/models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #49; CI run #80 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-009 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-009).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-009.01 List active writers: click, from-row, from-rows bulk, application patch, bulk patch, follow-up presets, external import and ApplyPilot result import
 - [x] JG-009.02 Route state changes through common service methods receiving a transaction, authenticated user and stable operation ID
@@ -935,15 +964,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [lifecycle.py](backend/app/services/lifecycle.py), [models.py](backend/app/models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Verified complete.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #52; CI run #97 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-010 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-010).
 
-**Current finding:** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance passed on 2026-09-24; recovery gaps are repaired. See [ticket-specific evidence](docs/JG001_010_EXECUTION.md).
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [x] JG-010.01 Add timezone default UTC for existing users and validate new selections with zoneinfo; accept neither an arbitrary offset nor an invalid zone name
 - [x] JG-010.02 Implement profile read/update routes and common UTC-boundary calculation for daily and rolling-week metrics
@@ -965,15 +994,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [lifecycle.py](backend/app/services/lifecycle.py), [models.py](backend/app/models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified — merged in PR #55; CI run #103 passed\
 **Why:** Events and local-day definitions must produce consistent metrics without inventing historical facts.\
 **When:** after C-05, C-06, C-07; close under C-08 / A03. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-011 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-011).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-011.01 Replace independent event/track/csv counting with shared metric service calls while preserving response field compatibility
 - [ ] JG-011.02 Show distinct labels Visited jobs, Saved jobs and Applied jobs; do not silently rename a response key without documenting its corrected meaning
@@ -995,15 +1024,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [retention.py](backend/app/services/retention.py), [config.py](backend/app/config.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Background retention must be opt-in, bounded, observable, and recoverable.\
 **When:** after C-07, C-09; close under C-08 / A04. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-012 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-012).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-012.01 Add archived_at and nullable user retention preference with documented migration defaults
 - [ ] JG-012.02 Keep legacy archived flags but leave unknown archived_at null; do not backdate them
@@ -1025,15 +1054,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [retention.py](backend/app/services/retention.py), [config.py](backend/app/config.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Background retention must be opt-in, bounded, observable, and recoverable.\
 **When:** after C-07, C-09; close under C-08 / A04. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-013 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-013).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-013.01 Remove the nonexistent updated_at access and the current hard-delete branch
 - [ ] JG-013.02 Select only policy-eligible visited nonarchived rows using clicked_at and account policy; old created_at alone is insufficient
@@ -1055,15 +1084,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [retention.py](backend/app/services/retention.py), [config.py](backend/app/config.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Background retention must be opt-in, bounded, observable, and recoverable.\
 **When:** after C-07, C-09; close under C-08 / A04. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-014 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-014).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-014.01 Add GET/PATCH /crm/profile/retention with {archive_after_days:0
 - [ ] JG-014.02 7..3650}; document that purge is unavailable until the final archive tranche
@@ -1086,15 +1115,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [validation.py](backend/app/services/validation.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Invalid input must fail consistently without partial writes or lost user drafts.\
 **When:** after C-07; close under C-08 / A05. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-015 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-015).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-015.01 Create reusable enums and validators without changing domain data storage types
 - [ ] JG-015.02 Separate omitted fields from explicit clear using model_fields_set/exclude_unset semantics
@@ -1116,15 +1145,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [validation.py](backend/app/services/validation.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Invalid input must fail consistently without partial writes or lost user drafts.\
 **When:** after C-07; close under C-08 / A05. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-016 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-016).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-016.01 Inventory and update single patch, bulk patch, from-row, from-rows, external import and ApplyPilot result paths
 - [ ] JG-016.02 Preload ownership of all referenced rows/tracks; validate the whole batch before mutations
@@ -1146,15 +1175,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [validation.py](backend/app/services/validation.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Invalid input must fail consistently without partial writes or lost user drafts.\
 **When:** after C-07; close under C-08 / A05. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-017 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-017).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-017.01 Use await file.text() and one awaited API call inside a single try/catch/finally for external import
 - [ ] JG-017.02 Clear stale preview/result when file changes or parsing fails; disable Import until a valid parse exists
@@ -1176,15 +1205,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [numeric_values.py](backend/app/services/numeric_values.py), [database.py](backend/app/database.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Both supported database paths must honor the same numeric and timestamp contracts.\
 **When:** after C-05, C-07; close under C-08 / A06. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-018 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-018).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-018.01 Write a table of accepted and rejected numeric strings and expected Decimal/null values
 - [ ] JG-018.02 Implement the deterministic parser with a length cap of 128 characters and finite-number check
@@ -1205,15 +1234,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [numeric_values.py](backend/app/services/numeric_values.py), [database.py](backend/app/database.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Both supported database paths must honor the same numeric and timestamp contracts.\
 **When:** after C-05, C-07; close under C-08 / A06. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-019 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-019).
 
-**Current finding:** The C-05 timestamp regressions are closed with PostgreSQL and explicit SQLite evidence. JG-019 remains open for its broader SQLite function/schema and C-07 matrix acceptance; the old audit failures are historical.
+**Historical audit finding (superseded by C-08 local acceptance):** The C-05 timestamp regressions are closed with PostgreSQL and explicit SQLite evidence. JG-019 remains open for its broader SQLite function/schema and C-07 matrix acceptance; the old audit failures are historical.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-019.01 Create an engine-configuration helper or engine connect listener that registers SQLite functions on every connection
 - [ ] JG-019.02 Call the same setup from fixture-created engines and background session factories
@@ -1235,15 +1264,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [numeric_values.py](backend/app/services/numeric_values.py), [database.py](backend/app/database.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Both supported database paths must honor the same numeric and timestamp contracts.\
 **When:** after C-05, C-07; close under C-08 / A06. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-020 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-020).
 
-**Current finding:** C-05 is closed. JG-020 remains open until C-07 enforces the complete supported runtime matrix and separate migration evidence.
+**Historical audit finding (superseded by C-08 local acceptance):** C-05 is closed. JG-020 remains open until C-07 enforces the complete supported runtime matrix and separate migration evidence.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-020.01 Document SQLite quick start separately from PostgreSQL migration and release acceptance
 - [ ] JG-020.02 Add a browser test clicking Resume Score and asserting exact row order rather than only a header arrow
@@ -1264,15 +1293,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [ci.yml](.github/workflows/ci.yml), [config.py](backend/app/config.py), [RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Local checks, external staging acceptance, and release are different claims.\
 **When:** after C-07, C-09, C-10; close under C-08 / A07. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-021 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-021).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-021.01 Change the backend start step to the real backend working directory; remove cd ../backend
 - [ ] JG-021.02 Run alembic upgrade head before starting the API and print only the revision, not the DSN credentials
@@ -1294,15 +1323,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [ci.yml](.github/workflows/ci.yml), [config.py](backend/app/config.py), [RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Local checks, external staging acceptance, and release are different claims.\
 **When:** after C-07, C-09, C-10; close under C-08 / A07. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-022 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-022).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-022.01 Add a pure configuration validator invoked before route-serving startup
 - [ ] JG-022.02 Reject TEST_AUTH in production and empty/default signing secrets; keep real secret value out of exceptions
@@ -1324,15 +1353,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [ci.yml](.github/workflows/ci.yml), [config.py](backend/app/config.py), [RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Local checks, external staging acceptance, and release are different claims.\
 **When:** after C-07, C-09, C-10; close under C-08 / A07. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-023 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-023).
 
-**Current finding:** The current release suite missed the independent restore and pagination reproductions. C-07 must enforce them.
+**Historical audit finding (superseded by C-08 local acceptance):** The current release suite missed the independent restore and pagination reproductions. C-07 must enforce them.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-023.01 Turn each audit failure into an unconditional assertion with a nonempty synthetic fixture
 - [ ] JG-023.02 Include backup round trip, multi-filter export, metric reconciliation, invalid inputs, cleanup failure and numeric sort
@@ -1354,15 +1383,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [ci.yml](.github/workflows/ci.yml), [config.py](backend/app/config.py), [RELEASE_ACCEPTANCE.md](docs/RELEASE_ACCEPTANCE.md). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Externally blocked.\
+**Current assessment:** Local acceptance passed; external gate pending.
 **Prior roadmap label:** COMPLETED / checked — local acceptance tooling merged and CI-verified; external staging gates remain BLOCKED, so no staging-accepted or released claim is made\
 **Why:** Local checks, external staging acceptance, and release are different claims.\
 **When:** after C-07, C-09, C-10; close under C-08 / A07. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-024 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-024).
 
-**Current finding:** Local acceptance tooling exists; external staging gates remain unverified. C-09/C-10 must close them before release.
+**Historical audit finding (superseded by C-08 local acceptance):** Local acceptance tooling exists; external staging gates remain unverified. C-09/C-10 must close them before release.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-024.01 Create an evidence checklist with owner, environment, command, expected and actual result for each gate
 - [ ] JG-024.02 Use a disposable PostgreSQL DB to prove backup restore retains rows, tracks, notes, dates and references; compare row counts plus content hashes
@@ -1384,15 +1413,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [today.py](backend/app/services/today.py), [today_f8.py](backend/app/services/today_f8.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked — schema/contract foundation merged and CI-verified; Today API/navigation remains owned by JG-026–JG-028\
 **Why:** Every eligible daily action must be reachable and safe to mutate in the correct timezone.\
 **When:** after C-04, C-05, C-06, C-07; close under C-08 / A08. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-025 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-025).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-025.01 Add WorkItem and WorkItemOverride with owner indexes, timezone-aware timestamps and positive version constraints
 - [ ] JG-025.02 Keep derived follow-ups out of WorkItem; define and validate source action keys against owned source records
@@ -1414,15 +1443,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [today.py](backend/app/services/today.py), [today_f8.py](backend/app/services/today_f8.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked — backend Today API/service merged and CI-verified; Today UI/navigation remains owned by JG-027–JG-028\
 **Why:** Every eligible daily action must be reachable and safe to mutate in the correct timezone.\
 **When:** after C-04, C-05, C-06, C-07; close under C-08 / A08. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-026 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-026).
 
-**Current finding:** Confirmed integration defect: the interview wrapper can truncate the queue with no continuation cursor. Close C-04.
+**Historical audit finding (superseded by C-08 local acceptance):** Confirmed integration defect: the interview wrapper can truncate the queue with no continuation cursor. Close C-04.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-026.01 Compute local-day UTC bounds using the validated account timezone from JG-010
 - [ ] JG-026.02 Build owned manual and derived-follow-up queries with snooze exclusion and the frozen deterministic order
@@ -1445,15 +1474,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [today.py](backend/app/services/today.py), [today_f8.py](backend/app/services/today_f8.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** PROPOSED / unchecked\
 **Why:** Every eligible daily action must be reachable and safe to mutate in the correct timezone.\
 **When:** after C-04, C-05, C-06, C-07; close under C-08 / A08. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-027 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-027).
 
-**Current finding:** Today UI exists despite the stale proposed status. Close C-06 timezone assertions and C-08 keyboard/real-API acceptance.
+**Historical audit finding (superseded by C-08 local acceptance):** Today UI exists despite the stale proposed status. Close C-06 timezone assertions and C-08 keyboard/real-API acceptance.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-027.01 Add a Today route and navigation item with overdue, due today and undated group labels
 - [ ] JG-027.02 Display company, role, source, due time and one primary action; link to the existing application drawer
@@ -1476,15 +1505,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [today.py](backend/app/services/today.py), [today_f8.py](backend/app/services/today_f8.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Every eligible daily action must be reachable and safe to mutate in the correct timezone.\
 **When:** after C-04, C-05, C-06, C-07; close under C-08 / A08. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-028 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-028).
 
-**Current finding:** A successful small queue does not prove mixed-source pagination. Include C-04 and the full daily-workflow acceptance.
+**Historical audit finding (superseded by C-08 local acceptance):** A successful small queue does not prove mixed-source pagination. Include C-04 and the full daily-workflow acceptance.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-028.01 Create an acceptance fixture with60 mixed due/manual/snoozed/terminal actions and record exact expected membership
 - [ ] JG-028.02 Check query plans on PostgreSQL for owner/due indexes and confirm no per-item ORM query loop
@@ -1505,15 +1534,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [job_identity.py](backend/app/services/job_identity.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Remembered applications require conservative identity matching and protection against false merges.\
 **When:** after C-07; close under C-08 / A09. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-029 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-029).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-029.01 Implement a pure canonicalizer with explicit version and unchanged original URL output
 - [ ] JG-029.02 Write examples for tracking parameters, multiple query values, case-sensitive paths, fragments, ports and international domains
@@ -1534,15 +1563,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [job_identity.py](backend/app/services/job_identity.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Remembered applications require conservative identity matching and protection against false merges.\
 **When:** after C-07; close under C-08 / A09. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-030 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-030).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-030.01 Add nullable canonical columns and nonunique account/hash indexes plus CompanyAlias table
 - [ ] JG-030.02 Create a resumable500-record backfill with --dry-run and --after-id; emit counts not full URLs
@@ -1563,15 +1592,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [job_identity.py](backend/app/services/job_identity.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Remembered applications require conservative identity matching and protection against false merges.\
 **When:** after C-07; close under C-08 / A09. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-031 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-031).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-031.01 Implement scoped match and alias routes with bounded results and constant-count queries
 - [ ] JG-031.02 Filter matches to actual applied history; label canonical and possible results separately with dates and statuses
@@ -1593,15 +1622,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [job_identity.py](backend/app/services/job_identity.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / locally verified\
 **Why:** Remembered applications require conservative identity matching and protection against false merges.\
 **When:** after C-07; close under C-08 / A09. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-032 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-032).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-032.01 Build a labeled synthetic matrix with exact, canonical, same-company-new-role and unrelated matches
 - [ ] JG-032.02 Assert zero automatic merges and exact expected confidence/reason for every case
@@ -1622,15 +1651,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [evidence.py](backend/app/services/evidence.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** History must remain trustworthy through edits, deletion, retries, and recovery.\
 **When:** after C-02, C-03, C-07; close under C-08 / A10. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-033 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-033).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-033.01 Add evidence table with owner/track indexes, version and explicit soft-delete state
 - [ ] JG-033.02 Extend lifecycle kind validation with evidence_added, evidence_edited and evidence_deleted payload allowlists
@@ -1652,15 +1681,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [evidence.py](backend/app/services/evidence.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #122\
 **Why:** History must remain trustworthy through edits, deletion, retries, and recovery.\
 **When:** after C-02, C-03, C-07; close under C-08 / A10. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-034 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-034).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-034.01 Create evidence and ledger events in one transaction using a unique account/operation idempotency key
 - [ ] JG-034.02 Merge lifecycle and evidence history with stable timestamp/type/ID pagination; bound pages at100
@@ -1682,15 +1711,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [evidence.py](backend/app/services/evidence.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #124\
 **Why:** History must remain trustworthy through edits, deletion, retries, and recovery.\
 **When:** after C-02, C-03, C-07; close under C-08 / A10. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-035 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-035).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-035.01 Add a timeline section showing source label, event date and separate recorded-at tooltip
 - [ ] JG-035.02 Show Unknown for missing occurrence dates and avoid assuming imported timestamps are application dates
@@ -1712,15 +1741,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [evidence.py](backend/app/services/evidence.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #127\
 **Why:** History must remain trustworthy through edits, deletion, retries, and recovery.\
 **When:** after C-02, C-03, C-07; close under C-08 / A10. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-036 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-036).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-036.01 Create a complete timeline fixture with imported history, application, status changes, evidence and correction
 - [ ] JG-036.02 Delete only the source CSV and compare the remaining application timeline content
@@ -1741,15 +1770,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [reminders.py](backend/app/services/reminders.py), [email_transport.py](backend/app/services/email_transport.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #132\
 **Why:** Reminder timing and delivery state must survive retries without misleading receipt claims.\
 **When:** after C-05, C-06, C-07, C-10; close under C-08 / A11. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-037 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-037).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-037.01 Add preference/delivery tables with unique occurrence/channel constraint and owner/schedule indexes
 - [ ] JG-037.02 Define legal status transitions and immutable sent_at after acceptance
@@ -1770,15 +1799,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [reminders.py](backend/app/services/reminders.py), [email_transport.py](backend/app/services/email_transport.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #134\
 **Why:** Reminder timing and delivery state must survive retries without misleading receipt claims.\
 **When:** after C-05, C-06, C-07, C-10; close under C-08 / A11. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-038 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-038).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-038.01 Implement a pure due-occurrence planner accepting injected UTC clock and account timezone
 - [ ] JG-038.02 Upsert deterministic occurrence keys and cancel ineligible unsent rows after source edits
@@ -1800,15 +1829,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [reminders.py](backend/app/services/reminders.py), [email_transport.py](backend/app/services/email_transport.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #134\
 **Why:** Reminder timing and delivery state must survive retries without misleading receipt claims.\
 **When:** after C-05, C-06, C-07, C-10; close under C-08 / A11. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-039 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-039).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-039.01 Implement owner-scoped preference and paginated history APIs with version guards
 - [ ] JG-039.02 Add explicit reminder opt-in UI explaining channel, local delivery time and quiet hours
@@ -1830,15 +1859,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [reminders.py](backend/app/services/reminders.py), [email_transport.py](backend/app/services/email_transport.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Externally blocked.\
+**Current assessment:** Local acceptance passed; external gate pending.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #134; controlled external email remains disabled pending explicit staging authorization/credentials\
 **Why:** Reminder timing and delivery state must survive retries without misleading receipt claims.\
 **When:** after C-05, C-06, C-07, C-10; close under C-08 / A11. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-040 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-040).
 
-**Current finding:** Local delivery tests are not inbox receipt. Controlled real delivery remains an external C-10 gate.
+**Historical audit finding (superseded by C-08 local acceptance):** Local delivery tests are not inbox receipt. Controlled real delivery remains an external C-10 gate.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-040.01 Run fake-clock integration coverage across due-date edits, timezone edits and quiet hours
 - [ ] JG-040.02 Stop a worker after claim, restart after lease expiry and check safe recovery states
@@ -1859,15 +1888,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [documents.py](backend/app/services/documents.py), [backups.py](backend/app/services/backups.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #138\
 **Why:** Private immutable documents must remain retrievable after redeployment and restore.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A12. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-041 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-041).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-041.01 Add version/link tables and constraints with UUID identifiers and explicit owner references
 - [ ] JG-041.02 Define immutable content fields and ready-only attachment rule; preserve original display filename separately from storage key
@@ -1889,15 +1918,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [documents.py](backend/app/services/documents.py), [backups.py](backend/app/services/backups.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #138\
 **Why:** Private immutable documents must remain retrievable after redeployment and restore.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A12. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-042 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-042).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-042.01 Stream multipart upload with byte quota and actual PDF/UTF-8 checks; reject unsupported formats before ready state
 - [ ] JG-042.02 Generate random internal keys, hash and persist through staging/atomic rename with explicit pending/failed states
@@ -1919,15 +1948,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [documents.py](backend/app/services/documents.py), [backups.py](backend/app/services/backups.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #138\
 **Why:** Private immutable documents must remain retrievable after redeployment and restore.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A12. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-043 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-043).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-043.01 Add a document library with kind, label, version, uploaded time and size; hide internal storage keys
 - [ ] JG-043.02 Add upload progress, cancel-before-completion behavior, validation messages and quota feedback
@@ -1950,15 +1979,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [documents.py](backend/app/services/documents.py), [backups.py](backend/app/services/backups.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #143\
 **Why:** Private immutable documents must remain retrievable after redeployment and restore.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A12. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-044 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-044).
 
-**Current finding:** The document ZIP omits later metadata extensions. C-03 must compose export and import paths, not only add files.
+**Historical audit finding (superseded by C-08 local acceptance):** The document ZIP omits later metadata extensions. C-03 must compose export and import paths, not only add files.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-044.01 Add explicit bundle format with manifest metadata and per-file size/hash; keep JSON-only export labeled metadata-only for documents
 - [ ] JG-044.02 Validate ZIP member names, type, count, duplicate entries and expanded byte total before extraction
@@ -1979,15 +2008,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [capture.py](backend/app/services/capture.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #143\
 **Why:** Capture must safely save a job without claiming that it was visited or applied to.\
 **When:** after C-07, C-10; close under C-08 / A13. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-045 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-045).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-045.01 Add source/captured_at/capture_notes fields with nullable defaults for legacy rows
 - [ ] JG-045.02 Add CaptureRequest unique owner/key mapping and payload hash, detaching row ref if later removed
@@ -2009,15 +2038,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [capture.py](backend/app/services/capture.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — merged to `main` via PR #143\
 **Why:** Capture must safely save a job without claiming that it was visited or applied to.\
 **When:** after C-07, C-10; close under C-08 / A13. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-046 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-046).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-046.01 Validate payload and authenticate before duplicate/match lookup
 - [ ] JG-046.02 Use F2 identity service for exact/canonical/possible matches and preserve original URL
@@ -2039,15 +2068,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [capture.py](backend/app/services/capture.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — validated in PR #145 and CI run #335\
 **Why:** Capture must safely save a job without claiming that it was visited or applied to.\
 **When:** after C-07, C-10; close under C-08 / A13. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-047 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-047).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-047.01 Add short URL/title/company/notes form and immediate server-side match context before final save
 - [ ] JG-047.02 Provide a generated bookmarklet for the configured app origin with properly encoded fragment JSON
@@ -2069,15 +2098,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [capture.py](backend/app/services/capture.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — validated in PR #145 and CI run #335\
 **Why:** Capture must safely save a job without claiming that it was visited or applied to.\
 **When:** after C-07, C-10; close under C-08 / A13. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-048 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-048).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-048.01 Test manual form in the supported browser and bookmarklet via a synthetic source page with hostile title text
 - [ ] JG-048.02 Exercise logged-out return, popup-blocked fallback and two rapid clicks
@@ -2098,15 +2127,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [availability.py](backend/app/services/availability.py), [safe_job_fetch.py](backend/app/services/safe_job_fetch.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED — validated in PR #145 and CI run #335\
 **Why:** Deadline/freshness information must be explicit and conservative; remote checks must remain bounded.\
 **When:** after C-04, C-07; close under C-08 / A14. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-049 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-049).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-049.01 Add independent URL-scoped availability records, version guards and source fields
 - [ ] JG-049.02 Define user-confirmed closed precedence and nonauthoritative checker status mapping
@@ -2128,15 +2157,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [availability.py](backend/app/services/availability.py), [safe_job_fetch.py](backend/app/services/safe_job_fetch.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Deadline/freshness information must be explicit and conservative; remote checks must remain bounded.\
 **When:** after C-04, C-07; close under C-08 / A14. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-050 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-050).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-050.01 Implement manual availability routes with owner/version checks independently of outbound networking
 - [ ] JG-050.02 Implement injectable DNS/transport interfaces with strict public-address validation and pinned connection semantics
@@ -2158,15 +2187,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [availability.py](backend/app/services/availability.py), [safe_job_fetch.py](backend/app/services/safe_job_fetch.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Deadline/freshness information must be explicit and conservative; remote checks must remain bounded.\
 **When:** after C-04, C-07; close under C-08 / A14. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-051 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-051).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-051.01 Add deadline editor with explicit timezone and closed/reopen confirmation controls
 - [ ] JG-051.02 Display last checked timestamp, source and cautious reachable/unavailable/unknown labels
@@ -2188,15 +2217,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [availability.py](backend/app/services/availability.py), [safe_job_fetch.py](backend/app/services/safe_job_fetch.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** Deadline/freshness information must be explicit and conservative; remote checks must remain bounded.\
 **When:** after C-04, C-07; close under C-08 / A14. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-052 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-052).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-052.01 Build a local mock transport matrix for statuses, redirects, DNS changes, byte limits and timeouts
 - [ ] JG-052.02 Assert unknown outcomes never set confirmed_closed_at or remove unrelated application history
@@ -2217,15 +2246,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [contacts.py](backend/app/services/contacts.py), [calendar_export.py](backend/app/services/calendar_export.py), [contact_models.py](backend/app/contact_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** People and interview data must remain private, schedulable, pageable, and recoverable.\
 **When:** after C-02, C-03, C-04, C-07; close under C-08 / A15. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-053 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-053).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-053.01 Add Contact, ApplicationContact and Interview with owned indexes, bounded fields and versions
 - [ ] JG-053.02 Enforce matching owners for every association before insert and make duplicate role links idempotent
@@ -2247,15 +2276,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [contacts.py](backend/app/services/contacts.py), [calendar_export.py](backend/app/services/calendar_export.py), [contact_models.py](backend/app/contact_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** People and interview data must remain private, schedulable, pageable, and recoverable.\
 **When:** after C-02, C-03, C-04, C-07; close under C-08 / A15. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-054 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-054).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-054.01 Implement owner-scoped paginated contact search and version-guarded edits with explicit association routes
 - [ ] JG-054.02 Implement idempotent interview create/edit/cancel and nonblocking overlap warnings
@@ -2276,15 +2305,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [contacts.py](backend/app/services/contacts.py), [calendar_export.py](backend/app/services/calendar_export.py), [contact_models.py](backend/app/contact_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked\
 **Why:** People and interview data must remain private, schedulable, pageable, and recoverable.\
 **When:** after C-02, C-03, C-04, C-07; close under C-08 / A15. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-055 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-055).
 
-**Current finding:** People panels exist; associated Today interview actions can be unreachable. C-04 is required integration acceptance.
+**Historical audit finding (superseded by C-08 local acceptance):** People panels exist; associated Today interview actions can be unreachable. C-04 is required integration acceptance.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-055.01 Add linked people list with role, optional contact fields and private notes disclosure
 - [ ] JG-055.02 Support selecting existing contacts or creating a new one without duplicating by default
@@ -2307,15 +2336,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [contacts.py](backend/app/services/contacts.py), [calendar_export.py](backend/app/services/calendar_export.py), [contact_models.py](backend/app/contact_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** PROPOSED / unchecked\
 **Why:** People and interview data must remain private, schedulable, pageable, and recoverable.\
 **When:** after C-02, C-03, C-04, C-07; close under C-08 / A15. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-056 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-056).
 
-**Current finding:** Confirmed gaps in restore atomicity and interview pagination. C-02/C-03/C-04 are required before full acceptance.
+**Historical audit finding (superseded by C-08 local acceptance):** Confirmed gaps in restore atomicity and interview pagination. C-02/C-03/C-04 are required before full acceptance.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-056.01 Use two accounts with similar names to prove search/results/links never cross ownership boundaries
 - [ ] JG-056.02 Test DST overlap/gap inputs, explicit offsets and ICS round-trip using an independent parser
@@ -2336,15 +2365,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [imports.py](backend/app/services/imports.py), [import_mapping.py](backend/app/services/import_mapping.py), [import_models.py](backend/app/import_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** PROPOSED / unchecked\
 **Why:** Imports must preview clearly, reconcile transactionally, and remain repeatable.\
 **When:** after C-02, C-03, C-07; close under C-08 / A16. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-057 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-057).
 
-**Current finding:** Mappings exist despite the stale proposed heading. Complete ZIP recovery must include reusable mappings through C-03.
+**Historical audit finding (superseded by C-08 local acceptance):** Mappings exist despite the stale proposed heading. Complete ZIP recovery must include reusable mappings through C-03.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-057.01 Add preview and mapping tables with owner/expiry/status indexes and version constraints
 - [ ] JG-057.02 Define bounded stored normalized row shape and checksum/fingerprint algorithms
@@ -2366,15 +2395,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [imports.py](backend/app/services/imports.py), [import_mapping.py](backend/app/services/import_mapping.py), [import_models.py](backend/app/import_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** PROPOSED / unchecked\
 **Why:** Imports must preview clearly, reconcile transactionally, and remain repeatable.\
 **When:** after C-02, C-03, C-07; close under C-08 / A16. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-058 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-058).
 
-**Current finding:** Preview/reconciliation code exists despite the stale heading. Verify current behavior and close cross-feature restore composition.
+**Historical audit finding (superseded by C-08 local acceptance):** Preview/reconciliation code exists despite the stale heading. Verify current behavior and close cross-feature restore composition.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-058.01 Bound incoming bytes/records before loading normalized payload and reject unsupported encoding/shape
 - [ ] JG-058.02 Parse headers by position, apply explicit mapping and shared field/identity validation
@@ -2397,15 +2426,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [imports.py](backend/app/services/imports.py), [import_mapping.py](backend/app/services/import_mapping.py), [import_models.py](backend/app/import_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked (locally verified)\
 **Why:** Imports must preview clearly, reconcile transactionally, and remain repeatable.\
 **When:** after C-02, C-03, C-07; close under C-08 / A16. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-059 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-059).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-059.01 Add upload then map then review then commit stages without writing during preview
 - [ ] JG-059.02 Show source columns by label and position, required URL target and unmapped-column warning
@@ -2428,15 +2457,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [imports.py](backend/app/services/imports.py), [import_mapping.py](backend/app/services/import_mapping.py), [import_models.py](backend/app/import_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked (locally verified)\
 **Why:** Imports must preview clearly, reconcile transactionally, and remain repeatable.\
 **When:** after C-02, C-03, C-07; close under C-08 / A16. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-060 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-060).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-060.01 Run fixtures for BOM, quoted commas/newlines, duplicate headers, blank values and malformed JSON
 - [ ] JG-060.02 Exercise maximum2000 rows and reject2001/over10 MiB before destination writes
@@ -2457,15 +2486,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [bulk_actions.py](backend/app/services/bulk_actions.py), [undo_foundation.py](backend/app/services/undo_foundation.py), [undo_models.py](backend/app/undo_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked (locally verified)\
 **Why:** Undo must respect concurrent changes and archive must preserve a reliable recovery path.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A17. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-061 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-061).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-061.01 Add row/track versions and bulk action/effect models with uniqueness, expiry and snapshot limits
 - [ ] JG-061.02 Inventory every CsvRow/JobTrack writer including bulk SQL, imports, backup merge and background cleanup
@@ -2486,15 +2515,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [bulk_actions.py](backend/app/services/bulk_actions.py), [undo_foundation.py](backend/app/services/undo_foundation.py), [undo_models.py](backend/app/undo_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked (locally verified)\
 **Why:** Undo must respect concurrent changes and archive must preserve a reliable recovery path.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A17. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-062 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-062).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-062.01 Route archive/update bulk operations through shared versioning and journal creation in one transaction
 - [ ] JG-062.02 Integrate version increments into every inventoried writer before enabling undo endpoints
@@ -2516,15 +2545,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [bulk_actions.py](backend/app/services/bulk_actions.py), [undo_foundation.py](backend/app/services/undo_foundation.py), [undo_models.py](backend/app/undo_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Implemented—verification pending.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked (locally verified)\
 **Why:** Undo must respect concurrent changes and archive must preserve a reliable recovery path.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A17. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-063 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-063).
 
-**Current finding:** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
+**Historical audit finding (superseded by C-08 local acceptance):** Implementation is present and the preceding audit found no additional ticket-specific defect. This is local support, not exhaustive proof of every acceptance checkpoint.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-063.01 Add paginated Archive screen using the same complete filter/sort contract as active rows
 - [ ] JG-063.02 Show archived time or Unknown and allow selected owned rows to restore without changing application status
@@ -2546,15 +2575,15 @@ The index contains 64 original tickets: 10 are locally verified complete, 10 nee
 
 **Source entry points (present in inspected checkout):** [bulk_actions.py](backend/app/services/bulk_actions.py), [undo_foundation.py](backend/app/services/undo_foundation.py), [undo_models.py](backend/app/undo_models.py). Trace callers/tests before editing shared behavior.
 
-**Current assessment:** Needs repair.\
+**Current assessment:** Local acceptance passed.
 **Prior roadmap label:** COMPLETED / checked (locally verified)\
 **Why:** Undo must respect concurrent changes and archive must preserve a reliable recovery path.\
 **When:** after C-02, C-03, C-07, C-09; close under C-08 / A17. Documentation reconciliation follows in C-11.\
 **Detailed original contract:** [JG-064 specification](docs/JOBGRID_REMAINING_IMPLEMENTATION_TICKETS_FULL.md#jg-064).
 
-**Current finding:** Recovery cannot be certified while complete backup and transaction defects remain. Keep purge disabled by default.
+**Historical audit finding (superseded by C-08 local acceptance):** Recovery cannot be certified while complete backup and transaction defects remain. Keep purge disabled by default.
 
-**What to verify or finish, in order:**
+**Original implementation checklist (historical; current acceptance is mapped in [C-08](docs/C08_PRODUCT_ACCEPTANCE.md)):**
 
 - [ ] JG-064.01 Run archive/undo/restore with applied tracks, evidence, documents, availability, aliases, contacts and reminders present
 - [ ] JG-064.02 Verify every source-row FK detaches safely and no durable application/company memory cascades away
@@ -2580,9 +2609,9 @@ This section expands C-09–C-12. These are future execution steps, not actions 
 
 Use the existing topology: React/Vite on Vercel, one FastAPI instance on Render, and Supabase as PostgreSQL only. Keep application authentication and account ownership in FastAPI. Do not introduce Supabase Auth, Realtime, or a second migration system; existing Alembic history remains authoritative.
 
-Keep the filesystem document adapter, but attach a Render persistent disk mounted at `/var/data`; set `DOCUMENT_STORAGE_DIR=/var/data/jobgrid-documents`. Current `render.yaml` declares `plan: free` and no disk. That manifest is not sufficient for the planned durable document feature. Render's current documentation requires a paid service for persistent disks, limits a disk to one service instance, and does not provide zero-downtime deployment with a disk. Disk access is runtime-only, so file verification/backup cannot run in a pre-deploy job that lacks the disk. Confirm current cost and capacity before provisioning; do not silently substitute ephemeral storage if provisioning is unavailable. [Render persistent disk documentation](https://render.com/docs/disks).
+Keep the accepted zero-dollar topology: Vercel Free, Render Free, Supabase PostgreSQL and private Supabase Storage. `render.yaml` selects `DOCUMENT_STORAGE_BACKEND=gateway`; `/tmp/jobgrid-document-cache` is disposable cache, not durable storage. PR #174 makes the gateway compatible with the existing Render start command and derives its token from the existing database credential when an explicit token is absent. Keep credentials server-side. Verify actual gateway deployment/authentication and document durability before release; record rotation and rollback procedures.
 
-Use a single Uvicorn process/instance initially, matching the disk constraint. Run disk-dependent reconciliation and authorized scheduled work in that instance through the existing implementation. Retain database leases/claims; single-instance deployment is not a substitute for retry safety. Expansion to multiple instances or remote object storage is a later architectural change.
+Use one backend instance and retain database leases/claims. Keep maintenance, reminder delivery, URL checks, automatic archive and purge disabled until their controlled activation is authorized and verified. The repository also supports direct S3 storage, but it is not the current Blueprint transport. Paid disks and new S3 credentials are not prerequisites for this selected gateway topology.
 
 Use a Supabase **session-mode pooler** connection for this long-running SQLAlchemy backend when the direct database endpoint is not reachable from Render; obtain the exact URI from the selected project's Connect panel. Verify connectivity and TLS from the actual runtime. Do not substitute a transaction-mode pooler without separately validating session-dependent behavior and migrations. [Supabase connection documentation](https://supabase.com/docs/guides/database/connecting-to-postgres).
 
@@ -2599,7 +2628,7 @@ Record these values in the private release record. Public identifiers can be doc
 | Frontend project and HTTPS origin | Dedicated staging project/origin | Existing or designated production project | Each proxy targets its own backend |
 | Render service and HTTPS origin | Separate staging service | Production service | Record service ID and deployed SHA |
 | Supabase project/database | Dedicated synthetic staging project | Production project | No shared database with automated tests |
-| Private disk | Staging disk | Production disk | Mounted path survives restart/redeploy |
+| Private object storage/gateway | Isolated staging objects/access | Private production bucket/gateway | Authenticated bytes survive cache loss, restart and redeploy |
 | Signing key | Unique staging secret | Unique stable production secret | No cross-environment reuse |
 | Google OAuth app/account | Staging callback and controlled account | Production callback | Callback matches constructed application URL |
 | SMTP credentials/recipient | Controlled authorized sandbox | Approved sender configuration | Actual receipt is proven before email activation |
@@ -2625,7 +2654,10 @@ Use exact names from current settings. Do not paste database URIs or signing sec
 | `CORS_ORIGINS` | Render | Explicit staging origin allowlist | Explicit production origin allowlist; no wildcard |
 | `OAUTH_REDIRECT_BASE` | Render | Staging frontend origin plus `/api` | Production frontend origin plus `/api` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Render | Controlled provider application credentials | Production provider credentials |
-| `DOCUMENT_STORAGE_DIR` | Render | `/var/data/jobgrid-documents` | `/var/data/jobgrid-documents` on production disk |
+| `DOCUMENT_STORAGE_BACKEND` | Render | `gateway` | `gateway` |
+| `DOCUMENT_STORAGE_GATEWAY_URL` | Render | Isolated staging gateway URL | Verified production gateway URL |
+| `DOCUMENT_STORAGE_GATEWAY_TOKEN` | Render secret/runtime | Explicit secret or derived by existing bootstrap | Derived from existing DB credential when absent; verify coordinated rotation |
+| `DOCUMENT_STAGING_DIR` | Render | `/tmp/jobgrid-document-cache` | Disposable `/tmp/jobgrid-document-cache`; not durable storage |
 | `RUN_MAINTENANCE_JOBS` | Render | Initially `false`; enable during controlled worker acceptance | Enable only on designated instance after worker acceptance |
 | `RUN_REMINDER_WORKER` | Render | Initially `false`; enable for controlled acceptance | Enable after scheduling/restart acceptance |
 | `REMINDER_EMAIL_DELIVERY_ENABLED` | Render | `false` until authorized sandbox delivery step | Enable only for the accepted email rollout |
@@ -2667,7 +2699,7 @@ gh pr checks "$JOBGRID_PR_NUMBER"
 2. Before merging infrastructure changes or a candidate not yet accepted in staging, place production deployment under explicit manual promotion/control in both providers. Record the previous settings. Apply the chosen control consistently in manifests and live settings so the next Blueprint sync does not undo it.
 3. Configure a dedicated staging frontend project and staging backend service. Deploy the candidate branch/SHA there explicitly; do not assume the production Vercel project creates branch previews under the current config.
 4. Ensure the staging build's rewrite sends `/api/*` only to the staging service. Add a configuration assertion or inspect the generated deployment configuration before testing with credentials.
-5. Confirm that staging has no production database, disk, signing key, provider callback, or unrestricted production mail sender.
+5. Confirm that staging has no production database, object bucket/access, signing key, provider callback, or unrestricted production mail sender.
 6. Retain manual production promotion for the release described here. Re-enabling automatic deployment is a later explicit operating-policy change after equivalent gates can be enforced automatically.
 
 **Exit:** merging a repair PR cannot unexpectedly deploy an unaccepted candidate to production.
@@ -2675,8 +2707,8 @@ gh pr checks "$JOBGRID_PR_NUMBER"
 ### 7.6 Provision and deploy staging
 
 1. Create the dedicated Supabase staging project and copy its connection URI into the staging Render secret store. Disable the unused Supabase Data API for this backend-only design, or otherwise prove that anonymous/authenticated Data API roles cannot access JobGrid tables. Do not assume FastAPI owner checks protect a separately exposed database API.
-2. Provision the staging Render service using Python 3.12 and the current pinned backend requirements. Use the existing `backend` root and Uvicorn start command; select an approved paid instance and disk size based on the fixture and measured capacity needs.
-3. Attach the disk at `/var/data`; configure the settings in 7.3. Test write/read permissions at runtime. Document uploads must not write into the source checkout or a publicly served directory.
+2. Provision the staging Render service using Python 3.12 and the current pinned backend requirements. Use the existing `backend` root and Uvicorn start command; keep the selected Free plan and one instance. Revisit capacity only through an explicit architecture/billing decision.
+3. Configure the private storage gateway and settings in 7.3. Verify authenticated remote write/read and `/ready`. Local cache is disposable; document bytes must not depend on it or be publicly served.
 4. With workers initially disabled, deploy the reviewed candidate. The current application starts Alembic for PostgreSQL; inspect that startup path before changing migration orchestration. Retain one migration owner and one service instance, and require a successful migration revision/readiness record. Do not introduce a second uncoordinated migration runner.
 5. Create the staging Vercel project with `frontend` as root, `npm run build`, and `dist` output. Set the environment-specific proxy destination and `/api` build value. Deploy the same candidate SHA.
 6. Register exact staging OAuth callback URLs and validate redirect behavior through the frontend proxy. Verify authentication cookies, logout, `/auth/me`, refresh, and deep links in a real browser.
@@ -2692,8 +2724,8 @@ gh pr checks "$JOBGRID_PR_NUMBER"
 The in-app owner-scoped ZIP is a portable user backup. It does not replace an operator's complete database-and-files disaster recovery plan.
 
 1. On the dedicated staging environment, establish a controlled write pause for a consistent rehearsal backup. Stop reminder/maintenance mutations and document writes during capture; resume after the snapshot completes.
-2. Capture the database with the approved provider backup or a PostgreSQL-compatible logical backup, and capture the corresponding private document directory. Record timestamps, schema revision, file manifest/hashes, and encryption/access controls.
-3. Store the package outside the instance and outside the only disk being protected. Confirm that the operator can retrieve/decrypt it. Provider disk snapshots alone do not establish consistency with an independently hosted database.
+2. Capture the database with the approved provider backup or a PostgreSQL-compatible logical backup, and capture the corresponding private object bucket through the approved export path. Record timestamps, schema revision, file manifest/hashes, and encryption/access controls.
+3. Store the package outside the instance and outside the only storage provider being protected. Confirm that the operator can retrieve/decrypt it. An object copy alone does not establish consistency with an independently captured database.
 4. Restore to a separate disposable destination. Compare nonempty counts, normalized record graph, file hashes, and reference integrity. Measure restoration time against the agreed objective.
 5. Deploy the previous application build against the staging migrated schema without removing new columns. Verify startup, login, history, and document access; return to the candidate and compare data again.
 6. For a real failed application deployment, stop promotion and restore the known-good frontend/backend versions first. Preserve schema and data. A destructive schema downgrade or backup restore needs an explicit incident decision because it can discard newer user writes.
@@ -2705,9 +2737,9 @@ The in-app owner-scoped ZIP is a portable user backup. It does not replace an op
 
 1. Confirm all C-01–C-11 gates and original-ticket acceptance dispositions. Resolve P1/P2 defects. Record explicitly approved scope changes instead of marking omitted functionality complete.
 2. Record the exact accepted main SHA, successful CI run, staging deployment IDs, operator, reviewer, current backup, rollback artifacts, and observation window.
-3. Ensure production settings match the accepted configuration with production-specific credentials/origins. Confirm disk durability and migrations are compatible with the previous application revision.
+3. Ensure production settings match the accepted configuration with production-specific credentials/origins. Confirm object-storage durability and migrations are compatible with the previous application revision.
 4. Create the GitHub release/tag for the accepted SHA using the repository's established naming convention; inspect existing tags before selecting a name. Publication itself does not deploy the application.
-5. Manually deploy that SHA to the production Render service, watch migration/startup/readiness, and verify the recorded schema revision. Expect a controlled interruption with the chosen disk-based deployment; record a maintenance window rather than promising zero downtime.
+5. Manually deploy that SHA to the production Render service, watch migration/startup/readiness, and verify the recorded schema revision. Record actual restart/cold-start behavior and any maintenance window; do not infer zero downtime from a successful build.
 6. Deploy the production Vercel build from the same SHA with production `/api` routing. Verify its deployment ID and API destination; do not promote a staging build containing staging configuration.
 7. Run controlled production smoke: real login/logout, persisted application/company history, five-link selection, Today, document upload/download, accurate backup labels, and Archive/Undo. Avoid broad destructive fixtures or unsolicited email.
 8. Enable accepted scheduled functionality on the designated instance. Verify one scheduled cycle, lease recovery, failure visibility, and opt-in delivery behavior.
@@ -2721,7 +2753,7 @@ The in-app owner-scoped ZIP is a portable user backup. It does not replace an op
 | Implementation exists but requirement proof is absent | Run C-08 verification | Original ticket acceptance |
 | Invalid restore changes data or backup omits required content | Repair C-02/C-03 | Recovery acceptance and release |
 | Required test or migration fails | Diagnose and fix; retain artifacts | Local-ready |
-| Provider credentials or durable disk unavailable | Continue independent local work; record exact dependency | Staging and release |
+| Provider credentials or durable object storage unavailable | Continue independent local work; record exact dependency | Staging and release |
 | Test email queued/logged but no receipt | Inspect controlled provider/inbox outcome | Delivery acceptance |
 | Staging passes, production not deployed | Publish/promote only through authorized process | Released |
 | Production health passes but data/file smoke fails | Stop and roll back safely | Production acceptance |
