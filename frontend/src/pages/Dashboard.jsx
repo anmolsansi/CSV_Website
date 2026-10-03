@@ -10,7 +10,7 @@ import BackupRestore from '../components/BackupRestore'
 import RetentionSettings from '../components/RetentionSettings'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
-const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false }
+const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false, uniqueCompany: false, confirmedUsa: false }
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 const DENSITY_OPTIONS = ['comfortable', 'compact', 'dense']
@@ -886,6 +886,8 @@ export default function Dashboard() {
             <label><input type="checkbox" checked={filters.unopenedOnly} onChange={(e) => updateFilter('unopenedOnly', e.target.checked)} /> Unopened only</label>
             <label><input type="checkbox" checked={filters.hasError} onChange={(e) => updateFilter('hasError', e.target.checked)} /> Has error</label>
             <label><input type="checkbox" checked={filters.jdMissing} onChange={(e) => updateFilter('jdMissing', e.target.checked)} /> JD missing</label>
+            <label><input type="checkbox" checked={filters.uniqueCompany} onChange={(e) => updateFilter('uniqueCompany', e.target.checked)} /> Unique company</label>
+            <label><input type="checkbox" checked={filters.confirmedUsa} onChange={(e) => updateFilter('confirmedUsa', e.target.checked)} /> Confirmed USA</label>
           </div>
 
           <div className="table-control-actions">

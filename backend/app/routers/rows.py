@@ -215,6 +215,8 @@ def list_rows(
     openable_only: bool = Query(False),
     has_error: bool = Query(False),
     jd_missing: bool = Query(False),
+    unique_company: bool = Query(False),
+    confirmed_usa: bool = Query(False),
     clicked_today_start: str | None = Query(None),
     clicked_today_end: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -222,6 +224,9 @@ def list_rows(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Validate before building the query because unique-company ranking uses the
+    # active sort expression internally.
+    _safe_sort_column(sort_by)
     query_params = RowQuery(
         sort_by=sort_by,
         sort_dir=sort_dir,
@@ -243,6 +248,8 @@ def list_rows(
         openable_only=openable_only,
         has_error=has_error,
         jd_missing=jd_missing,
+        unique_company=unique_company,
+        confirmed_usa=confirmed_usa,
     )
     query = build_row_query(db, user.id, query_params)
     total_count = query.count()
@@ -265,7 +272,11 @@ def list_rows(
         "sort_by": sort_by,
         "sort_dir": sort_dir,
         "archive_scope": archive_scope,
-        "filters": {"ats_group": ats_group or ""},
+        "filters": {
+            "ats_group": ats_group or "",
+            "unique_company": unique_company,
+            "confirmed_usa": confirmed_usa,
+        },
         "filter_options": {
             "ats_groups": _ats_group_values(db, user.id, archive_scope),
             "location_groups": _filter_option_values(db, user.id, CsvRow.location_group, archive_scope),

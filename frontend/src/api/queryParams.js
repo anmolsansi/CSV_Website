@@ -22,6 +22,8 @@ const DASHBOARD_FIELDS = [
   ['openableOnly', 'openable_only', 'boolean'],
   ['hasError', 'has_error', 'boolean'],
   ['jdMissing', 'jd_missing', 'boolean'],
+  ['uniqueCompany', 'unique_company', 'boolean'],
+  ['confirmedUsa', 'confirmed_usa', 'boolean'],
   ['page', 'page', 'number'],
   ['pageSize', 'page_size', 'number'],
 ]
