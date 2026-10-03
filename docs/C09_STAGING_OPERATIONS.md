@@ -1,343 +1,277 @@
 # C-09 Staging Operations Evidence
 
-This document records repository/provider preparation for `C-09 — Prepare staging and prove durable operations` from `development.md`.
+Updated: **2026-10-03**
 
-It deliberately distinguishes **repository-ready** work from **live external proof**. A local/CI pass is never converted into a staging PASS when a real provider target, credential, restart, recovery action, controlled account, or operator decision has not actually been exercised.
+This document is the focused evidence record for `C-09 — Prepare staging and prove durable operations` from `development.md`. It separates demonstrated provider evidence from remaining external gates. A green local suite or repository merge is never treated as proof of an external action that was not actually exercised.
 
 ## Source and ownership
 
 - Tracking issue: #172
-- Pull request: #173
-- Base branch: `main`
-- Work branch: `c09-staging-durable-operations`
-- Intake / previous known-good SHA: `cd1150384483d8296eacf5affdec56880c8ec871`
-- Candidate SHA: use the final green PR head in private release evidence
-- Deployment owner: release operator with authorized Vercel, Render, Supabase, OAuth, and controlled-inbox access
+- Original implementation PRs: #173 and #174, merged
+- Current continuation branch: `c09-live-acceptance-probe`
+- Current main baseline incorporated into the branch: `07b8ec2fab0169b614c122b09941527dcb8da549`
+- Release operator: account owner with authorized Vercel, Render, Supabase, OAuth, and controlled-test-account access
+- Infrastructure constraint: zero-dollar-first. Do not silently upgrade Vercel, Render, or Supabase to a paid plan.
 
-## User-selected infrastructure constraint
+## Selected topology
 
-C-09 must use **zero-dollar infrastructure**. Paid Render compute and persistent disks are explicitly out of scope unless the user makes a future separate billing decision.
+- Vercel Free: React/Vite frontend
+- Render Free: FastAPI backend
+- Supabase Free PostgreSQL: application database
+- Supabase private Storage: durable document bytes
+- Supabase Edge Function `jobgrid-storage`: private server-to-server Storage gateway
+- Render `/tmp/jobgrid-document-cache`: disposable cache/staging only
 
-The selected topology is:
+`render.yaml` is authoritative for the backend manifest. It selects:
 
-- Vercel Free for the React/Vite frontend
-- Render Free for the FastAPI backend
-- Supabase Free PostgreSQL for application data
-- private Supabase Storage for durable document bytes
+```text
+DOCUMENT_STORAGE_BACKEND=gateway
+DOCUMENT_STORAGE_GATEWAY_URL=https://hzcycquvfkqwbqrbvnhe.supabase.co/functions/v1/jobgrid-storage
+DOCUMENT_STAGING_DIR=/tmp/jobgrid-document-cache
+```
 
-Render Free local storage is ephemeral, so durable application bytes must never depend on it. `/tmp/jobgrid-document-cache` is transient staging/cache only.
+Paid Render disks and new S3 access keys are not prerequisites for this selected topology.
 
-## Actual provider/runtime evidence collected during C-09
+## Versioned gateway source
 
-### Database
+The deployed gateway source is now stored in this repository:
 
-Connected Supabase project:
+- `supabase/functions/jobgrid-storage/index.ts`
+- `supabase/functions/jobgrid-storage/README.md`
+
+The README records the deployment, authentication, database-password rotation, verification, and rollback procedure without exposing secrets.
+
+Private gateway calls use a derived `x-jobgrid-storage-token`. Render and the Edge Function independently derive the same SHA-256 value from the current database password plus the domain separator `jobgrid-storage-v1:`. The raw database password is never sent to the gateway.
+
+The Edge Function intentionally has platform JWT verification disabled because it implements this custom server-to-server authentication. Its only unauthenticated operation is the fixed C-09 synthetic canary. That operation can touch only `_ops/c09-durability-canary.txt` and cannot name or access user objects.
+
+## Provider evidence collected on 2026-10-03
+
+### Supabase database
+
+Connected project:
 
 - project: `jobgrid`
+- project ref: `hzcycquvfkqwbqrbvnhe`
 - region: Singapore (`ap-southeast-1`)
-- project status at inspection: healthy
+- status: `ACTIVE_HEALTHY`
 - PostgreSQL: 17.6
 - Alembic revision: `018`
 - server-reported max connections: 60
-- active connections observed during inspection: 7
+- active connections observed during this execution: 13
 
-No database password, connection URL, access key, secret, or service-role credential is recorded here.
+No database URL, password, secret key, session, or private credential is recorded here.
 
-### Backend
+### Supabase Storage
 
-Actual connected Render service:
+Live bucket evidence:
 
-- service: `jobgrid-api`
-- region: Singapore
-- URL: `https://jobgrid-api.onrender.com`
-- branch: `main`
-- auto deploy: enabled
-- instances: 1
-- plan: Free
-- live deploy SHA at inspection: `cd1150384483d8296eacf5affdec56880c8ec871`
+- bucket: `jobgrid-documents`
+- `public=false`
+- provider file-size limit: 10 MiB
+- aggregate objects observed during the check: 1
+- aggregate bytes observed during the check: 33
 
-C-09 intentionally keeps that service on Free.
+The one observed object is the fixed C-09 durability canary. No user document content or private object key was exposed in public evidence.
 
-Repository contract after the zero-dollar pivot:
+### Supabase Edge Function
 
-- Python 3.12
-- `plan: free`
-- one instance
-- `/health` process liveness
-- `/ready` database + private-object-storage readiness
-- `DOCUMENT_STORAGE_BACKEND=s3`
-- private bucket name `jobgrid-documents`
-- Render local `/tmp/jobgrid-document-cache` used only as disposable cache/staging
-- external/destructive workers disabled until controlled activation
+`jobgrid-storage` was retrieved from the live project and its exact source was checked into the continuation branch.
 
-### Object storage
+During this execution the exact source was redeployed from the checked-in content:
 
-Selected provider: Supabase Storage on the existing Free project.
+- function status: `ACTIVE`
+- version after reproducible redeploy: 17
+- `verify_jwt=false`, preserving the custom-auth contract
+- bundle SHA-256: `f534ab853950ff27827420a605d83cf453bcacbf7683712c18bc526eae0f718f`
 
-Live action completed during C-09:
+The redeploy produced the same bundle hash as the previously active version 16.
 
-- private bucket `jobgrid-documents` created on the existing `jobgrid` project
-- bucket `public=false`
-- bucket file-size limit set to 10 MiB, matching JobGrid's application upload limit
-- no paid project, branch, disk, or storage resource was created
+### Render public readiness
 
-Supabase Free currently includes 1 GB of Storage. JobGrid preserves its 100 MiB per-account document quota and the C-09 storage audit reports an early warning at 900 MB aggregate object usage.
-
-The production adapter uses Supabase's S3-compatible endpoint. Required server-only inputs are:
-
-- S3 endpoint
-- region
-- bucket
-- access-key ID
-- secret access key
-
-Generated Supabase S3 access keys have broad bucket access and bypass RLS. They must remain in Render secrets and never appear in the frontend, repository, logs, screenshots, or public evidence.
-
-The current connected Supabase integration does not expose S3 access-key generation, so that credential-generation step remains an explicit dashboard/operator action.
-
-### Frontend
-
-GitHub contains successful historical Vercel deployment status for this repository, but the currently connected Vercel account did not expose the JobGrid project during C-09 inspection. The active JobGrid frontend project/URL remains an external evidence item rather than an invented value.
-
-## Status vocabulary
-
-- **PASS**: the exact checkpoint was demonstrated with concrete evidence.
-- **REPOSITORY-READY**: code/config/runbook support exists, but live provider execution remains.
-- **BLOCKED**: a required target, credential, controlled account, or operator decision is unavailable.
-
-## C-09 checkpoint status
-
-### C-09.01 — providers, URLs, owner, SHAs, runtimes
-
-**Status: REPOSITORY-READY / partially BLOCKED**
-
-Recorded:
-
-- actual Supabase project/runtime/database revision/capacity observation
-- actual Render service/URL/region/plan/instance count/live SHA
-- previous known-good SHA
-- Python 3.12 backend runtime
-- zero-dollar topology decision
-
-Blocked:
-
-- actual active JobGrid Vercel frontend URL
-- final green candidate SHA until CI completes
-
-### C-09.02 — durable private document storage
-
-**Status: REPOSITORY-READY / partial live provider proof**
-
-Implemented on the branch:
-
-- Render remains Free
-- no Render persistent disk
-- filesystem/S3 storage abstraction in `backend/app/services/document_storage.py`
-- production Blueprint selects S3-compatible private storage
-- existing opaque document `storage_key` contract is preserved
-- existing document upload/download/list/link/delete behavior continues through the adapter
-- ZIP backup export/restore remains compatible because its storage calls resolve through the same adapter
-- local filesystem remains supported for development/tests
-- S3 cache loss is covered by regression tests
-- `/ready` checks the active private-storage backend
-- `c09_storage_audit.py` verifies ready-document size/hash integrity and aggregate capacity without exposing object names
-
-Live proof completed:
-
-- private Supabase bucket exists and is non-public
-- 10 MiB provider-side file-size limit is configured
-
-Blocked until server-only S3 credentials are generated/configured:
-
-- real S3 readiness on Render
-- real upload/download against the bucket
-- Render spin-down/restart/redeploy durability proof
-- real ZIP export using remote document bytes
-
-### C-09.03 — production-mode configuration
-
-**Status: REPOSITORY-READY / BLOCKED final storage/frontend/OAuth secrets**
-
-Repository safeguards:
-
-- `ENVIRONMENT=production`
-- `TEST_AUTH=false`
-- Render-generated `APP_SECRET_KEY`
-- database/frontend/CORS/OAuth values remain provider-managed
-- S3 endpoint/region/access credentials remain provider-managed secrets
-- bucket stays private
-- S3 credentials are server-only
-- production cookies remain Secure/SameSite=None through the existing contract
-
-Known backend origin:
+Backend origin:
 
 ```text
 https://jobgrid-api.onrender.com
 ```
 
-Blocked:
+The repository already contains a bounded live acceptance workflow at `.github/workflows/c09-live-acceptance-probe.yml`. A fresh rerun on 2026-10-03 successfully verified:
 
-- generated S3 access-key pair and exact endpoint entered into Render secrets
-- active JobGrid frontend origin
-- real OAuth provider configuration/test identity
+- `/health` returns the established liveness contract
+- `/ready` reports `database=ready`
+- `/ready` reports `document_storage=ready`
+- the Supabase durability canary reports `status=ready`
+- the canary reports `state=verified`
+- the canary is exactly 33 bytes
 
-### C-09.04 — maintenance/reminder execution
+The run observed one initial 30-second timeout before a retry succeeded. This is consistent with the operational cold-start behavior expected from Render Free and must remain visible in release evidence rather than being hidden.
+
+### Vercel frontend
+
+GitHub's Vercel integration previously recorded the JobGrid project as `csv-website` with project ID `prj_oJERSKpABAhvWisTwHiuendqMNlI` and successful preview deployments.
+
+The currently connected Vercel integration cannot list or fetch that deployment and returns an authorization/permission failure. Therefore the active production frontend URL, current project ownership, and production deployment remain **BLOCKED external evidence**. Do not invent a production URL from an old preview alias.
+
+## C-09 checkpoint status
+
+### C-09.01 — provider inventory, URLs, owner, SHAs, runtimes
+
+**Status: PARTIAL PASS**
+
+Demonstrated:
+
+- Render backend origin
+- Supabase project, region, database version, migration revision, capacity observation
+- Supabase Storage bucket and Edge Function
+- zero-dollar topology
+- gateway source and deployment procedure are versioned
+
+Still required:
+
+- active Vercel production frontend URL/project ownership
+- final C-09 candidate SHA after the continuation PR passes CI and is merged/deployed
+
+### C-09.02 — durable private document storage
+
+**Status: PARTIAL PASS**
+
+Demonstrated:
+
+- durable bytes live in private Supabase Storage, not Render local storage
+- live backend `/ready` can reach the configured storage gateway
+- fixed durability canary created previously and remains readable today
+- the canary survived later application/provider activity and the Edge Function was reproducibly redeployed from repository source
+- bucket remains private and bounded by the 10 MiB provider upload limit
+
+Still required for the checkpoint's full proof:
+
+- authenticated synthetic JobGrid document upload and download with recorded SHA-256
+- storage audit against that synthetic document
+- explicit Render restart/cache-loss proof
+- explicit Render backend redeploy proof on the selected candidate
+- authenticated ZIP backup export proving exact remote document bytes are included
+
+### C-09.03 — production configuration and actual domains
+
+**Status: PARTIAL PASS**
+
+Repository manifest keeps:
+
+- `ENVIRONMENT=production`
+- `TEST_AUTH=false`
+- generated application signing secret
+- private gateway storage
+- external/destructive workers disabled by default
+
+Live `/ready` proves the running backend has usable database and storage configuration.
+
+Still required:
+
+- verified active frontend origin
+- CORS check against that origin
+- cookie/HTTPS behavior from the real frontend
+- OAuth callback configuration and controlled provider identity
+
+### C-09.04 — one maintenance/reminder owner and restart behavior
 
 **Status: REPOSITORY-READY**
 
-Render Free cannot scale beyond one instance, so the web service is the only possible scheduler owner.
+Render Free is limited to one web-service instance, so the web service is the only in-process scheduler owner. External/destructive execution remains disabled by default:
 
-C-09 keeps execution disabled until deliberate staging activation:
+```text
+RUN_MAINTENANCE_JOBS=false
+RUN_REMINDER_WORKER=false
+REMINDER_EMAIL_DELIVERY_ENABLED=false
+JOB_URL_CHECKS_ENABLED=false
+AUTO_ARCHIVE_AFTER_DAYS=0
+AUTO_PURGE_AFTER_DAYS=0
+```
 
-- `RUN_MAINTENANCE_JOBS=false`
-- `RUN_REMINDER_WORKER=false`
-- `REMINDER_EMAIL_DELIVERY_ENABLED=false`
-- `JOB_URL_CHECKS_ENABLED=false`
-- `AUTO_ARCHIVE_AFTER_DAYS=0`
-- `AUTO_PURGE_AFTER_DAYS=0`
+The repository already protects maintenance execution with PostgreSQL/process locking and reminder claims with persisted row locks/leases.
 
-Existing concurrency/restart protections remain:
-
-- maintenance uses a PostgreSQL advisory lock plus process-local lock
-- reminder claims use row locking and persisted leases
-- expired sending leases recover to explicit unknown state instead of blind resend
-
-Render Free blocks common SMTP ports 25/465/587, so C-10 email acceptance must use a supported HTTP email API or another explicitly supported transport if email delivery is required from Render Free.
+Still required: deliberately activate the controlled staging path and prove leases/claims across restart. That proof belongs with the real staging execution window and must not send unapproved email or URL traffic.
 
 ### C-09.05 — migrations, capacity, readiness, rollout compatibility
 
-**Status: REPOSITORY-READY / partial live evidence**
+**Status: PARTIAL PASS**
 
-Observed on Supabase:
+Demonstrated:
 
-- Alembic revision `018`
 - PostgreSQL 17.6
+- Alembic revision 018
 - max connections 60
-- 7 active connections at inspection
-
-Repository rollout contract:
-
+- live `/ready` passes database + storage
 - one backend instance
-- Alembic executes before routes register
-- migration failure prevents successful startup
-- `/ready` requires database connectivity and private storage availability
-- `/health` remains lightweight liveness
-- remote object bytes survive loss of Render's local cache by design
+- migration failure blocks successful startup under the existing backend contract
 
-C-10 must still exercise the actual deployed candidate and prior compatible application build.
+Still required: verify the selected frontend and backend revisions together during the final rollout/redeploy sequence.
 
-### C-09.06 — synthetic staging account and controlled external accounts
+### C-09.06 — synthetic staging accounts and controlled external accounts
 
 **Status: BLOCKED**
 
-Required before external acceptance:
+Required before C-10:
 
 - nonempty synthetic JobGrid account
-- controlled OAuth test identity
-- controlled email destination/provider if email is tested
+- controlled OAuth identity
+- controlled email destination/provider if delivery is exercised
 
-No production/private user data belongs in public evidence.
+Do not use production/private user data as public release evidence.
 
-### C-09.07 — backup/recovery objectives
+### C-09.07 — backup/recovery objectives and rehearsal
 
-**Status: REPOSITORY-READY / BLOCKED operator decisions and rehearsal**
+**Status: BLOCKED ON OPERATOR DECISIONS / EXTERNAL REHEARSAL**
 
-Portable account recovery already has a complete ZIP path with document bytes.
+Portable account ZIP recovery exists and includes document bytes. Environment disaster recovery still needs an explicit plan protecting both PostgreSQL and private Storage objects.
 
-Environment disaster recovery must protect both:
-
-- PostgreSQL data
-- Supabase Storage objects
-
-The existing Docker Compose `scripts/backup.sh` / `scripts/restore.sh` are database-only and do not protect object bytes.
-
-Before C-10 recovery rehearsal:
-
-1. take a private logical PostgreSQL backup
-2. copy/inventory the private Storage bucket through the S3 protocol or another supported Storage export path
-3. restore to disposable staging
-4. compare schema revision, record counts, relationships, object counts, sizes, and hashes
-
-Blocked operator decisions:
+Required decisions/evidence:
 
 - RPO
 - RTO
+- backup schedule
+- retention
 - private off-platform backup destination
-- retention policy
+- operational owner
+- database + object backup
+- restore into disposable staging
+- measured recovery time and comparison of schema revision, record relationships/counts, object counts/sizes/hashes
 
-### C-09.08 — health/observability and induced failure
+The existing database-only backup scripts do not satisfy this requirement by themselves.
 
-**Status: REPOSITORY-READY / BLOCKED live induction**
+### C-09.08 — health, observability, and induced failure
 
-Runbook checks cover:
+**Status: PARTIAL PASS**
 
-- Render service + `/ready`
-- database/storage readiness component codes
-- document size/hash integrity
-- aggregate Supabase Storage consumption vs free-tier headroom
-- worker logs/maintenance health
-- reminder delivery history/logs
-- backup/recovery evidence
+The live probe provides an operator-visible check for liveness, database readiness, durable storage readiness, and the fixed storage canary. The storage audit additionally covers document integrity/capacity without publishing object names.
 
-A safe induced-failure procedure must be executed only after the real S3 credentials are configured.
+Still required: execute a deliberately safe induced failure and confirm the operator can see it, then restore normal operation.
 
-### C-09.09 — release evidence
+### C-09.09 — release evidence handoff
 
-**Status: REPOSITORY-READY**
+**Status: REPOSITORY-READY / BLOCKERS EXPLICIT**
 
-Use the existing release validator:
+The existing release validator remains the acceptance mechanism. Public evidence must contain only safe states, SHAs, run IDs, hashes, counts, and blocker descriptions. Secrets and private user data stay out of the repository.
 
-```bash
-python scripts/smoke_jobgrid.py --self-test-release-acceptance
-python scripts/smoke_jobgrid.py --release-evidence "$JOBGRID_RELEASE_EVIDENCE_FILE"
-```
+C-09 must remain open until the external items below are completed.
 
-The real evidence file remains private. Validator success with BLOCKED gates never means staging accepted.
+## Remaining external closure actions
 
-## Zero-dollar constraints to keep visible
+1. Confirm the Render workspace for connector operations, then read the live service/deploy history and perform an explicit safe restart/redeploy durability check on the selected backend candidate.
+2. Run an authenticated synthetic JobGrid document upload/download, record the SHA-256, run `backend/scripts/c09_storage_audit.py`, and repeat after cache loss/redeploy.
+3. Export an authenticated complete ZIP and verify its document bytes match the synthetic document hash.
+4. Re-authorize the Vercel connection for the JobGrid project/team or otherwise provide access to the active project. Record the real production frontend URL and verify HTTPS/API/CORS/cookies/OAuth callback behavior.
+5. Prepare controlled synthetic/OAuth/email test accounts.
+6. Agree and record RPO/RTO, backup schedule, retention, private off-platform destination, and owner. Rehearse database + object recovery into disposable staging and record measured recovery results.
+7. Execute a safe induced failure and confirm the operator signal is visible.
+8. Prepare the private release-evidence file and run the existing validator.
 
-This architecture has operational limits:
+## Rollback
 
-- Render Free can cold-start after idle spin-down.
-- Render Free local files are disposable.
-- Render Free has free-instance, build, and outbound-bandwidth quotas.
-- Supabase Free has database, Storage, egress, and other plan quotas.
-- Supabase Storage S3 credentials are high-privilege server credentials.
-- S3 object versioning is not provided by Supabase Storage, so deletion/recovery planning matters.
+Application/gateway rollback must not delete or recreate durable data.
 
-The correct response to a free-tier limit is to reduce/archive usage or explicitly revisit architecture. Do not silently enable a paid plan.
+- Backend: redeploy the previous compatible application SHA, preserving PostgreSQL and the private bucket.
+- Gateway: redeploy the previous known-good `supabase/functions/jobgrid-storage/index.ts` source as a new Edge Function version with the same custom-auth setting.
+- Database: do not automatically downgrade schema. Verify compatibility with the previous application before rollback.
+- Storage: keep the bucket and all objects unchanged during ordinary code rollback.
 
-## Repository validation required before merge
-
-The final fixed candidate must pass:
-
-- focused zero-dollar C-09 readiness/manifest tests
-- S3 adapter/cache-loss tests
-- document/backup recovery regressions
-- full backend test matrix
-- frontend production build
-- Chromium/real-API browser suite
-- Alembic/migration checks
-- C-06 browser-timezone matrix
-- C-07 SQLite release matrix
-- secret/diff review
-
-## External completion procedure
-
-After repository CI is green, C-09 becomes externally complete only when the release operator:
-
-1. generates the Supabase server-only S3 access-key pair and records the exact endpoint/region privately
-2. sets those values in Render secrets without exposing them
-3. syncs/deploys `jobgrid-api` while keeping `plan: free`
-4. verifies `/ready`
-5. uploads and downloads a synthetic document and records its SHA-256
-6. runs `c09_storage_audit.py`
-7. loses the Render local cache through restart/spin-down and proves the document remains downloadable
-8. redeploys the same candidate and repeats the proof
-9. exports a complete ZIP and verifies the remote document bytes are included
-10. records the real Vercel frontend origin
-11. agrees RPO/RTO and private backup destination/retention
-12. rehearses database + object recovery against disposable staging
-13. prepares the private release-evidence file for C-10
-
-Until those actions are executed, the honest C-09 state is **repository-ready with external provider actions remaining**, not staging-accepted.
+After any rollback, verify `/health`, `/ready`, the durability canary, authenticated document download, and application history before resuming release activity.
