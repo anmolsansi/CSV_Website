@@ -13,33 +13,100 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify live health, readiness, and durable storage canary
+      - name: Verify live health, readiness, durable storage, and production frontend wiring
         shell: bash
         run: |
           set -euo pipefail
+          backend_origin="https://jobgrid-api.onrender.com"
+          frontend_origin="https://csv-website-steel.vercel.app"
           health_file="$(mktemp)"
           ready_file="$(mktemp)"
+          proxy_health_file="$(mktemp)"
+          proxy_ready_file="$(mktemp)"
           canary_file="$(mktemp)"
+          cors_headers="$(mktemp)"
+          cors_body="$(mktemp)"
+          oauth_headers="$(mktemp)"
 
           curl --fail --silent --show-error \
             --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
-            https://jobgrid-api.onrender.com/health > "$health_file"
+            "$backend_origin/health" > "$health_file"
 
           curl --fail --silent --show-error \
             --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
-            https://jobgrid-api.onrender.com/ready > "$ready_file"
+            "$backend_origin/ready" > "$ready_file"
+
+          frontend_status="$(curl --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
+            -o /dev/null -w '%{http_code}' "$frontend_origin/")"
+
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
+            "$frontend_origin/api/health" > "$proxy_health_file"
+
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
+            "$frontend_origin/api/ready" > "$proxy_ready_file"
 
           curl --fail --silent --show-error \
             --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
             'https://hzcycquvfkqwbqrbvnhe.supabase.co/functions/v1/jobgrid-storage?action=c09-canary' > "$canary_file"
 
-          python - "$health_file" "$ready_file" "$canary_file" <<'PY'
+          cors_status="$(curl --silent --show-error --max-time 30 \
+            -X OPTIONS \
+            -H "Origin: $frontend_origin" \
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: content-type' \
+            -D "$cors_headers" -o "$cors_body" -w '%{http_code}' \
+            "$backend_origin/health")"
+
+          oauth_status="$(curl --silent --show-error --max-time 30 \
+            -D "$oauth_headers" -o /dev/null -w '%{http_code}' \
+            "$frontend_origin/api/auth/login/google")"
+
+          python - \
+            "$health_file" "$ready_file" "$proxy_health_file" "$proxy_ready_file" \
+            "$canary_file" "$cors_headers" "$oauth_headers" \
+            "$frontend_status" "$cors_status" "$oauth_status" "$frontend_origin" <<'PY'
           import json
           import sys
+          from urllib.parse import parse_qs, urlsplit
 
-          health = json.load(open(sys.argv[1], encoding='utf-8'))
-          ready = json.load(open(sys.argv[2], encoding='utf-8'))
-          canary = json.load(open(sys.argv[3], encoding='utf-8'))
+          (
+              health_path,
+              ready_path,
+              proxy_health_path,
+              proxy_ready_path,
+              canary_path,
+              cors_headers_path,
+              oauth_headers_path,
+              frontend_status,
+              cors_status,
+              oauth_status,
+              frontend_origin,
+          ) = sys.argv[1:]
+
+          def read_json(path):
+              with open(path, encoding='utf-8') as handle:
+                  return json.load(handle)
+
+          def read_headers(path):
+              with open(path, encoding='utf-8') as handle:
+                  return [line.rstrip('\r\n') for line in handle]
+
+          def header_values(lines, name):
+              prefix = name.lower() + ':'
+              return [
+                  line.split(':', 1)[1].strip()
+                  for line in lines
+                  if line.lower().startswith(prefix)
+              ]
+
+          health = read_json(health_path)
+          ready = read_json(ready_path)
+          proxy_health = read_json(proxy_health_path)
+          proxy_ready = read_json(proxy_ready_path)
+          canary = read_json(canary_path)
 
           assert health == {'status': 'ok'}, health
           assert ready.get('status') == 'ready', ready
@@ -47,8 +114,34 @@ jobs:
               'database': 'ready',
               'document_storage': 'ready',
           }, ready
+          assert frontend_status == '200', frontend_status
+          assert proxy_health == {'status': 'ok'}, proxy_health
+          assert proxy_ready == ready, (proxy_ready, ready)
           assert canary.get('status') == 'ready', canary
           assert canary.get('state') in {'created', 'verified'}, canary
           assert canary.get('size_bytes') == 33, canary
-          print('C-09 live readiness PASS; canary=' + canary['state'])
+
+          cors_headers = read_headers(cors_headers_path)
+          assert cors_status == '200', cors_status
+          assert frontend_origin in header_values(cors_headers, 'access-control-allow-origin'), cors_headers
+          assert 'true' in [value.lower() for value in header_values(cors_headers, 'access-control-allow-credentials')], cors_headers
+
+          oauth_headers = read_headers(oauth_headers_path)
+          assert oauth_status in {'302', '307'}, oauth_status
+          locations = header_values(oauth_headers, 'location')
+          assert len(locations) == 1, len(locations)
+          location = locations[0]
+          parsed = urlsplit(location)
+          assert parsed.scheme == 'https' and parsed.netloc == 'accounts.google.com', parsed.netloc
+          redirect_uri = parse_qs(parsed.query).get('redirect_uri', [None])[0]
+          assert redirect_uri == frontend_origin + '/api/auth/callback/google', redirect_uri
+
+          cookies = header_values(oauth_headers, 'set-cookie')
+          assert cookies, 'OAuth response did not set a session cookie'
+          cookie_policy = cookies[0].lower()
+          assert 'httponly' in cookie_policy, 'OAuth session cookie missing HttpOnly'
+          assert 'secure' in cookie_policy, 'OAuth session cookie missing Secure'
+          assert 'samesite=none' in cookie_policy, 'OAuth session cookie missing SameSite=None'
+
+          print('C-09 live acceptance PASS; canary=' + canary['state'] + '; frontend/proxy/cors/oauth=candidate')
           PY
