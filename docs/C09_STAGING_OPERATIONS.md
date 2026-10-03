@@ -8,8 +8,10 @@ This document is the focused evidence record for `C-09 — Prepare staging and p
 
 - Tracking issue: #172
 - Original implementation PRs: #173 and #174, merged
+- Current continuation PR: #178
 - Current continuation branch: `c09-live-acceptance-probe`
 - Current main baseline incorporated into the branch: `07b8ec2fab0169b614c122b09941527dcb8da549`
+- Render service: `jobgrid-api` (`srv-dalu7u3l550s73ch5lu0`)
 - Release operator: account owner with authorized Vercel, Render, Supabase, OAuth, and controlled-test-account access
 - Infrastructure constraint: zero-dollar-first. Do not silently upgrade Vercel, Render, or Supabase to a paid plan.
 
@@ -87,7 +89,7 @@ During this execution the exact source was redeployed from the checked-in conten
 
 The redeploy produced the same bundle hash as the previously active version 16.
 
-### Render public readiness
+### Render backend and redeploy durability
 
 Backend origin:
 
@@ -95,22 +97,59 @@ Backend origin:
 https://jobgrid-api.onrender.com
 ```
 
-The repository already contains a bounded live acceptance workflow at `.github/workflows/c09-live-acceptance-probe.yml`. A fresh rerun on 2026-10-03 successfully verified:
+Live service configuration observed through Render:
+
+- service: `jobgrid-api`
+- service ID: `srv-dalu7u3l550s73ch5lu0`
+- workspace: `Job Grid`
+- plan: Free
+- region: Singapore
+- branch: `main`
+- root directory: `backend`
+- instances: 1
+- auto deploy: enabled
+- provider health check: `/health`
+
+Before the explicit redeploy, the live deployment was SHA `c56cb83195ab1ac5cd691860c77cf1e85e1805dc`. The newer `main` SHA only contained documentation changes, so the backend runtime behavior was unchanged.
+
+An explicit Render API redeploy was then executed:
+
+- deploy ID: `dep-db0dteu0tbcc73fdhh30`
+- deployed SHA: `07b8ec2fab0169b614c122b09941527dcb8da549`
+- trigger: API
+- started: `2026-10-03T10:53:47Z`
+- status: `live`
+- finished: `2026-10-03T10:55:16Z`
+- new observed Render instance: `srv-dalu7u3l550s73ch5lu0-bbs2r`
+
+This is an actual backend replacement, not only an HTTP wake-up.
+
+The bounded live acceptance workflow at `.github/workflows/c09-live-acceptance-probe.yml` was rerun after the deploy completed. It passed at `2026-10-03T10:55:49Z` and verified:
 
 - `/health` returns the established liveness contract
 - `/ready` reports `database=ready`
 - `/ready` reports `document_storage=ready`
 - the Supabase durability canary reports `status=ready`
 - the canary reports `state=verified`
-- the canary is exactly 33 bytes
+- the canary remains exactly 33 bytes
 
-The run observed one initial 30-second timeout before a retry succeeded. This is consistent with the operational cold-start behavior expected from Render Free and must remain visible in release evidence rather than being hidden.
+Therefore the fixed Supabase object survived a real Render backend replacement and loss of the previous instance-local cache. This proves provider-level durable storage for the fixed canary. It does **not** substitute for the still-required authenticated JobGrid document upload/download and ZIP-byte proof.
+
+An earlier probe on the same day observed one initial 30-second timeout before a retry succeeded. That was recorded as Render Free cold-start behavior rather than hidden. The post-redeploy verification completed without that timeout.
 
 ### Vercel frontend
 
-GitHub's Vercel integration previously recorded the JobGrid project as `csv-website` with project ID `prj_oJERSKpABAhvWisTwHiuendqMNlI` and successful preview deployments.
+GitHub's Vercel integration records the JobGrid project as:
 
-The currently connected Vercel integration cannot list or fetch that deployment and returns an authorization/permission failure. Therefore the active production frontend URL, current project ownership, and production deployment remain **BLOCKED external evidence**. Do not invent a production URL from an old preview alias.
+- project name: `csv-website`
+- project ID: `prj_oJERSKpABAhvWisTwHiuendqMNlI`
+- team ID: `team_egcPPM96nH8NmGrz8zMUfPSQ`
+- team slug: `openclawneutron-4687s-projects`
+- main SHA `07b8ec2fab0169b614c122b09941527dcb8da549` has a successful Vercel deployment status
+
+The currently connected Vercel integration can see the correct team but lists only `orderly-app`. Requests for the known JobGrid deployment return `403 forbidden`, with the connector explicitly reporting that the Vercel connection must be updated to authorize the deployment's project/team.
+
+Therefore the active production frontend URL and actual-domain CORS/cookie/OAuth verification remain **BLOCKED on Vercel connector authorization**. Do not invent a production URL from an old preview alias.
 
 ## C-09 checkpoint status
 
@@ -120,15 +159,16 @@ The currently connected Vercel integration cannot list or fetch that deployment 
 
 Demonstrated:
 
-- Render backend origin
+- exact Render service ID, backend origin, plan, region, branch, health path, instance count and deployed SHA
 - Supabase project, region, database version, migration revision, capacity observation
 - Supabase Storage bucket and Edge Function
+- Vercel JobGrid project/team IDs from GitHub deployment evidence
 - zero-dollar topology
 - gateway source and deployment procedure are versioned
 
 Still required:
 
-- active Vercel production frontend URL/project ownership
+- active Vercel production frontend URL under an authorized Vercel connection
 - final C-09 candidate SHA after the continuation PR passes CI and is merged/deployed
 
 ### C-09.02 — durable private document storage
@@ -140,15 +180,15 @@ Demonstrated:
 - durable bytes live in private Supabase Storage, not Render local storage
 - live backend `/ready` can reach the configured storage gateway
 - fixed durability canary created previously and remains readable today
-- the canary survived later application/provider activity and the Edge Function was reproducibly redeployed from repository source
+- the canary survived an exact-source Edge Function redeploy
+- the canary survived an explicit Render backend redeploy to a new instance
 - bucket remains private and bounded by the 10 MiB provider upload limit
 
 Still required for the checkpoint's full proof:
 
 - authenticated synthetic JobGrid document upload and download with recorded SHA-256
 - storage audit against that synthetic document
-- explicit Render restart/cache-loss proof
-- explicit Render backend redeploy proof on the selected candidate
+- repeat the authenticated document hash check after a Render restart/redeploy
 - authenticated ZIP backup export proving exact remote document bytes are included
 
 ### C-09.03 — production configuration and actual domains
@@ -200,11 +240,13 @@ Demonstrated:
 - PostgreSQL 17.6
 - Alembic revision 018
 - max connections 60
-- live `/ready` passes database + storage
+- live `/ready` passes database + storage before and after an explicit backend redeploy
 - one backend instance
+- exact deployed backend SHA recorded
+- migration startup logs observed on the replacement instance
 - migration failure blocks successful startup under the existing backend contract
 
-Still required: verify the selected frontend and backend revisions together during the final rollout/redeploy sequence.
+Still required: verify the selected frontend and backend revisions together after Vercel project authorization is restored.
 
 ### C-09.06 — synthetic staging accounts and controlled external accounts
 
@@ -250,20 +292,19 @@ Still required: execute a deliberately safe induced failure and confirm the oper
 
 **Status: REPOSITORY-READY / BLOCKERS EXPLICIT**
 
-The existing release validator remains the acceptance mechanism. Public evidence must contain only safe states, SHAs, run IDs, hashes, counts, and blocker descriptions. Secrets and private user data stay out of the repository.
+The existing release validator remains the acceptance mechanism. Public evidence must contain only safe states, SHAs, run IDs, hashes, counts, deploy IDs, and blocker descriptions. Secrets and private user data stay out of the repository.
 
 C-09 must remain open until the external items below are completed.
 
 ## Remaining external closure actions
 
-1. Confirm the Render workspace for connector operations, then read the live service/deploy history and perform an explicit safe restart/redeploy durability check on the selected backend candidate.
-2. Run an authenticated synthetic JobGrid document upload/download, record the SHA-256, run `backend/scripts/c09_storage_audit.py`, and repeat after cache loss/redeploy.
-3. Export an authenticated complete ZIP and verify its document bytes match the synthetic document hash.
-4. Re-authorize the Vercel connection for the JobGrid project/team or otherwise provide access to the active project. Record the real production frontend URL and verify HTTPS/API/CORS/cookies/OAuth callback behavior.
-5. Prepare controlled synthetic/OAuth/email test accounts.
-6. Agree and record RPO/RTO, backup schedule, retention, private off-platform destination, and owner. Rehearse database + object recovery into disposable staging and record measured recovery results.
-7. Execute a safe induced failure and confirm the operator signal is visible.
-8. Prepare the private release-evidence file and run the existing validator.
+1. Run an authenticated synthetic JobGrid document upload/download, record the SHA-256, run `backend/scripts/c09_storage_audit.py`, and repeat the hash/audit across a controlled Render restart or redeploy.
+2. Export an authenticated complete ZIP and verify its document bytes match the synthetic document hash.
+3. Re-authorize the Vercel connection for JobGrid project `prj_oJERSKpABAhvWisTwHiuendqMNlI` under team `team_egcPPM96nH8NmGrz8zMUfPSQ`. Record the real production frontend URL and verify HTTPS/API/CORS/cookies/OAuth callback behavior.
+4. Prepare controlled synthetic/OAuth/email test accounts.
+5. Agree and record RPO/RTO, backup schedule, retention, private off-platform destination, and owner. Rehearse database + object recovery into disposable staging and record measured recovery results.
+6. Execute a safe induced failure and confirm the operator signal is visible.
+7. Prepare the private release-evidence file and run the existing validator.
 
 ## Rollback
 
