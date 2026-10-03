@@ -18,6 +18,11 @@ Backend manifest:
 
 - `render.yaml`
 
+Frontend production routing:
+
+- `frontend/.env.production`
+- `frontend/vercel.json`
+
 Storage gateway source and operations:
 
 - `supabase/functions/jobgrid-storage/index.ts`
@@ -33,6 +38,37 @@ Operational evidence:
 - `docs/C09_STAGING_OPERATIONS.md`
 - `.github/workflows/c09-live-acceptance-probe.yml`
 - `backend/scripts/c09_storage_audit.py`
+
+## Production provider inventory
+
+### Vercel
+
+- project: `csv-website`
+- project ID: `prj_oJERSKpABAhvWisTwHiuendqMNlI`
+- team ID: `team_egcPPM96nH8NmGrz8zMUfPSQ`
+- production origin: `https://csv-website-steel.vercel.app`
+- current deployed application SHA observed for C-09: `07b8ec2fab0169b614c122b09941527dcb8da549`
+
+### Render
+
+- service: `jobgrid-api`
+- service ID: `srv-dalu7u3l550s73ch5lu0`
+- origin: `https://jobgrid-api.onrender.com`
+- region: Singapore
+- plan: Free
+- instances: 1
+- branch: `main`
+- current deployed application SHA observed for C-09: `07b8ec2fab0169b614c122b09941527dcb8da549`
+
+### Supabase
+
+- project: `jobgrid`
+- ref: `hzcycquvfkqwbqrbvnhe`
+- region: Singapore (`ap-southeast-1`)
+- PostgreSQL: 17.6
+- observed Alembic revision: `018`
+- Storage bucket: `jobgrid-documents`, private
+- Edge Function: `jobgrid-storage`, version 17 during C-09 evidence collection
 
 ## Backend deployment
 
@@ -65,15 +101,39 @@ AUTO_ARCHIVE_AFTER_DAYS=0
 AUTO_PURGE_AFTER_DAYS=0
 ```
 
+Production configuration fails closed if test auth is enabled, signing material is unsafe, production URLs are not public HTTPS, or CORS is not explicitly configured.
+
+## Frontend deployment and API topology
+
+The verified production Vercel project is `csv-website`, with stable production origin:
+
+```text
+https://csv-website-steel.vercel.app
+```
+
+Production builds use:
+
+```text
+VITE_API_URL=/api
+```
+
+`frontend/vercel.json` deliberately rewrites:
+
+```text
+/api/:path* -> https://jobgrid-api.onrender.com/:path*
+```
+
+The browser therefore uses same-origin JobGrid API URLs under the Vercel origin. The rewrite has Vercel rewrite caching disabled. Do not replace `/api` with a direct Render URL without re-reviewing CORS, OAuth callbacks, cookies, and release evidence.
+
+Verified live production behavior on 2026-10-03:
+
+- Vercel root returns HTTP 200 over HTTPS
+- `https://csv-website-steel.vercel.app/api/health` returns the Render liveness contract
+- `https://csv-website-steel.vercel.app/api/ready` returns database + document-storage readiness
+- Vercel responses include HSTS
+- direct Render CORS preflight accepts the exact Vercel production origin with credentials
+
 ## Supabase PostgreSQL
-
-Current project:
-
-- name: `jobgrid`
-- ref: `hzcycquvfkqwbqrbvnhe`
-- region: Singapore (`ap-southeast-1`)
-- PostgreSQL: 17.6
-- observed Alembic revision: `018`
 
 Render owns the application `DATABASE_URL` as a secret environment value. Do not commit it.
 
@@ -134,16 +194,17 @@ The checked-in Edge Function is the reproducible source of truth:
 supabase/functions/jobgrid-storage/index.ts
 ```
 
-Deploy it to the `jobgrid` project as the function `jobgrid-storage` while preserving `verify_jwt=false`. That setting is intentional because the function implements its own constant-time server-to-server token check.
+Deploy it to the `jobgrid` project as `jobgrid-storage` while preserving `verify_jwt=false`. That setting is intentional because the function implements its own constant-time server-to-server token check.
 
 After deployment:
 
 1. confirm the function is `ACTIVE`;
 2. verify the private bucket is unchanged;
-3. verify `/ready`;
-4. verify the fixed C-09 durability canary;
-5. run an authenticated synthetic document upload/download/hash test;
-6. run the storage audit.
+3. verify direct Render `/ready`;
+4. verify Vercel `/api/ready`;
+5. verify the fixed C-09 durability canary;
+6. run an authenticated synthetic document upload/download/hash test;
+7. run the storage audit.
 
 The fixed unauthenticated canary can touch only `_ops/c09-durability-canary.txt`. It cannot name or operate on user objects.
 
@@ -166,15 +227,59 @@ Deployment readiness requires both:
 
 A healthy response exposes safe component states only. It must not include secrets, database URLs, provider exceptions, filesystem paths, or private object names.
 
+## OAuth and cookies
+
+OAuth provider credentials remain on Render only. `TEST_AUTH=false` is mandatory in production. Dev/test login never counts as real OAuth evidence.
+
+The verified Google OAuth entrypoint is:
+
+```text
+https://csv-website-steel.vercel.app/api/auth/login/google
+```
+
+On 2026-10-03 it returned a Google authorization redirect whose `redirect_uri` was exactly:
+
+```text
+https://csv-website-steel.vercel.app/api/auth/callback/google
+```
+
+The OAuth state session cookie was verified to have:
+
+- `HttpOnly`
+- `Secure`
+- `SameSite=None`
+
+The reusable live probe validates these properties without logging the session-cookie value. A controlled provider identity is still required to prove full OAuth completion and authenticated return behavior.
+
 ## Live C-09 probe
 
-`.github/workflows/c09-live-acceptance-probe.yml` checks the public staging surfaces with bounded retries:
+`.github/workflows/c09-live-acceptance-probe.yml` checks public production/staging surfaces with bounded retries and safe assertions:
 
-- Render `/health`
-- Render `/ready`
+- direct Render `/health`
+- direct Render `/ready`
+- Vercel production root
+- Vercel `/api/health`
+- Vercel `/api/ready`
+- exact-origin credentialed CORS preflight
+- Google OAuth callback construction
+- OAuth session-cookie security attributes
 - Supabase fixed durability canary
 
+Run `37120458368`, job `111195385350`, passed this expanded probe on 2026-10-03.
+
 Render Free can cold-start after idle time. A timed-out first attempt followed by a successful bounded retry must remain visible in evidence. Do not reinterpret cold-start latency as storage corruption, and do not hide repeated failures.
+
+## Render redeploy durability evidence
+
+C-09 explicitly redeployed `jobgrid-api` through the Render API:
+
+- deploy: `dep-db0dteu0tbcc73fdhh30`
+- SHA: `07b8ec2fab0169b614c122b09941527dcb8da549`
+- result: `live`
+
+A replacement Render instance was observed and the post-redeploy live readiness/canary probe passed. This proves the fixed Supabase canary survives backend replacement and is not dependent on Render local cache.
+
+It does not replace authenticated document-byte acceptance.
 
 ## Document durability acceptance
 
@@ -182,38 +287,17 @@ Full C-09 storage proof requires an authenticated synthetic JobGrid document, no
 
 For the selected candidate:
 
-1. upload a small synthetic document through JobGrid;
-2. download it and record SHA-256;
-3. run `backend/scripts/c09_storage_audit.py`;
-4. force/observe loss of Render local cache or an explicit service restart;
-5. download again and confirm the same SHA-256;
-6. redeploy the same backend candidate;
-7. repeat download and audit;
+1. complete a controlled OAuth login and use a synthetic/nonprivate JobGrid account;
+2. upload a small synthetic document through JobGrid;
+3. download it and record SHA-256;
+4. run `backend/scripts/c09_storage_audit.py`;
+5. force/observe loss of Render local cache or another controlled service replacement;
+6. download again and confirm the same SHA-256;
+7. repeat the storage audit;
 8. export a complete authenticated ZIP backup;
 9. verify the ZIP contains the exact document bytes/hash.
 
 This proves durable bytes are independent of Render's ephemeral filesystem.
-
-## Frontend deployment
-
-Vercel project settings should be:
-
-- root directory: `frontend`
-- framework: Vite
-- build: `npm run build`
-- output: `dist`
-
-`frontend/vercel.json` supplies SPA fallback behavior.
-
-`VITE_API_URL` must point to the selected Render HTTPS origin unless a deliberate reverse proxy is configured. The final frontend origin must match backend CORS, OAuth callbacks, cookie behavior, and release evidence.
-
-Do not infer a production URL from an old preview deployment. Verify the active Vercel project and production alias directly.
-
-## OAuth and cookies
-
-OAuth provider credentials remain on Render only. Production acceptance requires the real HTTPS frontend/backend domains and a controlled provider test identity.
-
-`TEST_AUTH=false` is mandatory in production. Dev/test login never counts as real OAuth evidence.
 
 ## Backup and disaster recovery
 
@@ -230,7 +314,7 @@ A complete environment recovery package must protect both:
 - PostgreSQL data
 - private Supabase Storage objects
 
-Before staging acceptance, record:
+Before C-09 closes, record:
 
 - RPO
 - RTO
@@ -253,6 +337,12 @@ The repository's database-only backup scripts are not sufficient for object reco
 ## Rollback
 
 Code rollback must preserve durable data.
+
+### Frontend rollback
+
+1. promote or redeploy the previous compatible Vercel production deployment;
+2. preserve the `/api` contract unless the backend/CORS/OAuth configuration is deliberately changed with it;
+3. verify root, `/api/health`, `/api/ready`, and OAuth entrypoint.
 
 ### Backend rollback
 
@@ -278,16 +368,20 @@ Do not automatically downgrade the database schema to recover an application dep
 - [x] gateway source is versioned in the repository
 - [x] gateway deployment/rotation/rollback procedure is documented
 - [x] live gateway redeployed reproducibly from checked-in source
-- [x] live `/health`, `/ready`, and fixed durability canary pass
+- [x] live Render `/health`, `/ready`, and fixed durability canary pass
+- [x] explicit Render backend redeploy completed and canary survived replacement
+- [x] active Vercel production project and URL verified
+- [x] Vercel `/api` proxy to Render verified
+- [x] exact-domain CORS wiring verified
+- [x] production OAuth callback construction and cookie policy verified
+- [ ] controlled real OAuth login completes successfully
 - [ ] authenticated synthetic document upload/download/hash proof
-- [ ] storage audit before/after Render cache loss or restart
-- [ ] backend redeploy durability proof on the selected candidate
+- [ ] storage audit before/after controlled backend cache loss/replacement
 - [ ] complete ZIP includes exact remote document bytes
-- [ ] active Vercel production project/URL verified
-- [ ] actual-domain CORS/cookie/OAuth configuration verified
 - [ ] controlled synthetic/OAuth/email accounts ready
 - [ ] RPO/RTO, backup schedule/retention/destination/owner agreed
 - [ ] database + object recovery rehearsed to disposable staging
+- [ ] scheduler/lease restart behavior exercised in controlled staging
 - [ ] safe induced failure is operator-visible
 - [ ] private release-evidence file validates for C-10 handoff
 
