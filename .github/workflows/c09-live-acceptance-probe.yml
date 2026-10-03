@@ -27,6 +27,8 @@ jobs:
           cors_headers="$(mktemp)"
           cors_body="$(mktemp)"
           oauth_headers="$(mktemp)"
+          auth_me_headers="$(mktemp)"
+          auth_me_body="$(mktemp)"
 
           curl --fail --silent --show-error \
             --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
@@ -48,6 +50,10 @@ jobs:
             --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
             "$frontend_origin/api/ready" > "$proxy_ready_file"
 
+          auth_me_status="$(curl --silent --show-error --max-time 30 \
+            -D "$auth_me_headers" -o "$auth_me_body" -w '%{http_code}' \
+            "$frontend_origin/api/auth/me")"
+
           curl --fail --silent --show-error \
             --retry 6 --retry-delay 5 --retry-all-errors --max-time 30 \
             'https://hzcycquvfkqwbqrbvnhe.supabase.co/functions/v1/jobgrid-storage?action=c09-canary' > "$canary_file"
@@ -66,8 +72,8 @@ jobs:
 
           python - \
             "$health_file" "$ready_file" "$proxy_health_file" "$proxy_ready_file" \
-            "$canary_file" "$cors_headers" "$oauth_headers" \
-            "$frontend_status" "$cors_status" "$oauth_status" "$frontend_origin" <<'PY'
+            "$canary_file" "$cors_headers" "$oauth_headers" "$auth_me_headers" "$auth_me_body" \
+            "$frontend_status" "$cors_status" "$oauth_status" "$auth_me_status" "$frontend_origin" <<'PY'
           import json
           import sys
           from urllib.parse import parse_qs, urlsplit
@@ -80,9 +86,12 @@ jobs:
               canary_path,
               cors_headers_path,
               oauth_headers_path,
+              auth_me_headers_path,
+              auth_me_body_path,
               frontend_status,
               cors_status,
               oauth_status,
+              auth_me_status,
               frontend_origin,
           ) = sys.argv[1:]
 
@@ -117,9 +126,16 @@ jobs:
           assert frontend_status == '200', frontend_status
           assert proxy_health == {'status': 'ok'}, proxy_health
           assert proxy_ready == ready, (proxy_ready, ready)
+          assert auth_me_status == '401', auth_me_status
           assert canary.get('status') == 'ready', canary
           assert canary.get('state') in {'created', 'verified'}, canary
           assert canary.get('size_bytes') == 33, canary
+
+          auth_me_headers = read_headers(auth_me_headers_path)
+          with open(auth_me_body_path, encoding='utf-8') as handle:
+              auth_me_body = json.load(handle)
+          assert auth_me_body.get('detail') == 'Not authenticated', auth_me_body
+          assert not header_values(auth_me_headers, 'retry-after'), auth_me_headers
 
           cors_headers = read_headers(cors_headers_path)
           assert cors_status == '200', cors_status
@@ -143,5 +159,5 @@ jobs:
           assert 'secure' in cookie_policy, 'OAuth session cookie missing Secure'
           assert 'samesite=none' in cookie_policy, 'OAuth session cookie missing SameSite=None'
 
-          print('C-09 live acceptance PASS; canary=' + canary['state'] + '; frontend/proxy/cors/oauth=candidate')
+          print('C-09 live acceptance PASS; canary=' + canary['state'] + '; frontend/proxy/auth-me/cors/oauth=candidate')
           PY
