@@ -155,7 +155,7 @@ jobs:
             node --input-type=module -e "import { chromium } from 'playwright'; const browser = await chromium.launch({ headless: true }); console.log(browser.version()); await browser.close();"
           } > ci-artifacts/jg023-browser-release-evidence.txt
 
-      - name: Run frontend unit regressions
+      - name: Run tab-helper safety regressions
         run: node --test unit/*.test.mjs
 
       - name: Verify JG-023 browser release collection is nonempty
