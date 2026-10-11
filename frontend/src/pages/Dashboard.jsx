@@ -10,7 +10,7 @@ import BackupRestore from '../components/BackupRestore'
 import RetentionSettings from '../components/RetentionSettings'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
-const DEFAULT_FILTERS = { atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false, uniqueCompany: false, confirmedUsa: false }
+const DEFAULT_FILTERS = { groupBy: '', atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false, uniqueCompany: false, confirmedUsa: false }
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 const DENSITY_OPTIONS = ['comfortable', 'compact', 'dense']
@@ -229,6 +229,7 @@ export default function Dashboard() {
   const [sort, setSort] = useState(initialNavigation.sort)
   const [filters, setFilters] = useState(initialFilters)
   const [filterOptions, setFilterOptions] = useState(EMPTY_FILTER_OPTIONS)
+  const [groupCounts, setGroupCounts] = useState({})
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [columnsCollapsed, setColumnsCollapsed] = useState(true)
   const [collapsedSections, setCollapsedSections] = useState(() => {
@@ -292,6 +293,7 @@ export default function Dashboard() {
       if (requestId !== requestSequenceRef.current) return
       setColumns(d.columns)
       setRows(d.rows)
+      setGroupCounts(d.group_counts || {})
       setStats(normalizeStats(d.stats))
       setFilterOptions(normalizeFilterOptions(d.filter_options))
       setColumnOrder((prev) => mergeColumnOrder(prev, d.columns))
@@ -317,6 +319,7 @@ export default function Dashboard() {
 
       setColumns(rowData.columns)
       setRows(rowData.rows)
+      setGroupCounts(rowData.group_counts || {})
       setStats(normalizeStats(rowData.stats))
       setFilterOptions(normalizeFilterOptions(rowData.filter_options))
       setHidden(savedHidden)
@@ -799,6 +802,21 @@ export default function Dashboard() {
           </div>
 
           <div>
+            <label htmlFor="group-by">Group by</label>
+            <select
+              id="group-by"
+              value={filters.groupBy || ''}
+              onChange={(e) => updateFilter('groupBy', e.target.value)}
+            >
+              <option value="">No grouping</option>
+              <option value="company_guess">Company</option>
+              <option value="ats_group">ATS group</option>
+              <option value="is_usa_role">USA status</option>
+              <option value="rejection_reasons">Rejection reason</option>
+            </select>
+          </div>
+
+          <div>
             <label htmlFor="ats-group-filter">ATS group</label>
             <select
               id="ats-group-filter"
@@ -1045,6 +1063,8 @@ export default function Dashboard() {
             pinnedColumns={pinnedColumns}
             density={density}
             showAppStatus={!isAnmolView}
+            groupBy={filters.groupBy}
+            groupCounts={groupCounts}
           />
         )}
         {drawerRow && <RowDrawer row={drawerRow} onClose={() => setDrawerRow(null)} />}
