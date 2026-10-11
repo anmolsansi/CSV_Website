@@ -181,3 +181,58 @@ class TestPreferences:
         auth_client.put("/preferences", json={"hidden_columns": ["url"], "column_order": ["title"]})
         resp = auth_client.get("/preferences")
         assert "url" in resp.json()["hidden_columns"]
+
+
+class TestRowGrouping:
+    def test_groups_are_contiguous_across_pages_and_counts_are_global(self, auth_client):
+        auth_client.post("/test/reset")
+        auth_client.post("/test/seed")
+        response = auth_client.get("/rows", params={
+            "group_by": "ats_group", "sort_by": "title", "page_size": 3,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["group_by"] == "ats_group"
+        assert len(data["rows"]) == 3
+        assert data["total_count"] >= 20
+        assert data["group_counts"]
+
+        full = auth_client.get("/rows", params={
+            "group_by": "ats_group", "sort_by": "title", "page_size": 500,
+        }).json()
+        keys = [(r["data"]["ats_group"] or "").strip().lower() for r in full["rows"]]
+        assert keys == sorted(keys)
+        for key, total in data["group_counts"].items():
+            assert total == keys.count(key)
+
+        second = auth_client.get("/rows", params={
+            "group_by": "ats_group", "sort_by": "title", "page_size": 3, "page": 2,
+        }).json()
+        assert {r["id"] for r in data["rows"]}.isdisjoint({r["id"] for r in second["rows"]})
+        assert second["group_counts"]
+
+    def test_grouping_composes_with_filters_and_column_selection(self, auth_client):
+        auth_client.post("/test/reset")
+        auth_client.post("/test/seed")
+        for column in ("company_guess", "ats_group", "is_usa_role", "rejection_reasons"):
+            response = auth_client.get("/rows", params={
+                "group_by": column,
+                "ats_group": "greenhouse",
+                "page_size": 500,
+            })
+            assert response.status_code == 200, column
+            data = response.json()
+            assert all((r["data"]["ats_group"] or "").lower() == "greenhouse" for r in data["rows"])
+            assert sum(data["group_counts"].values()) == data["total_count"]
+
+    def test_invalid_group_is_rejected(self, auth_client):
+        response = auth_client.get("/rows", params={"group_by": "url"})
+        assert response.status_code == 422
+
+    def test_ungrouped_response_is_backward_compatible(self, auth_client):
+        auth_client.post("/test/seed")
+        response = auth_client.get("/rows")
+        assert response.status_code == 200
+        assert response.json()["group_by"] is None
+        assert response.json()["group_counts"] == {}
+
