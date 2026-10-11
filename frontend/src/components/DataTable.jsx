@@ -3,7 +3,8 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { groupTableRows } from './grouping'
 
 function sortIndicator(columnId, sort) {
   if (!sort || sort.sortBy !== columnId) {
@@ -45,6 +46,8 @@ export default function DataTable({
   pinnedColumns = [],
   density = 'comfortable',
   showAppStatus = true,
+  groupBy = '',
+  groupCounts = {},
 }) {
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hidden.includes(c)),
@@ -105,6 +108,19 @@ export default function DataTable({
     getCoreRowModel: getCoreRowModel(),
   })
 
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set())
+  useEffect(() => setCollapsedGroups(new Set()), [groupBy])
+
+  const groupedRows = groupTableRows(table.getRowModel().rows, groupBy)
+  const toggleGroup = (key) => {
+    setCollapsedGroups((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const selectedCount = selectedRowIds?.size || 0
   const allSelected = rows.length > 0 && selectedCount === rows.length
 
@@ -160,8 +176,30 @@ export default function DataTable({
           ))}
         </thead>
         <tbody>
-          {table.getRowModel().rows.map((r) => {
-            const original = r.original
+          {groupedRows.map((group) => (
+            <Fragment key={group.key}>
+              {groupBy && (
+                <tr className="job-group-header" role="row">
+                  <td colSpan={tableColumns.length + 1}>
+                    <button
+                      type="button"
+                      className="job-group-toggle"
+                      aria-expanded={!collapsedGroups.has(group.key)}
+                      onClick={() => toggleGroup(group.key)}
+                      title={group.label}
+                    >
+                      <span aria-hidden="true" className="job-group-chevron">{collapsedGroups.has(group.key) ? '▶' : '▼'}</span>
+                      <span className="job-group-name">{group.label}</span>
+                      <span className="job-group-count">{groupCounts[group.key] ?? group.rows.length} jobs</span>
+                      {(groupCounts[group.key] ?? group.rows.length) > group.rows.length && (
+                        <span className="job-group-page-count">{group.rows.length} on this page</span>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {!collapsedGroups.has(group.key) && group.rows.map((r) => {
+                const original = r.original
             return (
               <tr
                 key={r.id}
@@ -191,7 +229,9 @@ export default function DataTable({
                 })}
               </tr>
             )
-          })}
+              })}
+            </Fragment>
+          ))}
         </tbody>
       </table>
       {rows.length === 0 && (
