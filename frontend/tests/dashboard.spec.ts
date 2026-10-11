@@ -95,6 +95,45 @@ test.describe('Dashboard', () => {
     await page.waitForTimeout(1000);
   });
 
+  test('groups jobs by company with expandable headers and preserves row actions', async ({ page }) => {
+    const selector = page.getByLabel('Group by');
+    await selector.selectOption('company_guess');
+
+    const firstGroup = page.locator('tbody .job-group-header').first();
+    await expect(firstGroup).toBeVisible();
+    await expect(firstGroup.locator('.job-group-count')).toContainText('jobs');
+    const firstToggle = firstGroup.locator('button');
+    await expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
+
+    const rowCheckboxes = page.locator('tbody input[aria-label^="Select row"]');
+    const before = await rowCheckboxes.count();
+    expect(before).toBeGreaterThan(0);
+
+    await firstToggle.click();
+    await expect(firstToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(await rowCheckboxes.count()).toBeLessThan(before);
+
+    await firstToggle.click();
+    await expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(rowCheckboxes).toHaveCount(before);
+    await rowCheckboxes.first().check();
+    await expect(page.locator('.sticky-toolbar')).toContainText('1 selected');
+  });
+
+  test('supports USA and rejection reason grouping from URL state', async ({ page }) => {
+    await page.goto('/?group_by=is_usa_role');
+    const selector = page.getByLabel('Group by');
+    await expect(selector).toHaveValue('is_usa_role');
+    await expect(page.locator('tbody .job-group-header').first()).toBeVisible();
+
+    await selector.selectOption('rejection_reasons');
+    await expect(selector).toHaveValue('rejection_reasons');
+    await expect(page.locator('tbody .job-group-header').first()).toBeVisible();
+
+    await selector.selectOption('');
+    await expect(page.locator('tbody .job-group-header')).toHaveCount(0);
+  });
+
   test('filter by ATS group', async ({ page }) => {
     const atsFilter = page.locator('#ats-group-filter');
     await expect(atsFilter).toBeVisible();
