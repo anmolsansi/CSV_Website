@@ -6,6 +6,7 @@ const DASHBOARD_FIELDS = [
   ['sortDir', 'sort_dir', 'string'],
   ['archiveScope', 'archive_scope', 'string'],
   ['atsGroup', 'ats_group', 'string'],
+  ['groupBy', 'group_by', 'string'],
   ['locationGroup', 'location_group', 'string'],
   ['searchBucket', 'search_bucket', 'string'],
   ['decision', 'decision', 'string'],
