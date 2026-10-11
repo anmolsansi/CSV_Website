@@ -107,6 +107,42 @@ th { background: #f3f4f6; position: sticky; top: 0; }
 .table-header-button { border: none; background: transparent; cursor: pointer; font: inherit; font-weight: 700; padding: 0; text-align: left; width: 100%; }
 .table-header-button:hover { text-decoration: underline; }
 
+/* Expandable dashboard groups. Group counts cover every matching row, not only this page. */
+.job-group-header td {
+  padding: 0;
+  background: var(--color-surface-raised, #f9fafb);
+  border-top: 2px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+.job-group-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text, #111827);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.job-group-toggle:hover { background: var(--color-surface-hover, #f3f4f6); }
+.job-group-toggle:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.job-group-chevron { flex-shrink: 0; font-size: 11px; }
+.job-group-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 700; }
+.job-group-count {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-border, #e5e7eb);
+  color: var(--color-text-secondary, #374151);
+  font-size: 12px;
+  font-weight: 600;
+}
+.job-group-page-count { color: var(--color-text-muted, #6b7280); font-size: 12px; }
+
+
 .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
 .app-shell .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .main-nav { display: flex; gap: 2px; flex-wrap: wrap; }

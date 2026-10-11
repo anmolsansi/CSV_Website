@@ -24,6 +24,8 @@ from ..services.row_queries import (
     RowQuery,
     build_row_query,
     order_row_query,
+    normalize_row_group_value,
+    row_group_expression,
     resolve_row_sort_column,
 )
 from ..undo_schemas import UndoContractError
@@ -217,6 +219,7 @@ def list_rows(
     jd_missing: bool = Query(False),
     unique_company: bool = Query(False),
     confirmed_usa: bool = Query(False),
+    group_by: Literal["company_guess", "ats_group", "is_usa_role", "rejection_reasons"] | None = Query(None),
     clicked_today_start: str | None = Query(None),
     clicked_today_end: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -250,6 +253,7 @@ def list_rows(
         jd_missing=jd_missing,
         unique_company=unique_company,
         confirmed_usa=confirmed_usa,
+        group_by=group_by,
     )
     query = build_row_query(db, user.id, query_params)
     total_count = query.count()
@@ -260,6 +264,23 @@ def list_rows(
         .limit(page_size)
         .all()
     )
+
+    group_counts = {}
+    if group_by and rows:
+        group_expression = row_group_expression(group_by)
+        page_group_keys = {
+            normalize_row_group_value(getattr(row, group_by), group_by)
+            for row in rows
+        }
+        group_counts = {
+            key: count
+            for key, count in (
+                query.with_entities(group_expression, func.count(CsvRow.id))
+                .filter(group_expression.in_(page_group_keys))
+                .group_by(group_expression)
+                .all()
+            )
+        }
 
     row_ids = [r.id for r in rows]
     track_map = {}
@@ -272,6 +293,8 @@ def list_rows(
         "sort_by": sort_by,
         "sort_dir": sort_dir,
         "archive_scope": archive_scope,
+        "group_by": group_by,
+        "group_counts": group_counts,
         "filters": {
             "ats_group": ats_group or "",
             "unique_company": unique_company,

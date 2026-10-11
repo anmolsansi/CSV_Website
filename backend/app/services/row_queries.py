@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Literal
 
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import asc, case, desc, func, or_, select
 from sqlalchemy.orm import Query, Session
 
 from ..models import CSV_COLUMNS, CsvRow, JobTrack
@@ -33,6 +33,7 @@ class RowQuery:
     openable_only: bool = False
     unique_company: bool = False
     confirmed_usa: bool = False
+    group_by: Literal["company_guess", "ats_group", "is_usa_role", "rejection_reasons"] | None = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +188,38 @@ def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
     return query
 
 
+GROUPABLE_ROW_COLUMNS = frozenset({
+    "company_guess", "ats_group", "is_usa_role", "rejection_reasons",
+})
+
+
+def normalize_row_group_value(value: str | None, group_by: str) -> str:
+    """Match the SQL group key for headings and counts, including empty values."""
+    normalized = (value or "").strip().lower()
+    if group_by == "is_usa_role":
+        if normalized in ("true", "yes", "1"):
+            return "usa"
+        if normalized in ("false", "no", "0"):
+            return "not usa"
+        return ""
+    return normalized
+
+
+def row_group_expression(group_by: str):
+    """Use the same normalized key for server-side ordering and total counts."""
+    if group_by not in GROUPABLE_ROW_COLUMNS:
+        raise ValueError("Invalid group column")
+    column = getattr(CsvRow, group_by)
+    normalized = func.lower(func.trim(column))
+    if group_by == "is_usa_role":
+        return case(
+            (normalized.in_(("true", "yes", "1")), "usa"),
+            (normalized.in_(("false", "no", "0")), "not usa"),
+            else_="",
+        )
+    return func.coalesce(normalized, "")
+
+
 def order_row_query(
     query: Query,
     params: RowQuery,
@@ -195,6 +228,12 @@ def order_row_query(
     resolver = sort_column_resolver or resolve_row_sort_column
     sort_column = resolver(params.sort_by)
     order_func = asc if params.sort_dir == "asc" else desc
+    if params.group_by:
+        return query.order_by(
+            row_group_expression(params.group_by).asc(),
+            order_func(sort_column).nullslast(),
+            CsvRow.id.desc(),
+        )
     return query.order_by(order_func(sort_column).nullslast(), CsvRow.id.desc())
 
 

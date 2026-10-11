@@ -77,6 +77,20 @@ Upload behavior:
 - Rows missing `url` are skipped and can be downloaded as an invalid-rows CSV.
 - Missing optional columns are shown as context, not as upload errors.
 
+## Grouped Dashboard
+
+In **Sort & filters**, use **Group by** to organize the Dashboard by company,
+ATS group, USA status, or rejection reason. Groups can be expanded or collapsed
+independently. The existing sort field and direction determine the order of jobs
+*within* each group. Missing or unclear values appear under **Unknown**.
+
+Grouping is applied to the entire filtered result set on the server, before
+pagination. A group spanning pages shows its full matching job count alongside
+the number currently visible on that page. Bulk selection, opening links, and
+exports still use the existing row and filter scopes. Rejection reasons are
+grouped by their entire stored value, so combined reasons remain one category.
+The grouping choice is also supported in saved-view URLs.
+
 ## Core Workflow
 
 1. Upload a CSV.

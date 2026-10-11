@@ -156,7 +156,7 @@ jobs:
           } > ci-artifacts/jg023-browser-release-evidence.txt
 
       - name: Run tab-helper safety regressions
-        run: node --test unit/open-jobs.test.mjs
+        run: node --test unit/*.test.mjs
 
       - name: Verify JG-023 browser release collection is nonempty
         shell: bash
