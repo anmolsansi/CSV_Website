@@ -2902,3 +2902,137 @@ Add `job_visits_v1` as a checksummed optional backup extension using the reposit
 Before enabling the new exporter, verify what existing readers do with unknown optional extensions. If legacy code cannot safely read/skip it, add a capability/version rejection with a clear compatibility message and retain export-to-old-format only when omissions are explicit. Never claim silent loss is a complete restore. Test this decision against real legacy fixtures. Visit delete/restore does not mutate application history, import memory, CSV row state or analytics. Clearing visits therefore does not clear a separately retained row click; UI must explain which evidence remains.
 
 Alembic adds only the visit/receipt tables/indexes; existing records/timestamps are unchanged, no speculative backfill. Preserve old-code rollback by leaving the added table in place and disabling extension calls. Downgrade that drops visit data is a deliberate export-first operator action, never automatic rollback. Restore receipts/rate windows/session settings are operational state, not recoverable private application truth; preserve existing backup exclusions and document any new receipt policy explicitly.
+
+### 9.5 Fifty implementation microtasks and builder handoff
+
+**Execution variables:** MAIN_TASK = Chrome job/company memory; REPOSITORY = `anmolsansi/CSV_Website`; BASE_BRANCH = revalidate remote default (`main` at planning); WORK_BRANCH / MAIN_GITHUB_ISSUE / MAIN_LINEAR_TASK / TARGET_VERSION / PULL_REQUEST = **not selected/created for this documentation request**. When implementation is authorized, discover and reuse existing task work, then choose a valid repository-convention branch if needed. Use one main issue with this checklist, not 50 issues; reuse project Linear work only if applicable. Do not manufacture tracking IDs.
+
+Each unchecked row is one ~2% microtask, not completed work. Percentage is a planning aid, not measured effort. Split a row if implementation exceeds one logical change; do not pad commits to preserve the count. Execute dependency order. The five-task bands are review checkpoints, not large commits.
+
+**Packet rules applying to every row:** Objective is its stated deliverable; rationale is the stated failure prevented. Files listed are the complete change scope plus the row's named tests and relevant guide paragraph; existing source may be inspected but unrelated edits are forbidden. Inspect current `docs/repo_context.md`, the relevant 9.4 contract, and actual callers/tests first. The contract below each band names test files/inspection anchors. New files are marked NEW in 9.3. Before dispatch, expand one row into the full Premium Product Builder ticket template: paste consumed contracts, request/response examples, exact allowed paths/current source, concrete steps, applicable states/errors/security rules, tests/manual QA, exclusions and escalation criteria. Include the skill's builder wrapper, relevant backend/API/database/security/testing/frontend rules, and current source contents. Run ticket intake with zero FAILs. These are planned tasks, **not pre-approved runnable packets**; dependencies must be accepted on the work branch before use (and merged before a separate branch consumes them).
+
+**Every row's Definition of Done:** deliverable exists; specified positive and failure validation passes; documentation impact is recorded; diff contains only allowed scope/no secrets; one meaningful commit references the main issue and `[NN/50]`; issue checklist/evidence and applicable Linear status agree. Documentation = update the owning section of `docs/JOBGRID_BUILD_GUIDE.md` when behavior/setup changes, and correct this plan/context if contracts change. Pure fixture/test rows record “None — regression only, no behavior/setup change” in the main issue. Commit scope = row's artifact/test/doc delta only. No runtime tests are claimed by writing this checklist.
+
+#### Band 1 — Freeze inputs and prove the auth seam (MAS-EXT-2)
+
+Inspect `auth.py`, `routers/auth_router.py`, `frontend/vercel.json`, `frontend/src/api/client.js`, current environment runbook; rules: security/API/testing.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-01 | Record selected pilot origins/account expectations; prevents connecting to the wrong service. | `extension/README.md`, `extension/config.js`; validate exact origin parsing, no credentials/wildcards; dep: none. Docs: setup. |
+| [ ] EXT-02 | Add minimal loadable MV3 shell and separate dev config; prevents accidental broad permissions. | `extension/manifest.json`, `extension/popup.html`, `extension/README.md`; load unpacked, assert permission allowlist; dep: 01. Docs: installation. |
+| [ ] EXT-03 | Implement isolated fixed-route session bridge; proves cookie reuse without token export. | `extension/jobgrid-bridge.js`, `extension/tests/bridge.test.mjs`; mocked trusted/untrusted sender and fixed-path assertions; dep: 02, protocol in 9.4. Docs: transport. |
+| [ ] EXT-04 | Add authenticated `/session` route and router registration; proves selected account binding. | `backend/app/routers/browser_memory.py`, `backend/app/main.py`, `backend/tests/test_browser_memory_api.py`; 200/401/no secret fields; dep: 01. Docs: API. |
+| [ ] EXT-05 | Run real Chrome signed-in proxy/session spike and account switch; retire the biggest uncertainty first. | `extension/README.md`, `frontend/tests/extension.spec.ts`; document dev plus selected deployed OAuth expected/actual, missing tab/401; dep: 03,04. No auth-dependent implementation until local spike passes; deployed proof remains a release gate if unavailable. |
+
+#### Band 2 — Durable visits (MAS-EXT-1)
+
+Inspect `models.py`, `routers/rows.py::record_click`, `services/validation.py`, `services/job_identity.py`, `018_bulk_undo_foundation.py`; rules: database/backend/testing. New test file: `backend/tests/test_browser_visits.py`.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-06 | Add visit/receipt models and next migration with owner uniqueness; external jobs need durable memory. | `models.py`, `backup_schemas.py` inventory, new `backend/alembic/versions/019_browser_visits.py` if still free, `test_browser_visits.py`; empty/populated upgrade and both tables/indexes SQLite/PostgreSQL; dep: 05 local proof. Docs: schema. |
+| [ ] EXT-07 | Add strict browser-memory request schemas and privacy URL validation; rejects unsafe input without fetching it. | `browser_memory_schemas.py`, `test_browser_visits.py`; wrong types/unknown fields/private host/userinfo/token query/2048 boundary; dep: 06. Docs: validation. |
+| [ ] EXT-08 | Insert once/replay one visit under owner lock and 10,000 cap; avoids duplicate events and unbounded growth. | `services/browser_memory.py`, `test_browser_visits.py`; duplicate/concurrent insert, collision, quota and rollback; dep: 07. Docs: visit semantics. |
+| [ ] EXT-09 | Reuse/extract row-visit mutation so an external visit updates matching existing rows only. | `routers/rows.py`, `services/browser_memory.py`, `test_browser_visits.py`, existing `test_rows.py`; first click preserved, no row/track/application/session-count creation; dep: 08. Docs: row relationship. |
+| [ ] EXT-10 | Add owner-only forget-visits service and account deletion coverage; provides privacy recovery. | `services/browser_memory.py`, `test_browser_visits.py`; A deletes own visits, B unaffected, repeats zero, application/row state unchanged; dep: 08. Docs: delete limits. |
+
+#### Band 3 — Accurate history lookup (MAS-EXT-1)
+
+Inspect `crm.py::_find_application_matches`, `services/job_identity.py`, `routers/company_aliases.py`, `test_application_memory.py`; rules: backend/API/testing. New test file: `backend/tests/test_browser_memory_matches.py`.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-11 | Move shared applied-match query into its owning identity service without changing existing API behavior. | `routers/crm.py`, `services/job_identity.py`, `test_application_memory.py`; trace every caller and assert response/error/order parity; dep: 07. Docs: source ownership only. |
+| [ ] EXT-12 | Guarantee exact/canonical lookups cannot be hidden by company scan limits. | `services/job_identity.py`, `test_browser_memory_matches.py`; >500 same-company newer records still find old exact job; bounded possible scan returns completeness; dep: 11. Docs: cap/completeness. |
+| [ ] EXT-13 | Compose visit evidence with application matches and alias-aware count; keeps saved/imported state distinct. | `services/browser_memory.py`, `test_browser_memory_matches.py`; clicked legacy record, external visit, imported-only/saved-only and account negatives; dep: 08,12. Docs: lookup. |
+| [ ] EXT-14 | Add `/check` route with frozen response and common errors. | `routers/browser_memory.py`, `browser_memory_schemas.py`, `backend/tests/test_browser_memory_api.py`; schema, timestamps/nulls, unauthenticated/no mutation; dep: 13. Docs: API. |
+| [ ] EXT-15 | Add identity matrix for different employer/role/job ID and tracking variants; prevents dangerous false certainty. | `test_browser_memory_matches.py`, `backend/tests/test_job_identity.py`; canonical positive, unknown query/path distinctions, aliases, advanced/archived statuses, no automatic merges; dep: 14. Docs: none, regression only. |
+
+#### Band 4 — Explicit and retry-safe application writes (MAS-EXT-1)
+
+Inspect `crm.py::bulk_create_from_rows`, `services/lifecycle.py`, `services/undo_foundation.py`, existing mutation receipt model and capture lock/retry; rules: backend/database/security/testing. New test file: `backend/tests/test_browser_memory_apply.py`.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-16 | Add service that explicitly applies a URL without CSV capture or synthetic opens. | `services/browser_memory.py`, `test_browser_memory_apply.py`; valid first application/event atomicity, validation failure zero writes; dep: 11,07. Docs: apply semantics. |
+| [ ] EXT-17 | Return existing applied exact/canonical track unchanged; preserves original timestamp and advanced status. | `services/browser_memory.py`, `test_browser_memory_apply.py`; retry after rejection/archive, same-company new role and possible match create separately; dep: 16. Docs: duplicate outcomes. |
+| [ ] EXT-18 | Bind apply request UUID/digest to bounded `browser_apply_receipts`. | `services/browser_memory.py`, `test_browser_memory_apply.py`; replay, altered payload 409, deleted target, expiry/cap and rollback/no stale success receipt; dep: 17. Docs: retry/receipt exclusions. |
+| [ ] EXT-19 | Expose `/visit`, `/apply`, `DELETE /visits` with literal confirmation and account guard. | `routers/browser_memory.py`, `browser_memory_schemas.py`, `test_browser_memory_api.py`; missing confirmation/key, no client owner override, 200 replay and error shape; dep: 10,18. Docs: endpoints. |
+| [ ] EXT-20 | Prove concurrent apply and lost-response retry across supported databases. | `test_browser_memory_apply.py`, `test_application_memory.py`; fresh sessions assert one application/event/first time, no click/count side effects, injected late rollback; dep: 19. Docs: none, regression only. |
+
+#### Band 5 — API security and portable history (MAS-EXT-1/5)
+
+Inspect request-window models/services, `backup_schemas.py`, `services/backup_sessions.py`, composed contact/mapping extensions; rules: security/API/database/testing. Keep existing unrelated routes/backups backward compatible.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-21 | Enforce per-account shared rate windows and exact write Origin/header checks. | `routers/browser_memory.py`, `services/browser_memory.py`, `backend/tests/test_browser_memory_security.py`; all limits, cross-process counter/rejected attempt, spoofed origin, account changed between session check and write, limiter failure 503; dep: 19. Docs: quotas/errors. |
+| [ ] EXT-22 | Define optional `job_visits_v1` schema/checksum and inventory classification. | `backup_schemas.py`, NEW `backend/app/browser_memory_backup_schemas.py`, `test_backup_contract.py`; invalid shape/time/hash/quota and missing extension; dep: 06. Docs: recovery format. |
+| [ ] EXT-23 | Compose visit metadata into JSON/ZIP exporters and enforce legacy-reader negotiation. | NEW `backend/app/services/browser_memory_backup.py`, owning composed exporter registration in `main.py`, `test_complete_backup.py`; both exports carry equivalent metadata and legacy fixtures give explicit compatibility outcome; dep: 22. Docs: export compatibility. |
+| [ ] EXT-24 | Preflight and restore visits within existing caller transaction. | `services/browser_memory_backup.py`, `services/backup_sessions.py`, `test_complete_backup.py`; owner remap, replay earliest time, invalid late section/union quota zero writes; dep: 23. Docs: restore. |
+| [ ] EXT-25 | Prove source deletion, restore and account purge preserve the intended memory boundaries. | `test_browser_visits.py`, `test_complete_backup.py`, `docs/BACKUP_STRATEGY.md`; source CSV delete retains visits/applications, forget visits keeps applications, account delete removes visits, restored backup can restore forgotten visits; dep: 24,10. Docs: recovery/privacy. |
+
+#### Band 6 — Connection and page metadata (MAS-EXT-2/3)
+
+Inspect Chrome references, frozen protocol and `extension/config.js`; rules: security/frontend/testing. Node tests under `extension/tests/` use native `node:test`; DOM behavior uses existing Playwright tooling.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-26 | Implement selected JobGrid tab/account connection and internal command dispatcher. | `extension/background.js`, `extension/tests/bridge.test.mjs`; exact host/tab/version/request limit, reject external/subframe/forged popup writes; dep: 05,14,19. Docs: connection. |
+| [ ] EXT-27 | Enforce account recheck, timeouts and stale-response cancellation. | `background.js`, `jobgrid-bridge.js`, `tests/bridge.test.mjs`; URL/account/tab changes mid-request and missing tab never display other account data; dep: 26. Docs: failure states. |
+| [ ] EXT-28 | Add exact ATS detail route classifier with safe URL handling. | `extension/site-rules.js`, `extension/tests/site-rules.test.mjs`; three hosts, spoofed suffix, listing/form/private scheme/query negatives; dep: 02. Docs: supported routes. |
+| [ ] EXT-29 | Extract editable public title/company candidates without reading forms. | `extension/job-page.js`, `extension/tests/fixtures/job-pages.html`, `frontend/tests/extension.spec.ts`; metadata/JSON-LD/display text, ambiguous/missing company null, hostile markup text only; dep: 28. Docs: metadata limits. |
+| [ ] EXT-30 | Register/unregister scripts per granted host and site opt-in. | `background.js`, `manifest.json`, `tests/bridge.test.mjs`; deny/revoke permission stops collection, install defaults off, unknown sites manual only; dep: 27,29. Docs: permissions. |
+
+#### Band 7 — Navigation and visit transport (MAS-EXT-2/3)
+
+Inspect selected-tab worker state and 9.4C; rules: security/testing. Never send full application/company history to `job-page.js`.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-31 | Trigger one check on qualifying top-level navigation with 500 ms debounce. | `background.js`, `extension/tests/navigation.test.mjs`; reload, SPA URL change, tab activation, duplicate events, subframe rejection; dep: 30. Docs: navigation. |
+| [ ] EXT-32 | Save visit only after successful check and preserve the pre-write warning. | `background.js`, `tests/navigation.test.mjs`; first visit not labeled previous, revisit yes, failed lookup zero visit; dep: 31,21. Docs: visit flow. |
+| [ ] EXT-33 | Implement current-tab gesture fallback for unsupported public pages. | `background.js`, `site-rules.js`, `tests/navigation.test.mjs`; no silent navigation monitoring, invalid URL rejection and explicit metadata input path; dep: 28,27. Docs: manual mode. |
+| [ ] EXT-34 | Bound session-only pending apply state and clear it on account/disconnect changes. | `background.js`, `tests/bridge.test.mjs`; worker suspension revalidates, restart disconnects, expiry <=24h, no private `storage.local`/sync; dep: 27. Docs: persistence. |
+| [ ] EXT-35 | Add pause/disconnect lifecycle and per-tab badge invalidation. | `background.js`, `tests/navigation.test.mjs`; old badge removed on navigation/revocation and detected logout (next session check; no promise of push logout detection), pause zero writes, no queue after reconnect; dep: 32,34. Docs: controls. |
+
+#### Band 8 — Concise popup and deliberate writes (MAS-EXT-4)
+
+Inspect 9.1 copy/priority and 9.4 messages; rules: frontend/security/testing. NEW `extension/tests/popup.test.mjs`; actual rendered states exercised by `frontend/tests/extension.spec.ts`.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-36 | Render check/loading/visited/applied/company/possible states with safe text. | `popup.html`, `popup.js`, `popup.css`, `tests/popup.test.mjs`; priority, null company/date and malicious title no HTML execution; dep: 26,33. Docs: user copy. |
+| [ ] EXT-37 | Render partial/offline/401/403/429/timeout/unsupported states honestly. | `popup.js`, `tests/popup.test.mjs`; no false no-history, Retry-After enforced, visit-save failure distinct from check; dep: 36,32. Docs: troubleshooting. |
+| [ ] EXT-38 | Add editable employer/title and one explicit account/URL confirmation before apply. | `popup.html`, `popup.js`, `tests/popup.test.mjs`; required fields, possible/company warning can proceed, already applied offers open history; dep: 36,19. Docs: apply flow. |
+| [ ] EXT-39 | Send apply once with stable session UUID/payload and recover ambiguous save result. | `popup.js`, `background.js`, `tests/popup.test.mjs`; double-click disabled, lost response same-key retry, edited payload requires fresh confirmation; dep: 38,34,20. Docs: retry. |
+| [ ] EXT-40 | Add pause/disconnect/forget visit confirmation and safe Open in JobGrid link. | `popup.html`, `popup.js`, `tests/popup.test.mjs`; account-bound delete, application preserved, navigation origin allowlist, 401 clears history; dep: 35,37,10. Docs: privacy controls. |
+
+#### Band 9 — Integration, privacy and accessibility gates (MAS-EXT-5)
+
+Inspect existing Playwright config/fixtures and 9.6 evidence matrix; rules: testing/security/frontend. Synthetic profiles/accounts and disposable databases only.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-41 | Exercise unpacked extension → real local backend from a persistent Chromium profile. | `frontend/tests/extension.spec.ts`, `extension/README.md`; visit/check/confirm/apply/revisit and source-row deletion end-to-end, no mocked API acceptance claim; dep: 40,25. Docs: local harness. |
+| [ ] EXT-42 | Exercise two-account switch, forged messages and hostile site privacy negatives. | `frontend/tests/extension.spec.ts`, `backend/tests/test_browser_memory_security.py`; never leak counts/IDs to foreign account/job page, untrusted sites cannot trigger writes; dep: 41. Docs: none, regression only. |
+| [ ] EXT-43 | Exercise keyboard/screen-reader labels and every popup failure state. | `frontend/tests/extension.spec.ts`, `popup.html`, `popup.css`; focus return, live status, zoom/no overflow, controls without color; dep: 41. Docs: accessibility. |
+| [ ] EXT-44 | Verify worker suspension/restart, offline recovery, reload/SPA and permission revocation. | `frontend/tests/extension.spec.ts`, `extension/README.md`; no phantom visited/applied/clearance, repeated apply one track/time, no auto-replay after restart; dep: 41. Docs: lifecycle recovery. |
+| [ ] EXT-45 | Run timed matrix and verify bounded API/log behavior. | `backend/tests/test_browser_memory_matches.py`, `extension/README.md`; 30 warm checks p95, cold-start/timeout separately, 10k visits/query plan, no payload/cookie/query URL in logs; dep: 42–44. Docs: measured limits, not guessed results. |
+
+#### Band 10 — Packaging, rollout and handover (MAS-EXT-5)
+
+Inspect `.github/workflows/ci.yml`, section 7 deployment runbook, C-09/C-10 evidence and the selected release environment. No release action is authorized merely by this checklist.
+
+| Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
+|---|---|---|
+| [ ] EXT-46 | Add extension contract/permission/Node-test checks and local extension E2E to existing CI. | `.github/workflows/ci.yml`, `frontend/package.json`, `extension/README.md`; clean install, existing suites intact, extension test reports actually collected; dep: 41–45. Docs: commands. |
+| [ ] EXT-47 | Produce versioned pilot ZIP and privacy/install/remove instructions without dev hosts/secrets. | `extension/manifest.json`, `extension/README.md`, NEW `extension/package.mjs`, `extension/tests/package.test.mjs`; assert allowlisted members/dev-host and secret exclusions, deterministic package, archive manifest/hash review and unpack/install test; dep: 46. Docs: artifact/version/checksum. |
+| [ ] EXT-48 | Accept migration/backup rollback and real Chrome/deployed OAuth pilot on one candidate. | `extension/README.md`, `development.md` evidence record; two controlled accounts, proxy auth, store-free unpacked installation, warm/cold checks, restart, first-time application preserved, old-code rollback with visit table retained; dep: 47,24, C-09/C-10 prerequisites. External failures remain blocked, not passed. |
+| [ ] EXT-49 | Prepare store submission inputs, exact permissions/disclosures and privacy policy for human review. | `extension/README.md`, NEW `docs/CHROME_EXTENSION_PRIVACY.md`; verify store ID/origins/owner/support URL and stored-data disclosure; dep: 48. Submission/publication is separate from local completion; do not invent store approval. |
+| [ ] EXT-50 | Review full feature diff, evidence/checklist and release/rollback handoff. | `development.md`, `docs/JOBGRID_BUILD_GUIDE.md`, `docs/repo_context.md`, `extension/README.md`; all applicable tests/CI green, no unresolved critical/high findings, PR/installed-version/deployed-revision states recorded separately; dep: 49 and all prior acceptance. Docs: current system, no task diary. |
+
+**Checkpoints:** after 05/10/15/20/25/30/35/40/45/50 review cumulative diff, real contract parity, migration/backup safety, completed checklist evidence and remaining scope. Narrow checks run per row. Broaden only at checkpoints or when shared logic changes. A test failure must be repaired or reported with exact scope; never count an unrun external gate as complete.
+
+**Dependency/parallel map:** 01→02→03 and 01→04 join at 05; after local 05, 06–10 visit work and 11–15 lookup work share frozen identity inputs; 16–20 requires 07/11. After schema 06, backup 22–25 can proceed independently of extension UI. Site fixtures 28–29 can proceed after 02. 26–35 require the accepted API/auth seam; 36–40 consume it; 41–50 are integration/release gates. These are possible independent work lanes, not a request to spawn agents. If a dependency changes a contract, stop its consumers and update the CCR/packets before resuming.
