@@ -2932,11 +2932,11 @@ Inspect `models.py`, `routers/rows.py::record_click`, `services/validation.py`, 
 
 | Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
 |---|---|---|
-| [ ] EXT-06 | Add visit/receipt models and next migration with owner uniqueness; external jobs need durable memory. | `models.py`, `backup_schemas.py` inventory, new `backend/alembic/versions/019_browser_visits.py` if still free, `test_browser_visits.py`; empty/populated upgrade and both tables/indexes SQLite/PostgreSQL; dep: 05 local proof. Docs: schema. |
-| [ ] EXT-07 | Add strict browser-memory request schemas and privacy URL validation; rejects unsafe input without fetching it. | `browser_memory_schemas.py`, `test_browser_visits.py`; wrong types/unknown fields/private host/userinfo/token query/2048 boundary; dep: 06. Docs: validation. |
-| [ ] EXT-08 | Insert once/replay one visit under owner lock and 10,000 cap; avoids duplicate events and unbounded growth. | `services/browser_memory.py`, `test_browser_visits.py`; duplicate/concurrent insert, collision, quota and rollback; dep: 07. Docs: visit semantics. |
-| [ ] EXT-09 | Reuse/extract row-visit mutation so an external visit updates matching existing rows only. | `routers/rows.py`, `services/browser_memory.py`, `test_browser_visits.py`, existing `test_rows.py`; first click preserved, no row/track/application/session-count creation; dep: 08. Docs: row relationship. |
-| [ ] EXT-10 | Add owner-only forget-visits service and account deletion coverage; provides privacy recovery. | `services/browser_memory.py`, `test_browser_visits.py`; A deletes own visits, B unaffected, repeats zero, application/row state unchanged; dep: 08. Docs: delete limits. |
+| [ ] [EXT-06](#ext-06) | Add visit/receipt models and next migration with owner uniqueness; external jobs need durable memory. | `models.py`, `backup_schemas.py` inventory, new `backend/alembic/versions/019_browser_visits.py` if still free, `test_browser_visits.py`; empty/populated upgrade and both tables/indexes SQLite/PostgreSQL; dep: 05 local proof. Docs: schema. |
+| [ ] [EXT-07](#ext-07) | Add strict browser-memory request schemas and privacy URL validation; rejects unsafe input without fetching it. | `browser_memory_schemas.py`, `test_browser_visits.py`; wrong types/unknown fields/private host/userinfo/token query/2048 boundary; dep: 06. Docs: validation. |
+| [ ] [EXT-08](#ext-08) | Insert once/replay one visit under owner lock and 10,000 cap; avoids duplicate events and unbounded growth. | `services/browser_memory.py`, `test_browser_visits.py`; duplicate/concurrent insert, collision, quota and rollback; dep: 07. Docs: visit semantics. |
+| [ ] [EXT-09](#ext-09) | Reuse/extract row-visit mutation so an external visit updates matching existing rows only. | `routers/rows.py`, `services/browser_memory.py`, `test_browser_visits.py`, existing `test_rows.py`; first click preserved, no row/track/application/session-count creation; dep: 08. Docs: row relationship. |
+| [ ] [EXT-10](#ext-10) | Add owner-only forget-visits service and account deletion coverage; provides privacy recovery. | `services/browser_memory.py`, `test_browser_visits.py`; A deletes own visits, B unaffected, repeats zero, application/row state unchanged; dep: 08. Docs: delete limits. |
 
 #### Band 3 — Accurate history lookup (MAS-EXT-1)
 
@@ -3069,11 +3069,11 @@ Inspect `.github/workflows/ci.yml`, section 7 deployment runbook, C-09/C-10 evid
 <a id="extension-detailed-tickets"></a>
 ### 9.7 Detailed extension execution tickets
 
-These packets expand the EXT-01–50 index to the JG-009 execution format. **All 50 are PLANNED / not implemented / no acceptance evidence. Detailed packets currently written: EXT-01–05; later entries remain in the index pending the next documentation commits.** Keep the same IDs and dependency order; a detailed packet does not create another task or issue. Relative size estimates are not calendar promises. P0 means a correctness/security prerequisite within this feature, P1 means a required V1 deliverable; neither changes the original app release priorities.
+These packets expand the EXT-01–50 index to the JG-009 execution format. **All 50 are PLANNED / not implemented / no acceptance evidence. Detailed packets currently written: EXT-01–10; later entries remain in the index pending the next documentation commits.** Keep the same IDs and dependency order; a detailed packet does not create another task or issue. Relative size estimates are not calendar promises. P0 means a correctness/security prerequisite within this feature, P1 means a required V1 deliverable; neither changes the original app release priorities.
 
 Read one selected packet together with `docs/repo_context.md` and its named current source. Contracts needed by that task are repeated below. The matching section-9.4 CCR remains the authoritative owner; if a copied extract drifts, update both before coding. This expansion records contract clarifications: explicit optional-backup envelope/checksum, missing-header error mapping, worker-only automatic visit authorization and worker-suspension versus browser-restart behavior. These are part of CCR-EXT-01 and are copied into the affected packets. Each packet still needs current source contents and the applicable skill rules attached for a separate builder session. A future file is not evidence that its dependency is implemented. Recheck snapshot states, migration head and fixtures at intake. No existing JG completed status, historical PR, test count or merge evidence transfers to an EXT ticket.
 
-**Navigation:** [EXT-01](#ext-01), [EXT-02](#ext-02), [EXT-03](#ext-03), [EXT-04](#ext-04), [EXT-05](#ext-05), EXT-06, EXT-07, EXT-08, EXT-09, EXT-10, EXT-11, EXT-12, EXT-13, EXT-14, EXT-15, EXT-16, EXT-17, EXT-18, EXT-19, EXT-20, EXT-21, EXT-22, EXT-23, EXT-24, EXT-25, EXT-26, EXT-27, EXT-28, EXT-29, EXT-30, EXT-31, EXT-32, EXT-33, EXT-34, EXT-35, EXT-36, EXT-37, EXT-38, EXT-39, EXT-40, EXT-41, EXT-42, EXT-43, EXT-44, EXT-45, EXT-46, EXT-47, EXT-48, EXT-49, EXT-50.
+**Navigation:** [EXT-01](#ext-01), [EXT-02](#ext-02), [EXT-03](#ext-03), [EXT-04](#ext-04), [EXT-05](#ext-05), [EXT-06](#ext-06), [EXT-07](#ext-07), [EXT-08](#ext-08), [EXT-09](#ext-09), [EXT-10](#ext-10), EXT-11, EXT-12, EXT-13, EXT-14, EXT-15, EXT-16, EXT-17, EXT-18, EXT-19, EXT-20, EXT-21, EXT-22, EXT-23, EXT-24, EXT-25, EXT-26, EXT-27, EXT-28, EXT-29, EXT-30, EXT-31, EXT-32, EXT-33, EXT-34, EXT-35, EXT-36, EXT-37, EXT-38, EXT-39, EXT-40, EXT-41, EXT-42, EXT-43, EXT-44, EXT-45, EXT-46, EXT-47, EXT-48, EXT-49, EXT-50.
 
 <a id="ext-01"></a>
 
@@ -3868,6 +3868,808 @@ Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for 
 ##### Evidence record and suggested tracking metadata
 
 Document ID: `EXT-05`; title: **Prove the Chrome login bridge with two accounts**; parent: one Chrome job/company memory main issue; band 1: Connection proof; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-06"></a>
+
+#### EXT-06 — Add durable visit and apply-receipt tables
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Database migration\
+**Execution position:** 6/50; band 2/10 — Durable visits; group step 1/5.
+
+##### Goal — what to complete
+
+Add visit/receipt models and next migration with owner uniqueness; external jobs need durable memory.
+
+##### Why this exists
+
+External jobs need durable memory. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-05](#ext-05) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/models.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/routers/rows.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/job_identity.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/backup_schemas.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/conftest.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/alembic/versions/018_bulk_undo_foundation.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/alembic/versions/019_browser_visits.py` — PROPOSED NEW in EXT-06; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_visits.py` — PROPOSED NEW in EXT-06; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Recheck Alembic head; use 019_browser_visits.py only if 019 is still free, with down_revision equal to the actual preceding revision.
+- Add job_visits and browser_apply_receipts exactly as CCR-EXT-01 defines, including owner cascades, required fields and owner-scoped unique/time indexes.
+- Extend model-field inventory: visits are recoverable product data and apply receipts are operational exclusions. Do not backfill imported or saved URLs as visits.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/models.py` | EXISTS at planning baseline | Task-owned implementation/configuration boundary |
+| `backend/app/backup_schemas.py` | EXISTS at planning baseline | Task-owned implementation/configuration boundary |
+| `backend/alembic/versions/019_browser_visits.py` | PROPOSED NEW in EXT-06 | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_visits.py` | PROPOSED NEW in EXT-06 | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+NEW `job_visits`: id integer PK; user_id required FK users.id ON DELETE CASCADE; canonical_url Text required; canonical_url_hash String(64) required; first_visited_at UTC DateTime required server time; unique(user_id,canonical_url_hash), owner/time index. NEW `browser_apply_receipts`: id integer PK; user_id same owner FK/cascade; request_key String(36) UUID required; payload_hash String(64) required; response_json JSON frozen apply response required; created_at UTC DateTime required; unique(user_id,request_key), owner/time index. No source-row FK and no import-history backfill. Canonicalization version ccr-identity-1. Visits are backup product data; receipts are excluded operational state. Additive migration only; preserve existing rows/times.
+
+##### API / event / cache / integration contracts
+
+NEW `job_visits`: id integer PK; user_id required FK users.id ON DELETE CASCADE; canonical_url Text required; canonical_url_hash String(64) required; first_visited_at UTC DateTime required server time; unique(user_id,canonical_url_hash), owner/time index. NEW `browser_apply_receipts`: id integer PK; user_id same owner FK/cascade; request_key String(36) UUID required; payload_hash String(64) required; response_json JSON frozen apply response required; created_at UTC DateTime required; unique(user_id,request_key), owner/time index. No source-row FK and no import-history backfill. Canonicalization version ccr-identity-1. Visits are backup product data; receipts are excluded operational state. Additive migration only; preserve existing rows/times.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-06.01** — Recheck Alembic head; use 019_browser_visits.py only if 019 is still free, with down_revision equal to the actual preceding revision.
+2. **EXT-06.02** — Add job_visits and browser_apply_receipts exactly as CCR-EXT-01 defines, including owner cascades, required fields and owner-scoped unique/time indexes.
+3. **EXT-06.03** — Extend model-field inventory: visits are recoverable product data and apply receipts are operational exclusions. Do not backfill imported or saved URLs as visits.
+4. **EXT-06.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_06_case_01` — Fresh and populated disposable SQLite/PostgreSQL upgrades create both tables and constraints without changing existing row/application counts or timestamps.
+- `ext_06_case_02` — Same owner/hash visit and same owner/request key receipt cannot duplicate; a second account can use the same hash/key independently.
+- `ext_06_case_03` — Deleting a disposable owner removes its visits/receipts and the inventory test has no missing or stale fields.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Upgrade a populated disposable database, compare existing counts and inspect the new indexes; verify old code can still read its original tables.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Fresh and populated disposable SQLite/PostgreSQL upgrades create both tables and constraints without changing existing row/application counts or timestamps.
+- [ ] Same owner/hash visit and same owner/request key receipt cannot duplicate; a second account can use the same hash/key independently.
+- [ ] Deleting a disposable owner removes its visits/receipts and the inventory test has no missing or stale fields.
+- [ ] Every numbered EXT-06 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Old-code rollback retains both additive tables. Destructive downgrade requires export-first approval; do not drop live visit evidence. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Old-code rollback retains both additive tables. Destructive downgrade requires export-first approval; do not drop live visit evidence.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-06 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[06/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-06`; title: **Add durable visit and apply-receipt tables**; parent: one Chrome job/company memory main issue; band 2: Durable visits; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-07"></a>
+
+#### EXT-07 — Validate browser-memory input and private URL boundaries
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Schema and validation\
+**Execution position:** 7/50; band 2/10 — Durable visits; group step 2/5.
+
+##### Goal — what to complete
+
+Add strict browser-memory request schemas and privacy URL validation; rejects unsafe input without fetching it.
+
+##### Why this exists
+
+Rejects unsafe input without fetching it. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-06](#ext-06) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/models.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/routers/rows.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/job_identity.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/backup_schemas.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/conftest.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/browser_memory_schemas.py` — PROPOSED NEW in EXT-07; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_visits.py` — PROPOSED; supplied by EXT-06 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md, api_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Define strict request models for check, visit and apply; forbid unknown fields and client-supplied user_id.
+- Reuse URL/text helpers while adding new-route-only rejection for userinfo, private/loopback hosts and the frozen credential-like query keys; never fetch the submitted URL.
+- Require company/title for apply, literal confirmed=true and a valid UUID key; preserve nullable optional company/title for check.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/browser_memory_schemas.py` | PROPOSED NEW in EXT-07 | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_visits.py` | PROPOSED; supplied by EXT-06 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Read existing JobTrack/CsvRow/owner aliases and (after EXT-06) job_visits. Only non-null JobTrack.applied_at proves an application; never reinterpret UrlHistory.first_seen_at. No new migration in this task. Validation is pure and writes nothing.
+
+##### API / event / cache / integration contracts
+
+Check request: `{url:string, company?:string|null, title?:string|null}`. Visit: `{url:string}`. Apply: `{url:string, company:string, title:string, confirmed:true}` plus UUID `Idempotency-Key`. Strict JSON/field allowlists; URL <=2048 characters; company <=320; title <=500; apply company/title must be nonblank and confirmation is literal boolean true. Public HTTP(S) only, no userinfo/private/loopback host; reject query keys token/access_token/auth/authorization/code/password/session/session_token case-insensitively. No server URL fetch or form input is allowed.
+
+New mutation requests require cookie auth, exact trusted frontend Origin, `X-JobGrid-Browser: 1`, and `X-JobGrid-Account-ID` equal to the cookie-resolved account before mutation/receipt lookup. That ID is an expectation, not owner authority. Wrong account → 409 account_changed; wrong/missing Origin/browser header → 403 origin_not_allowed; absent/invalid expected-account header → 422 invalid_browser_memory_payload. Other new errors: `{detail:{code,message,field?}}`; invalid input 422, quota/replay conflict 409, attempt limit 429 browser_memory_rate_limited with Retry-After, limiter/dependency failure 503 browser_memory_unavailable. Preserve existing session-auth 401 body. Per owner: check 120/min, visit 60/min, apply 20/min, forget 5/hour; rejected authenticated attempts count through shared persistent windows. No wildcard CORS, payload logging, token export or wrong-owner response. No success on partial failure.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-07.01** — Define strict request models for check, visit and apply; forbid unknown fields and client-supplied user_id.
+2. **EXT-07.02** — Reuse URL/text helpers while adding new-route-only rejection for userinfo, private/loopback hosts and the frozen credential-like query keys; never fetch the submitted URL.
+3. **EXT-07.03** — Require company/title for apply, literal confirmed=true and a valid UUID key; preserve nullable optional company/title for check.
+4. **EXT-07.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_07_case_01` — Public synthetic HTTPS detail URL is accepted; chrome:, file:, javascript:, userinfo and localhost/private literal addresses are rejected.
+- `ext_07_case_02` — A 2048-character valid URL passes the length rule; 2049 fails. Company/title limits are 320/500 and missing/blank apply fields fail.
+- `ext_07_case_03` — confirmed=1, confirmed="true", extra owner fields and credential query keys in mixed case fail with 422 invalid_browser_memory_payload.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py -q
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Submit the valid synthetic check payload, then malformed/unsafe variants through the schema harness and confirm no outbound request is attempted.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Public synthetic HTTPS detail URL is accepted; chrome:, file:, javascript:, userinfo and localhost/private literal addresses are rejected.
+- [ ] A 2048-character valid URL passes the length rule; 2049 fails. Company/title limits are 320/500 and missing/blank apply fields fail.
+- [ ] confirmed=1, confirmed="true", extra owner fields and credential query keys in mixed case fail with 422 invalid_browser_memory_payload.
+- [ ] Every numbered EXT-07 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Keep existing global canonicalization behavior unchanged. If validation requires DNS requests or a new transport, stop for an architect decision. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Keep existing global canonicalization behavior unchanged. If validation requires DNS requests or a new transport, stop for an architect decision.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-07 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[07/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-07`; title: **Validate browser-memory input and private URL boundaries**; parent: one Chrome job/company memory main issue; band 2: Durable visits; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-08"></a>
+
+#### EXT-08 — Persist one first visit per owner and canonical job
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Service\
+**Execution position:** 8/50; band 2/10 — Durable visits; group step 3/5.
+
+##### Goal — what to complete
+
+Insert once/replay one visit under owner lock and 10,000 cap; avoids duplicate events and unbounded growth.
+
+##### Why this exists
+
+Avoids duplicate events and unbounded growth. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-07](#ext-07) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/models.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/routers/rows.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/job_identity.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/backup_schemas.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/conftest.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/browser_memory.py` — PROPOSED NEW in EXT-08; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_visits.py` — PROPOSED; supplied by EXT-06 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Implement caller-owned insert/replay with existing canonical identity; lock/resolve uniqueness using the repository dialect patterns.
+- Return created=true only for the first committed visit and keep first_visited_at unchanged on revisit or concurrent retry.
+- Enforce 10,000 visits per account, permit existing-visit retries at capacity, and reject a hash collision with a different canonical URL.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/services/browser_memory.py` | PROPOSED NEW in EXT-08 | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_visits.py` | PROPOSED; supplied by EXT-06 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use job_visits and its owner/hash uniqueness from EXT-06. No new schema or application/CSV mutation is authorized.
+
+##### API / event / cache / integration contracts
+
+NEW `job_visits`: id integer PK; user_id required FK users.id ON DELETE CASCADE; canonical_url Text required; canonical_url_hash String(64) required; first_visited_at UTC DateTime required server time; unique(user_id,canonical_url_hash), owner/time index. NEW `browser_apply_receipts`: id integer PK; user_id same owner FK/cascade; request_key String(36) UUID required; payload_hash String(64) required; response_json JSON frozen apply response required; created_at UTC DateTime required; unique(user_id,request_key), owner/time index. No source-row FK and no import-history backfill. Canonicalization version ccr-identity-1. Visits are backup product data; receipts are excluded operational state. Additive migration only; preserve existing rows/times.
+
+`POST /crm/browser-memory/visit` consumes `{url}` → `200 {protocol_version:1,account_id:int,created:bool,first_visited_at:UTC}`. Revisit returns created false and the same first time. New remembered identity at 10,000 owner visits → `409 visit_limit_reached`; same hash/different canonical URL → `409 identity_conflict`. Write only the owner visit plus matching owned existing row clicked facts in one transaction: no new source row, JobTrack, application, synthetic open or session count. First navigation uses the pre-write check result so its just-created visit is not called previous.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-08.01** — Implement caller-owned insert/replay with existing canonical identity; lock/resolve uniqueness using the repository dialect patterns.
+2. **EXT-08.02** — Return created=true only for the first committed visit and keep first_visited_at unchanged on revisit or concurrent retry.
+3. **EXT-08.03** — Enforce 10,000 visits per account, permit existing-visit retries at capacity, and reject a hash collision with a different canonical URL.
+4. **EXT-08.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_08_case_01` — First visit creates one record; second visit and concurrent identical visit return the same first timestamp and one durable row.
+- `ext_08_case_02` — At 10,000 visits, an existing URL succeeds and a new URL returns 409 visit_limit_reached without deleting any history.
+- `ext_08_case_03` — Injected failure rolls back the insert; forced hash collision returns 409 identity_conflict with no merge.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Call the service twice for one synthetic job with a fresh session between calls and compare first timestamp, count and created flags.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] First visit creates one record; second visit and concurrent identical visit return the same first timestamp and one durable row.
+- [ ] At 10,000 visits, an existing URL succeeds and a new URL returns 409 visit_limit_reached without deleting any history.
+- [ ] Injected failure rolls back the insert; forced hash collision returns 409 identity_conflict with no merge.
+- [ ] Every numbered EXT-08 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+The caller commits once. A retry must not increment a visit/event/session counter or create a JobTrack. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- The caller commits once. A retry must not increment a visit/event/session counter or create a JobTrack.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-08 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[08/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-08`; title: **Persist one first visit per owner and canonical job**; parent: one Chrome job/company memory main issue; band 2: Durable visits; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-09"></a>
+
+#### EXT-09 — Share row-visit mutation without inventing applications
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Service extraction\
+**Execution position:** 9/50; band 2/10 — Durable visits; group step 4/5.
+
+##### Goal — what to complete
+
+Reuse/extract row-visit mutation so an external visit updates matching existing rows only.
+
+##### Why this exists
+
+Reuse/extract row-visit mutation so an external visit updates matching existing rows only. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-08](#ext-08) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/models.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/routers/rows.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/job_identity.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/backup_schemas.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/conftest.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_rows.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/browser_memory.py` — PROPOSED; supplied by EXT-08 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_visits.py` — PROPOSED; supplied by EXT-06 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Trace record_click and its callers; extract only the row clicked/first timestamp mutation into the existing browser-memory service boundary if a reusable helper is needed.
+- Update owned existing rows for the exact or same stored canonical identity; the extension write records its external visit in the same transaction.
+- Preserve the existing row-click API response, lifecycle idempotency and original callers; suppress extension-specific session-count inflation and do not create new rows/tracks.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/routers/rows.py` | EXISTS at planning baseline | Task-owned implementation/configuration boundary |
+| `backend/app/services/browser_memory.py` | PROPOSED; supplied by EXT-08 before use | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_visits.py` | PROPOSED; supplied by EXT-06 before use | Task-owned regression/fixture |
+| `backend/tests/test_rows.py` | EXISTS at planning baseline | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use job_visits and its owner/hash uniqueness from EXT-06. Only matching owned existing CsvRow clicked/first-time fields may also change; preserve lifecycle ownership.
+
+##### API / event / cache / integration contracts
+
+`POST /crm/browser-memory/visit` consumes `{url}` → `200 {protocol_version:1,account_id:int,created:bool,first_visited_at:UTC}`. Revisit returns created false and the same first time. New remembered identity at 10,000 owner visits → `409 visit_limit_reached`; same hash/different canonical URL → `409 identity_conflict`. Write only the owner visit plus matching owned existing row clicked facts in one transaction: no new source row, JobTrack, application, synthetic open or session count. First navigation uses the pre-write check result so its just-created visit is not called previous.
+
+Existing `/crm/application-matches` adapters stay backward compatible. Shared matcher consumes authenticated user_id, url, optional company/title and returns existing matches/company_history_count; new internal lookup completeness is adapted only for the browser-memory response. Only JobTrack.applied_at!=null counts as applied. Exact original/canonical identity outranks possible company+title; owner aliases only, never ATS hostname as employer. Canonical policy removes default ports/fragments/utm_*/gclid/fbclid only, preserving path bytes/case/trailing slash and all unknown query order/values. Original URLs are never rewritten. Definite lookups bypass the 500 possible scan; browser results max20 in confidence/newest-time/ID order.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-09.01** — Trace record_click and its callers; extract only the row clicked/first timestamp mutation into the existing browser-memory service boundary if a reusable helper is needed.
+2. **EXT-09.02** — Update owned existing rows for the exact or same stored canonical identity; the extension write records its external visit in the same transaction.
+3. **EXT-09.03** — Preserve the existing row-click API response, lifecycle idempotency and original callers; suppress extension-specific session-count inflation and do not create new rows/tracks.
+4. **EXT-09.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_09_case_01` — An unclicked matching owned row becomes clicked; a previously clicked row retains its first click time.
+- `ext_09_case_02` — A browser visit with no source row creates only job_visits; JobTrack, applied_at and application totals remain unchanged.
+- `ext_09_case_03` — Foreign rows and different job IDs do not change; existing record_click regression responses/events still pass.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py tests/test_rows.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Visit a job already in a synthetic CSV, then an external-only job. Reload dashboard and applications to verify row clicks and application totals independently.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] An unclicked matching owned row becomes clicked; a previously clicked row retains its first click time.
+- [ ] A browser visit with no source row creates only job_visits; JobTrack, applied_at and application totals remain unchanged.
+- [ ] Foreign rows and different job IDs do not change; existing record_click regression responses/events still pass.
+- [ ] Every numbered EXT-09 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+If extraction changes original row-click event/count semantics, retain the old call contract and revise the helper rather than rewriting all callers. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- If extraction changes original row-click event/count semantics, retain the old call contract and revise the helper rather than rewriting all callers.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-09 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[09/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-09`; title: **Share row-visit mutation without inventing applications**; parent: one Chrome job/company memory main issue; band 2: Durable visits; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-10"></a>
+
+#### EXT-10 — Forget visit memory for the authenticated owner
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P1\
+**Type:** Service and privacy\
+**Execution position:** 10/50; band 2/10 — Durable visits; group step 5/5.
+
+##### Goal — what to complete
+
+Add owner-only forget-visits service and account deletion coverage; provides privacy recovery.
+
+##### Why this exists
+
+Provides privacy recovery. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-08](#ext-08) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/models.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/routers/rows.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/job_identity.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/backup_schemas.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/conftest.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/browser_memory.py` — PROPOSED; supplied by EXT-08 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_visits.py` — PROPOSED; supplied by EXT-06 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Delete job_visits only for the authenticated account and return the affected count.
+- Leave JobTrack, UrlHistory, CsvRow.clicked and application evidence untouched; expose that limitation in user documentation.
+- Cover owner deletion cascade and repeat deletion with zero remaining visits. Route transport is owned by EXT-19.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/services/browser_memory.py` | PROPOSED; supplied by EXT-08 before use | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_visits.py` | PROPOSED; supplied by EXT-06 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use job_visits and its owner/hash uniqueness from EXT-06. No new schema or application/CSV mutation is authorized.
+
+##### API / event / cache / integration contracts
+
+`DELETE /crm/browser-memory/visits`, no body, explicit popup confirmation → `200 {protocol_version:1,account_id:int,deleted:int}`. Only job_visits of the cookie owner are deleted; repeat returns zero. Retain JobTrack/application evidence, UrlHistory and CsvRow.clicked. Older user-selected backup may restore forgotten visits. `Open in JobGrid` uses only the selected exact trusted origin and validated returned application ID; never accept an arbitrary destination/return URL.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-10.01** — Delete job_visits only for the authenticated account and return the affected count.
+2. **EXT-10.02** — Leave JobTrack, UrlHistory, CsvRow.clicked and application evidence untouched; expose that limitation in user documentation.
+3. **EXT-10.03** — Cover owner deletion cascade and repeat deletion with zero remaining visits. Route transport is owned by EXT-19.
+4. **EXT-10.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_10_case_01` — Account A forgets its two visits: deleted=2, A visit count=0 and B visit count stays unchanged.
+- `ext_10_case_02` — Repeat forget returns deleted=0; both original applications and clicked source rows retain their values.
+- `ext_10_case_03` — Deleting the owner cascades only that owner visit/receipt records with no orphan or foreign delete.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py -q
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Seed separate A/B visits, forget A through the service harness and compare fresh-session counts plus unchanged application state.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Account A forgets its two visits: deleted=2, A visit count=0 and B visit count stays unchanged.
+- [ ] Repeat forget returns deleted=0; both original applications and clicked source rows retain their values.
+- [ ] Deleting the owner cascades only that owner visit/receipt records with no orphan or foreign delete.
+- [ ] Every numbered EXT-10 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Forget cannot be undone from a hidden extension cache; a user-chosen older backup may restore visits and must be disclosed. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Forget cannot be undone from a hidden extension cache; a user-chosen older backup may restore visits and must be disclosed.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-10 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[10/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-10`; title: **Forget visit memory for the authenticated owner**; parent: one Chrome job/company memory main issue; band 2: Durable visits; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
 Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
 
