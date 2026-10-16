@@ -202,6 +202,23 @@ A historical `COMPLETED` label is not enough to claim release completion. Use cu
 
 ## Where to start for future work
 
+### Chrome extension planning context — 2026-10-16
+
+Focused inspection baseline: `48bf33c16c9cc541ec709988d7ca29cf084385de` on `main`. This refresh covers the extension seams only; the historical provider/release statuses above were not re-audited. The proposed extension is specified in `development.md` section 9 and is **not implemented**.
+
+- `backend/app/auth.py::get_current_user` reads the `session_token` cookie and resolves the account server-side. Do not copy this cookie into extension storage or add a second login system.
+- `frontend/vercel.json` proxies `/api/:path*` to FastAPI. `frontend/src/api/client.js` uses Axios with credentials and a configurable API base. The extension proposal uses a trusted JobGrid tab's same-origin `/api` proxy; this must pass real Chrome/OAuth acceptance before release.
+- `backend/app/routers/crm.py::_find_application_matches` checks only tracks with non-null `applied_at`, returns exact/canonical/possible matches and alias-aware `company_history_count`. `POST /crm/application-matches` accepts `{url, company?, title?}`. Company and title limits are 320 and 500 characters. Shared matching must retain those semantics.
+- `backend/app/services/job_identity.py::canonicalize_job_url` limits URLs to 2048 characters; removes only specified tracking parameters, default ports and fragments; preserves meaningful path/query identity. Original URLs remain separate from derived identity.
+- `backend/app/routers/capture.py` and `services/capture.py` create/replay a captured row without visiting or applying. `crm.py::bulk_create_from_rows` uses lifecycle mutations for explicit application state. Reuse services and transaction patterns; never call a committing HTTP handler from another handler.
+- `backend/app/models.py::UrlHistory` records import first-seen URLs (`routers/upload.py` writes it). It is **not visit evidence**. `CsvRow.clicked` is row visit state; `JobTrack.applied_at` is durable application evidence. Neither an imported URL nor a saved/opened track proves an application.
+- No extension manifest/package exists in tracked source at this baseline. Proposed `extension/` paths and browser-memory backend modules in section 9 are new files, not existing helpers. Migration head remains `018_bulk_undo_foundation.py`; recheck before choosing the next revision.
+- Existing regression anchors: `backend/tests/test_application_memory.py`, `test_capture_api.py`, `test_job_identity.py`, `test_backup_contract.py`, `test_complete_backup.py`; browser tests under `frontend/tests/`; native Node tests under `frontend/unit/`. Reuse pytest, Playwright and Node's test runner; no extension framework is needed.
+- Existing evidence/document/capture receipt tables are domain-specific, not a generic apply receipt store. The proposed `browser_apply_receipts` table reuses their digest/transaction pattern and must be classified as operational backup-excluded state. New write requests assert the connected account against the cookie owner on the server to prevent account-switch races.
+- New private persisted data must join `backend/app/backup_schemas.py` inventory and the composed backup session boundary. Preserve legacy readers and all-or-nothing restore. Never reinterpret `url_history` as visits to avoid a migration.
+
+This context is a planning prerequisite, not a builder handoff. Before implementation, assemble one section-9 microtask with its complete contracts, current inspected source, relevant skill rules and intake checklist; do not hand a builder an isolated table row.
+
 1. Read this file for current boundaries.
 2. Read the relevant C package plus `docs/C09_STAGING_OPERATIONS.md` for the zero-dollar infrastructure decision.
 3. Inspect the actual router/service/model/schema/frontend/tests/provider evidence before editing.
