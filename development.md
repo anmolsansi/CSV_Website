@@ -2956,11 +2956,11 @@ Inspect `crm.py::bulk_create_from_rows`, `services/lifecycle.py`, `services/undo
 
 | Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
 |---|---|---|
-| [ ] EXT-16 | Add service that explicitly applies a URL without CSV capture or synthetic opens. | `services/browser_memory.py`, `test_browser_memory_apply.py`; valid first application/event atomicity, validation failure zero writes; dep: 11,07. Docs: apply semantics. |
-| [ ] EXT-17 | Return existing applied exact/canonical track unchanged; preserves original timestamp and advanced status. | `services/browser_memory.py`, `test_browser_memory_apply.py`; retry after rejection/archive, same-company new role and possible match create separately; dep: 16. Docs: duplicate outcomes. |
-| [ ] EXT-18 | Bind apply request UUID/digest to bounded `browser_apply_receipts`. | `services/browser_memory.py`, `test_browser_memory_apply.py`; replay, altered payload 409, deleted target, expiry/cap and rollback/no stale success receipt; dep: 17. Docs: retry/receipt exclusions. |
-| [ ] EXT-19 | Expose `/visit`, `/apply`, `DELETE /visits` with literal confirmation and account guard. | `routers/browser_memory.py`, `browser_memory_schemas.py`, `test_browser_memory_api.py`; missing confirmation/key, no client owner override, 200 replay and error shape; dep: 10,18. Docs: endpoints. |
-| [ ] EXT-20 | Prove concurrent apply and lost-response retry across supported databases. | `test_browser_memory_apply.py`, `test_application_memory.py`; fresh sessions assert one application/event/first time, no click/count side effects, injected late rollback; dep: 19. Docs: none, regression only. |
+| [ ] [EXT-16](#ext-16) | Add service that explicitly applies a URL without CSV capture or synthetic opens. | `services/browser_memory.py`, `test_browser_memory_apply.py`; valid first application/event atomicity, validation failure zero writes; dep: 11,07. Docs: apply semantics. |
+| [ ] [EXT-17](#ext-17) | Return existing applied exact/canonical track unchanged; preserves original timestamp and advanced status. | `services/browser_memory.py`, `test_browser_memory_apply.py`; retry after rejection/archive, same-company new role and possible match create separately; dep: 16. Docs: duplicate outcomes. |
+| [ ] [EXT-18](#ext-18) | Bind apply request UUID/digest to bounded `browser_apply_receipts`. | `services/browser_memory.py`, `test_browser_memory_apply.py`; replay, altered payload 409, deleted target, expiry/cap and rollback/no stale success receipt; dep: 17. Docs: retry/receipt exclusions. |
+| [ ] [EXT-19](#ext-19) | Expose `/visit`, `/apply`, `DELETE /visits` with literal confirmation and account guard. | `routers/browser_memory.py`, `browser_memory_schemas.py`, `test_browser_memory_api.py`; missing confirmation/key, no client owner override, 200 replay and error shape; dep: 10,18. Docs: endpoints. |
+| [ ] [EXT-20](#ext-20) | Prove concurrent apply and lost-response retry across supported databases. | `test_browser_memory_apply.py`, `test_application_memory.py`; fresh sessions assert one application/event/first time, no click/count side effects, injected late rollback; dep: 19. Docs: none, regression only. |
 
 #### Band 5 — API security and portable history (MAS-EXT-1/5)
 
@@ -3069,11 +3069,11 @@ Inspect `.github/workflows/ci.yml`, section 7 deployment runbook, C-09/C-10 evid
 <a id="extension-detailed-tickets"></a>
 ### 9.7 Detailed extension execution tickets
 
-These packets expand the EXT-01–50 index to the JG-009 execution format. **All 50 are PLANNED / not implemented / no acceptance evidence. Detailed packets currently written: EXT-01–15; later entries remain in the index pending the next documentation commits.** Keep the same IDs and dependency order; a detailed packet does not create another task or issue. Relative size estimates are not calendar promises. P0 means a correctness/security prerequisite within this feature, P1 means a required V1 deliverable; neither changes the original app release priorities.
+These packets expand the EXT-01–50 index to the JG-009 execution format. **All 50 are PLANNED / not implemented / no acceptance evidence. Detailed packets currently written: EXT-01–20; later entries remain in the index pending the next documentation commits.** Keep the same IDs and dependency order; a detailed packet does not create another task or issue. Relative size estimates are not calendar promises. P0 means a correctness/security prerequisite within this feature, P1 means a required V1 deliverable; neither changes the original app release priorities.
 
 Read one selected packet together with `docs/repo_context.md` and its named current source. Contracts needed by that task are repeated below. The matching section-9.4 CCR remains the authoritative owner; if a copied extract drifts, update both before coding. This expansion records contract clarifications: explicit optional-backup envelope/checksum, missing-header error mapping, worker-only automatic visit authorization and worker-suspension versus browser-restart behavior. These are part of CCR-EXT-01 and are copied into the affected packets. Each packet still needs current source contents and the applicable skill rules attached for a separate builder session. A future file is not evidence that its dependency is implemented. Recheck snapshot states, migration head and fixtures at intake. No existing JG completed status, historical PR, test count or merge evidence transfers to an EXT ticket.
 
-**Navigation:** [EXT-01](#ext-01), [EXT-02](#ext-02), [EXT-03](#ext-03), [EXT-04](#ext-04), [EXT-05](#ext-05), [EXT-06](#ext-06), [EXT-07](#ext-07), [EXT-08](#ext-08), [EXT-09](#ext-09), [EXT-10](#ext-10), [EXT-11](#ext-11), [EXT-12](#ext-12), [EXT-13](#ext-13), [EXT-14](#ext-14), [EXT-15](#ext-15), EXT-16, EXT-17, EXT-18, EXT-19, EXT-20, EXT-21, EXT-22, EXT-23, EXT-24, EXT-25, EXT-26, EXT-27, EXT-28, EXT-29, EXT-30, EXT-31, EXT-32, EXT-33, EXT-34, EXT-35, EXT-36, EXT-37, EXT-38, EXT-39, EXT-40, EXT-41, EXT-42, EXT-43, EXT-44, EXT-45, EXT-46, EXT-47, EXT-48, EXT-49, EXT-50.
+**Navigation:** [EXT-01](#ext-01), [EXT-02](#ext-02), [EXT-03](#ext-03), [EXT-04](#ext-04), [EXT-05](#ext-05), [EXT-06](#ext-06), [EXT-07](#ext-07), [EXT-08](#ext-08), [EXT-09](#ext-09), [EXT-10](#ext-10), [EXT-11](#ext-11), [EXT-12](#ext-12), [EXT-13](#ext-13), [EXT-14](#ext-14), [EXT-15](#ext-15), [EXT-16](#ext-16), [EXT-17](#ext-17), [EXT-18](#ext-18), [EXT-19](#ext-19), [EXT-20](#ext-20), EXT-21, EXT-22, EXT-23, EXT-24, EXT-25, EXT-26, EXT-27, EXT-28, EXT-29, EXT-30, EXT-31, EXT-32, EXT-33, EXT-34, EXT-35, EXT-36, EXT-37, EXT-38, EXT-39, EXT-40, EXT-41, EXT-42, EXT-43, EXT-44, EXT-45, EXT-46, EXT-47, EXT-48, EXT-49, EXT-50.
 
 <a id="ext-01"></a>
 
@@ -5448,6 +5448,821 @@ None — regression assertions only; no runtime/setup behavior change. Record th
 ##### Evidence record and suggested tracking metadata
 
 Document ID: `EXT-15`; title: **Freeze the positive and negative job identity matrix**; parent: one Chrome job/company memory main issue; band 3: Accurate lookup; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-16"></a>
+
+#### EXT-16 — Write an explicit application without a CSV row
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Application service\
+**Execution position:** 16/50; band 4/10 — Explicit application writes; group step 1/5.
+
+##### Goal — what to complete
+
+Add service that explicitly applies a URL without CSV capture or synthetic opens.
+
+##### Why this exists
+
+Add service that explicitly applies a URL without CSV capture or synthetic opens. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-11](#ext-11), [EXT-07](#ext-07) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/routers/crm.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/lifecycle.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/capture.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/contacts.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_lifecycle_mutations.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/browser_memory.py` — PROPOSED; supplied by EXT-08 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_memory_apply.py` — PROPOSED NEW in EXT-16; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Validate all input before changing state; resolve the owner and take the existing account mutation lock.
+- Create or update only an exact URL never-applied JobTrack using apply_job_track_changes; first applied time and lifecycle event join one transaction.
+- Preserve existing nonempty metadata/notes; no row capture, synthetic open, visited record or session increment occurs.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/services/browser_memory.py` | PROPOSED; supplied by EXT-08 before use | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_memory_apply.py` | PROPOSED NEW in EXT-16 | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use existing JobTrack and lifecycle records; browser_apply_receipts and job_visits come from EXT-06, not another migration. Account locks/unique owner identities and caller-owned transactions apply; no independent child commit.
+
+##### API / event / cache / integration contracts
+
+Check request: `{url:string, company?:string|null, title?:string|null}`. Visit: `{url:string}`. Apply: `{url:string, company:string, title:string, confirmed:true}` plus UUID `Idempotency-Key`. Strict JSON/field allowlists; URL <=2048 characters; company <=320; title <=500; apply company/title must be nonblank and confirmation is literal boolean true. Public HTTP(S) only, no userinfo/private/loopback host; reject query keys token/access_token/auth/authorization/code/password/session/session_token case-insensitively. No server URL fetch or form input is allowed.
+
+`POST /crm/browser-memory/apply` consumes `{url,company,title,confirmed:true}` with UUID `Idempotency-Key` → `200 {protocol_version:1,account_id:int,application_id:int,created:bool,already_applied:bool,applied_at:UTC}`. A first explicit application creates/updates an exact never-applied track using the lifecycle writer; exact/canonical previously applied returns its ID/time/status unchanged. Possible/company-only match is never a merge target. Same key/payload replays; altered payload → 409 idempotency_conflict; deleted receipt target → 409 application_deleted. Track/event/receipt commit atomically. No CSV capture, click, synthetic open, note overwrite or advanced-status reset.
+
+New mutation requests require cookie auth, exact trusted frontend Origin, `X-JobGrid-Browser: 1`, and `X-JobGrid-Account-ID` equal to the cookie-resolved account before mutation/receipt lookup. That ID is an expectation, not owner authority. Wrong account → 409 account_changed; wrong/missing Origin/browser header → 403 origin_not_allowed; absent/invalid expected-account header → 422 invalid_browser_memory_payload. Other new errors: `{detail:{code,message,field?}}`; invalid input 422, quota/replay conflict 409, attempt limit 429 browser_memory_rate_limited with Retry-After, limiter/dependency failure 503 browser_memory_unavailable. Preserve existing session-auth 401 body. Per owner: check 120/min, visit 60/min, apply 20/min, forget 5/hour; rejected authenticated attempts count through shared persistent windows. No wildcard CORS, payload logging, token export or wrong-owner response. No success on partial failure.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-16.01** — Validate all input before changing state; resolve the owner and take the existing account mutation lock.
+2. **EXT-16.02** — Create or update only an exact URL never-applied JobTrack using apply_job_track_changes; first applied time and lifecycle event join one transaction.
+3. **EXT-16.03** — Preserve existing nonempty metadata/notes; no row capture, synthetic open, visited record or session increment occurs.
+4. **EXT-16.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_16_case_01` — New synthetic URL creates one applied track/event with company/title and no clicked row or job_visit.
+- `ext_16_case_02` — Existing exact never-applied track becomes applied without overwriting notes/company/title already present.
+- `ext_16_case_03` — Invalid fields or an injected lifecycle failure leave zero partial track/event writes from a fresh session.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_apply.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Apply an external-only synthetic job through the service and compare application, source-row, visit and event counts separately.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] New synthetic URL creates one applied track/event with company/title and no clicked row or job_visit.
+- [ ] Existing exact never-applied track becomes applied without overwriting notes/company/title already present.
+- [ ] Invalid fields or an injected lifecycle failure leave zero partial track/event writes from a fresh session.
+- [ ] Every numbered EXT-16 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Do not call committing route handlers or upsert_from_row. Unexpected lifecycle schema/status requirements need architect review. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Do not call committing route handlers or upsert_from_row. Unexpected lifecycle schema/status requirements need architect review.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-16 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[16/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-16`; title: **Write an explicit application without a CSV row**; parent: one Chrome job/company memory main issue; band 4: Explicit application writes; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-17"></a>
+
+#### EXT-17 — Return prior applications without regressing history
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Application identity\
+**Execution position:** 17/50; band 4/10 — Explicit application writes; group step 2/5.
+
+##### Goal — what to complete
+
+Return existing applied exact/canonical track unchanged; preserves original timestamp and advanced status.
+
+##### Why this exists
+
+Preserves original timestamp and advanced status. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-16](#ext-16) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/routers/crm.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/lifecycle.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/capture.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/contacts.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_lifecycle_mutations.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/browser_memory.py` — PROPOSED; supplied by EXT-08 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_memory_apply.py` — PROPOSED; supplied by EXT-16 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Check exact/canonical already-applied evidence before any new application mutation.
+- Return the existing application ID/time with already_applied=true and preserve advanced/rejected/archived status.
+- Treat possible/company-only matches as warnings; only exact never-applied URL tracks can be updated, and separate canonical never-applied records are not silently merged.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/services/browser_memory.py` | PROPOSED; supplied by EXT-08 before use | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_memory_apply.py` | PROPOSED; supplied by EXT-16 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use existing JobTrack and lifecycle records; browser_apply_receipts and job_visits come from EXT-06, not another migration. Account locks/unique owner identities and caller-owned transactions apply; no independent child commit.
+
+##### API / event / cache / integration contracts
+
+`POST /crm/browser-memory/apply` consumes `{url,company,title,confirmed:true}` with UUID `Idempotency-Key` → `200 {protocol_version:1,account_id:int,application_id:int,created:bool,already_applied:bool,applied_at:UTC}`. A first explicit application creates/updates an exact never-applied track using the lifecycle writer; exact/canonical previously applied returns its ID/time/status unchanged. Possible/company-only match is never a merge target. Same key/payload replays; altered payload → 409 idempotency_conflict; deleted receipt target → 409 application_deleted. Track/event/receipt commit atomically. No CSV capture, click, synthetic open, note overwrite or advanced-status reset.
+
+Existing `/crm/application-matches` adapters stay backward compatible. Shared matcher consumes authenticated user_id, url, optional company/title and returns existing matches/company_history_count; new internal lookup completeness is adapted only for the browser-memory response. Only JobTrack.applied_at!=null counts as applied. Exact original/canonical identity outranks possible company+title; owner aliases only, never ATS hostname as employer. Canonical policy removes default ports/fragments/utm_*/gclid/fbclid only, preserving path bytes/case/trailing slash and all unknown query order/values. Original URLs are never rewritten. Definite lookups bypass the 500 possible scan; browser results max20 in confidence/newest-time/ID order.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-17.01** — Check exact/canonical already-applied evidence before any new application mutation.
+2. **EXT-17.02** — Return the existing application ID/time with already_applied=true and preserve advanced/rejected/archived status.
+3. **EXT-17.03** — Treat possible/company-only matches as warnings; only exact never-applied URL tracks can be updated, and separate canonical never-applied records are not silently merged.
+4. **EXT-17.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_17_case_01` — Canonical tracker-variant retry returns the existing ID/time/status and emits no new first-applied event.
+- `ext_17_case_02` — A rejected/archived previously applied track still warns and remains rejected/archived.
+- `ext_17_case_03` — Different role in the same company can create its own track; possible company/title match is not a merge target.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_apply.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Apply, advance status, retry the same/canonical URL, then apply another role at the same employer; compare IDs and original timestamps.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Canonical tracker-variant retry returns the existing ID/time/status and emits no new first-applied event.
+- [ ] A rejected/archived previously applied track still warns and remains rejected/archived.
+- [ ] Different role in the same company can create its own track; possible company/title match is not a merge target.
+- [ ] Every numbered EXT-17 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Never reset status to applied or rewrite original URL/notes just to satisfy a repeated confirmation. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Never reset status to applied or rewrite original URL/notes just to satisfy a repeated confirmation.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-17 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[17/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-17`; title: **Return prior applications without regressing history**; parent: one Chrome job/company memory main issue; band 4: Explicit application writes; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-18"></a>
+
+#### EXT-18 — Make apply confirmation replay-safe with bounded receipts
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Idempotency service\
+**Execution position:** 18/50; band 4/10 — Explicit application writes; group step 3/5.
+
+##### Goal — what to complete
+
+Bind apply request UUID/digest to bounded `browser_apply_receipts`.
+
+##### Why this exists
+
+Bind apply request UUID/digest to bounded `browser_apply_receipts`. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-17](#ext-17) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/routers/crm.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/lifecycle.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/capture.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/contacts.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_lifecycle_mutations.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/contact_models.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/browser_memory.py` — PROPOSED; supplied by EXT-08 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_memory_apply.py` — PROPOSED; supplied by EXT-16 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Hash a normalized validated apply payload and reserve/read owner+request UUID under the same write lock.
+- Commit the final frozen apply response and lifecycle mutation together; same key/payload replays and changed payload conflicts.
+- Prune >30-day receipts on write, cap active receipts at 10,000 and return application_deleted when a recorded target no longer exists.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/services/browser_memory.py` | PROPOSED; supplied by EXT-08 before use | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_memory_apply.py` | PROPOSED; supplied by EXT-16 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use existing JobTrack and lifecycle records; browser_apply_receipts and job_visits come from EXT-06, not another migration. Receipt key is cookie owner + apply UUID; digest uses normalized validated payload including literal confirmation. Replay returns stored response only if its owner application still exists. Prune expired receipts after 30 days inside write lock; max 10,000 active owner receipts, else 409 receipt_limit_reached. Expired receipt does not erase durable applied evidence. No independent commit, browser credential data or receipt restore. Lost response shows Save status unknown · Retry; keep same key/payload for deliberate retry only. Changed account invalidates the confirmation.
+
+##### API / event / cache / integration contracts
+
+`POST /crm/browser-memory/apply` consumes `{url,company,title,confirmed:true}` with UUID `Idempotency-Key` → `200 {protocol_version:1,account_id:int,application_id:int,created:bool,already_applied:bool,applied_at:UTC}`. A first explicit application creates/updates an exact never-applied track using the lifecycle writer; exact/canonical previously applied returns its ID/time/status unchanged. Possible/company-only match is never a merge target. Same key/payload replays; altered payload → 409 idempotency_conflict; deleted receipt target → 409 application_deleted. Track/event/receipt commit atomically. No CSV capture, click, synthetic open, note overwrite or advanced-status reset.
+
+Receipt key is cookie owner + apply UUID; digest uses normalized validated payload including literal confirmation. Replay returns stored response only if its owner application still exists. Prune expired receipts after 30 days inside write lock; max 10,000 active owner receipts, else 409 receipt_limit_reached. Expired receipt does not erase durable applied evidence. No independent commit, browser credential data or receipt restore. Lost response shows Save status unknown · Retry; keep same key/payload for deliberate retry only. Changed account invalidates the confirmation.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-18.01** — Hash a normalized validated apply payload and reserve/read owner+request UUID under the same write lock.
+2. **EXT-18.02** — Commit the final frozen apply response and lifecycle mutation together; same key/payload replays and changed payload conflicts.
+3. **EXT-18.03** — Prune >30-day receipts on write, cap active receipts at 10,000 and return application_deleted when a recorded target no longer exists.
+4. **EXT-18.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_18_case_01` — Lost-response same-key retry returns the same response/application/time and one first-applied event.
+- `ext_18_case_02` — Same key with changed URL/title returns 409 idempotency_conflict; another account using that key gets no prior-owner data.
+- `ext_18_case_03` — Injected late failure leaves no success receipt; deleted target returns application_deleted; receipt cap/expiry leaves application history intact.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_apply.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Simulate commit followed by client disconnect, then retry with the identical UUID and compare durable response/event counts.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Lost-response same-key retry returns the same response/application/time and one first-applied event.
+- [ ] Same key with changed URL/title returns 409 idempotency_conflict; another account using that key gets no prior-owner data.
+- [ ] Injected late failure leaves no success receipt; deleted target returns application_deleted; receipt cap/expiry leaves application history intact.
+- [ ] Every numbered EXT-18 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Do not reuse evidence/document receipt tables or replay an operational receipt as restored product history. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Do not reuse evidence/document receipt tables or replay an operational receipt as restored product history.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-18 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[18/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-18`; title: **Make apply confirmation replay-safe with bounded receipts**; parent: one Chrome job/company memory main issue; band 4: Explicit application writes; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-19"></a>
+
+#### EXT-19 — Expose guarded visit, apply and forget routes
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Mutation API\
+**Execution position:** 19/50; band 4/10 — Explicit application writes; group step 4/5.
+
+##### Goal — what to complete
+
+Expose `/visit`, `/apply`, `DELETE /visits` with literal confirmation and account guard.
+
+##### Why this exists
+
+Expose `/visit`, `/apply`, `DELETE /visits` with literal confirmation and account guard. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-10](#ext-10), [EXT-18](#ext-18) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/routers/crm.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/lifecycle.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/capture.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/contacts.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_lifecycle_mutations.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/routers/browser_memory.py` — PROPOSED; supplied by EXT-04 before use; inspect current behavior/fixtures if present.
+- `backend/app/browser_memory_schemas.py` — PROPOSED; supplied by EXT-07 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_memory_api.py` — PROPOSED; supplied by EXT-04 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md, api_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Add POST /visit, POST /apply and DELETE /visits with cookie ownership and strict schemas.
+- Require connected-account assertion, exact trusted Origin, fixed browser header and apply UUID before mutation; use caller-owned commit/rollback and map safe errors.
+- Enforce the documented per-account attempt policies on these routes using persistent counters; EXT-21 adds adversarial/cross-process verification, not a period of publicly unguarded writes.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/app/routers/browser_memory.py` | PROPOSED; supplied by EXT-04 before use | Task-owned implementation/configuration boundary |
+| `backend/app/browser_memory_schemas.py` | PROPOSED; supplied by EXT-07 before use | Task-owned implementation/configuration boundary |
+| `backend/tests/test_browser_memory_api.py` | PROPOSED; supplied by EXT-04 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use existing JobTrack and lifecycle records; browser_apply_receipts and job_visits come from EXT-06, not another migration. Account locks/unique owner identities and caller-owned transactions apply; no independent child commit.
+
+##### API / event / cache / integration contracts
+
+Check request: `{url:string, company?:string|null, title?:string|null}`. Visit: `{url:string}`. Apply: `{url:string, company:string, title:string, confirmed:true}` plus UUID `Idempotency-Key`. Strict JSON/field allowlists; URL <=2048 characters; company <=320; title <=500; apply company/title must be nonblank and confirmation is literal boolean true. Public HTTP(S) only, no userinfo/private/loopback host; reject query keys token/access_token/auth/authorization/code/password/session/session_token case-insensitively. No server URL fetch or form input is allowed.
+
+`POST /crm/browser-memory/visit` consumes `{url}` → `200 {protocol_version:1,account_id:int,created:bool,first_visited_at:UTC}`. Revisit returns created false and the same first time. New remembered identity at 10,000 owner visits → `409 visit_limit_reached`; same hash/different canonical URL → `409 identity_conflict`. Write only the owner visit plus matching owned existing row clicked facts in one transaction: no new source row, JobTrack, application, synthetic open or session count. First navigation uses the pre-write check result so its just-created visit is not called previous.
+
+`POST /crm/browser-memory/apply` consumes `{url,company,title,confirmed:true}` with UUID `Idempotency-Key` → `200 {protocol_version:1,account_id:int,application_id:int,created:bool,already_applied:bool,applied_at:UTC}`. A first explicit application creates/updates an exact never-applied track using the lifecycle writer; exact/canonical previously applied returns its ID/time/status unchanged. Possible/company-only match is never a merge target. Same key/payload replays; altered payload → 409 idempotency_conflict; deleted receipt target → 409 application_deleted. Track/event/receipt commit atomically. No CSV capture, click, synthetic open, note overwrite or advanced-status reset.
+
+`DELETE /crm/browser-memory/visits`, no body, explicit popup confirmation → `200 {protocol_version:1,account_id:int,deleted:int}`. Only job_visits of the cookie owner are deleted; repeat returns zero. Retain JobTrack/application evidence, UrlHistory and CsvRow.clicked. Older user-selected backup may restore forgotten visits. `Open in JobGrid` uses only the selected exact trusted origin and validated returned application ID; never accept an arbitrary destination/return URL.
+
+New mutation requests require cookie auth, exact trusted frontend Origin, `X-JobGrid-Browser: 1`, and `X-JobGrid-Account-ID` equal to the cookie-resolved account before mutation/receipt lookup. That ID is an expectation, not owner authority. Wrong account → 409 account_changed; wrong/missing Origin/browser header → 403 origin_not_allowed; absent/invalid expected-account header → 422 invalid_browser_memory_payload. Other new errors: `{detail:{code,message,field?}}`; invalid input 422, quota/replay conflict 409, attempt limit 429 browser_memory_rate_limited with Retry-After, limiter/dependency failure 503 browser_memory_unavailable. Preserve existing session-auth 401 body. Per owner: check 120/min, visit 60/min, apply 20/min, forget 5/hour; rejected authenticated attempts count through shared persistent windows. No wildcard CORS, payload logging, token export or wrong-owner response. No success on partial failure.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-19.01** — Add POST /visit, POST /apply and DELETE /visits with cookie ownership and strict schemas.
+2. **EXT-19.02** — Require connected-account assertion, exact trusted Origin, fixed browser header and apply UUID before mutation; use caller-owned commit/rollback and map safe errors.
+3. **EXT-19.03** — Enforce the documented per-account attempt policies on these routes using persistent counters; EXT-21 adds adversarial/cross-process verification, not a period of publicly unguarded writes.
+4. **EXT-19.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_19_case_01` — First/repeated visits and applies return the frozen 200 response shapes; forget returns the actual own deleted count.
+- `ext_19_case_02` — Missing confirmation/key/browser header or invalid JSON fails safely; mismatched expected account returns account_changed before any receipt lookup/write.
+- `ext_19_case_03` — Foreign owner fields, untrusted origin and unauthenticated calls reveal no private data; injected error leaves no partial write.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_api.py -q
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Call all three endpoints with one valid disposable session, then repeat with the other expected-account ID and an untrusted Origin.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] First/repeated visits and applies return the frozen 200 response shapes; forget returns the actual own deleted count.
+- [ ] Missing confirmation/key/browser header or invalid JSON fails safely; mismatched expected account returns account_changed before any receipt lookup/write.
+- [ ] Foreign owner fields, untrusted origin and unauthenticated calls reveal no private data; injected error leaves no partial write.
+- [ ] Every numbered EXT-19 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Do not deploy an unguarded intermediate route. If persistent enforcement cannot be reused, keep routes unregistered until EXT-21 resolves it. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Do not deploy an unguarded intermediate route. If persistent enforcement cannot be reused, keep routes unregistered until EXT-21 resolves it.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-19 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[19/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-19`; title: **Expose guarded visit, apply and forget routes**; parent: one Chrome job/company memory main issue; band 4: Explicit application writes; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-20"></a>
+
+#### EXT-20 — Prove concurrent application writes and lost responses
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Concurrency tests\
+**Execution position:** 20/50; band 4/10 — Explicit application writes; group step 5/5.
+
+##### Goal — what to complete
+
+Prove concurrent apply and lost-response retry across supported databases.
+
+##### Why this exists
+
+Prove concurrent apply and lost-response retry across supported databases. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-19](#ext-19) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `backend/app/routers/crm.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/lifecycle.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/capture.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/app/services/contacts.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_lifecycle_mutations.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+- `backend/tests/test_browser_memory_apply.py` — PROPOSED; supplied by EXT-16 before use; inspect current behavior/fixtures if present.
+- `backend/tests/test_application_memory.py` — EXISTS at planning baseline; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `backend_rules.md, database_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+No new screen; success/errors make only the owned backend behavior available. Later popup tasks own interactive presentation.
+
+##### Frozen source requirements / exact scope
+
+- Use two independent sessions/connections and a barrier for the same owner/job; include different valid request keys and canonical variants.
+- Inject failure after event creation but before commit, then retry through the public API.
+- Run SQLite and PostgreSQL independently and assert first timestamp, track identity, events and receipt outcomes from fresh sessions.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `backend/tests/test_browser_memory_apply.py` | PROPOSED; supplied by EXT-16 before use | Task-owned regression/fixture |
+| `backend/tests/test_application_memory.py` | EXISTS at planning baseline | Task-owned regression/fixture |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+Use existing JobTrack and lifecycle records; browser_apply_receipts and job_visits come from EXT-06, not another migration. Receipt key is cookie owner + apply UUID; digest uses normalized validated payload including literal confirmation. Replay returns stored response only if its owner application still exists. Prune expired receipts after 30 days inside write lock; max 10,000 active owner receipts, else 409 receipt_limit_reached. Expired receipt does not erase durable applied evidence. No independent commit, browser credential data or receipt restore. Lost response shows Save status unknown · Retry; keep same key/payload for deliberate retry only. Changed account invalidates the confirmation.
+
+##### API / event / cache / integration contracts
+
+`POST /crm/browser-memory/apply` consumes `{url,company,title,confirmed:true}` with UUID `Idempotency-Key` → `200 {protocol_version:1,account_id:int,application_id:int,created:bool,already_applied:bool,applied_at:UTC}`. A first explicit application creates/updates an exact never-applied track using the lifecycle writer; exact/canonical previously applied returns its ID/time/status unchanged. Possible/company-only match is never a merge target. Same key/payload replays; altered payload → 409 idempotency_conflict; deleted receipt target → 409 application_deleted. Track/event/receipt commit atomically. No CSV capture, click, synthetic open, note overwrite or advanced-status reset.
+
+Receipt key is cookie owner + apply UUID; digest uses normalized validated payload including literal confirmation. Replay returns stored response only if its owner application still exists. Prune expired receipts after 30 days inside write lock; max 10,000 active owner receipts, else 409 receipt_limit_reached. Expired receipt does not erase durable applied evidence. No independent commit, browser credential data or receipt restore. Lost response shows Save status unknown · Retry; keep same key/payload for deliberate retry only. Changed account invalidates the confirmation.
+
+New mutation requests require cookie auth, exact trusted frontend Origin, `X-JobGrid-Browser: 1`, and `X-JobGrid-Account-ID` equal to the cookie-resolved account before mutation/receipt lookup. That ID is an expectation, not owner authority. Wrong account → 409 account_changed; wrong/missing Origin/browser header → 403 origin_not_allowed; absent/invalid expected-account header → 422 invalid_browser_memory_payload. Other new errors: `{detail:{code,message,field?}}`; invalid input 422, quota/replay conflict 409, attempt limit 429 browser_memory_rate_limited with Retry-After, limiter/dependency failure 503 browser_memory_unavailable. Preserve existing session-auth 401 body. Per owner: check 120/min, visit 60/min, apply 20/min, forget 5/hour; rejected authenticated attempts count through shared persistent windows. No wildcard CORS, payload logging, token export or wrong-owner response. No success on partial failure.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-20.01** — Use two independent sessions/connections and a barrier for the same owner/job; include different valid request keys and canonical variants.
+2. **EXT-20.02** — Inject failure after event creation but before commit, then retry through the public API.
+3. **EXT-20.03** — Run SQLite and PostgreSQL independently and assert first timestamp, track identity, events and receipt outcomes from fresh sessions.
+4. **EXT-20.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_20_case_01` — Concurrent same-job confirmation commits exactly one applicable track and first-applied event; responses resolve the same durable application.
+- `ext_20_case_02` — Canonical already-applied retry preserves original time/status without a duplicate or synthetic visit.
+- `ext_20_case_03` — Late rollback produces zero partial event/receipt success; lost-response retry returns the original result.
+
+```bash
+
+# From backend/, activated repository venv; disposable SQLite only
+
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_apply.py tests/test_application_memory.py -q
+
+# PostgreSQL claims also require the isolated TEST_DATABASE_URL fixture in tests/conftest.py.
+
+# Follow development.md section 5; do not point either database variable at live data. A skip is not a pass.
+
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Run the concurrent fixture against disposable PostgreSQL and preserve expected/actual counts; SQLite success alone is not concurrency proof.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Concurrent same-job confirmation commits exactly one applicable track and first-applied event; responses resolve the same durable application.
+- [ ] Canonical already-applied retry preserves original time/status without a duplicate or synthetic visit.
+- [ ] Late rollback produces zero partial event/receipt success; lost-response retry returns the original result.
+- [ ] Every numbered EXT-20 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+A PostgreSQL skip is pending evidence, not a pass. Do not delete duplicate history to make assertions green. This is test/evidence work: rollback the isolated test/config delta, retaining real product data.
+
+##### Stop conditions
+
+- A PostgreSQL skip is pending evidence, not a pass. Do not delete duplicate history to make assertions green.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-20 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+None — regression assertions only; no runtime/setup behavior change. Record that reason in the main issue; a discovered runtime fix needs its own bounded scope.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[20/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-20`; title: **Prove concurrent application writes and lost responses**; parent: one Chrome job/company memory main issue; band 4: Explicit application writes; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
 Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
 
