@@ -1,7 +1,7 @@
 # JobGrid — Development, Verification, and Deployment Guide
 
-Updated: **2026-09-30**\
-Audited main: **`c56cb83195ab1ac5cd691860c77cf1e85e1805dc`**\
+Updated: **2026-10-16** (Chrome extension plan added; existing release audit remains dated September 30)\
+Release-audit main: **`c56cb83195ab1ac5cd691860c77cf1e85e1805dc`**\
 Overall: **Local product acceptance complete; branch enforcement, live operations, staging acceptance, and final release closeout remain.**
 
 This is the primary execution guide. C-01–C-06 and C-08 are completed for their repository/local scope. C-07 workflows pass, but branch protection is missing. C-09 is repository-ready with external proof outstanding; C-10–C-12 remain open. A historical deployment does not establish complete staging or release acceptance.
@@ -48,6 +48,7 @@ Every item below is **Not completed**. Retain the existing C/JG IDs; these rows 
 - [All 64 original tickets and their development steps](#original-tickets)
 - [GitHub, staging, and production deployment runbook](#deployment-runbook)
 - [Final handover](#final-handover)
+- [Chrome extension: product, contracts, and 50 microtasks](#chrome-extension-plan)
 
 <a id="completion-definition"></a>
 ## 1. What “complete” means
@@ -62,7 +63,7 @@ JobGrid is complete for this scope when the two original workflows and all 17 ro
 
 **Boundary:** the browser opens tabs in the browser running the application. A website cannot force the user's separate Google Chrome installation to open. Test the requested workflow in Chrome and document popup permissions/manual fallback.
 
-**Excluded from required scope:** new AI features, automated applications, a browser extension, new cloud services, enabling automatic purge by default, and large architectural rewrites. Add them only through a separate product decision. No actual code fixes, staging actions, or deployment are performed by writing this guide.
+**Excluded from the original release scope:** new AI features, automated applications, new cloud services, enabling automatic purge by default, and large architectural rewrites. The Chrome extension is now a separately requested feature plan in [section 9](#chrome-extension-plan); it does not reopen completed C/JG work or establish extension implementation/release acceptance. No actual code fixes, staging actions, or deployment are performed by writing this guide.
 
 <a id="audit-evidence"></a>
 ## 2. Evidence baseline and its limits
@@ -2773,3 +2774,131 @@ The in-app owner-scoped ZIP is a portable user backup. It does not replace an op
 - [ ] Remaining low-risk limitations are explicit; no failed or blocked mandatory gate is described as complete.
 
 **Stopping rule:** finish this scope when these checks are satisfied. New feature ideas do not automatically extend the project.
+
+<a id="chrome-extension-plan"></a>
+## 9. Chrome extension — job and company memory
+
+**Planning baseline:** 2026-10-16, local `main` and fetched `origin/main` at `48bf33c16c9cc541ec709988d7ca29cf084385de`. **Status: planned; 0/50 implementation microtasks complete.** This section is the authoritative extension plan. Existing C-07/C-09–C-12 release gates remain separate and must be revalidated when a release candidate is selected. No new GitHub issue, Linear task, branch, commit, PR, migration, extension package or deployment is created by this document.
+
+### 9.1 Staff Engineer Assessment and product definition
+
+**Executive verdict: Ready to plan.** The user needs a warning before repeating an application, including jobs opened outside JobGrid. A company warning is context, not a reason to block a different role. The existing application matcher solves much of the identity problem; the missing pieces are Chrome integration and durable visits for URLs without CSV rows.
+
+**Material risks and decisions:**
+
+| Risk / challenged assumption | Decision, prevention, and recovery |
+|---|---|
+| A page visit, import, save, or Apply-button click proves submission | Only an explicit **Mark applied** confirmation writes application evidence. No submission inference in V1. Existing imports and `UrlHistory.first_seen_at` never become visit/application timestamps. |
+| All jobs on `greenhouse.io` or `lever.co` belong to one company | Employer names come from editable page metadata or an explicit user entry. Shared ATS domains and board slugs are not company identities. Reuse owner-scoped aliases; never auto-create aliases. |
+| Different URLs always mean different jobs | Reuse conservative exact/canonical matching. Preserve unknown query parameters and job IDs. Similar company/title is **Possible duplicate**, never a silent merge. |
+| A signed-in website means a background extension can use its cookies everywhere | Use a content script on an open, explicitly selected JobGrid tab and its same-origin `/api` proxy. Do not export session cookies or depend on third-party-cookie access from the extension worker. Prove this flow in real Chrome first. |
+| Browsing history can be uploaded indiscriminately | Tracking starts disabled. User enables a supported site; only recognized job-detail URLs are sent. No Chrome history import, incognito tracking, general browsing log, form text, resume content, or cookies. |
+| No match means safe to apply | Show **No recorded application** only after a successful complete lookup. Offline, timeout, partial lookup, login failure and unsupported sites must never show that state. |
+| Warning data can leak through the job page | History stays in the extension popup/badge. Job-site content scripts extract public metadata only; they never receive application/company history. |
+| Extension release is just a frontend deployment | Versioned unpacked pilot first; Chrome Web Store submission is a later release gate with privacy disclosures and review. Existing installed versions must tolerate additive backend changes. |
+
+**Problem / users / outcome:** A signed-in JobGrid job seeker opens a job in Chrome, learns whether they visited it or applied before, sees prior applications to the employer, and deliberately records a new application without leaving a duplicate record. There is no separate extension administrator role. Anonymous users can open JobGrid login but cannot read or write history. Each account can access only its own records.
+
+**V1 scope:**
+
+1. Chrome Manifest V3 extension with a popup and tab-specific badge. Installation alone does not track browsing.
+2. Optional automatic checks/visit recording for recognized job-detail pages on `boards.greenhouse.io`, `job-boards.greenhouse.io`, and `jobs.lever.co`. Each site permission and tracking toggle is opt-in. Only HTTPS detail routes qualify: Greenhouse `/{board}/jobs/{job_id}` and Lever `/{board}/{posting_id}`. Listing pages, apply forms and unknown routes do not auto-record. Additional routes need fixtures and a contract update.
+3. For other public HTTP(S) job pages, **Check this job** runs only when the user opens the popup. Title/company are editable; saving or recording a visit requires a deliberate action. Explain **Manual check only**. No promise of automatic coverage on LinkedIn, Indeed, Workday or company career sites.
+4. User chooses one trusted JobGrid tab for this browser session and sees its current account before enabling tracking. Account changes, missing tab, logout, worker restart, or ambiguous multiple tabs suspend tracking until reconnection; never silently switch accounts. Keeping JobGrid open is an explicit pilot requirement.
+5. Server-owned visits survive browser restart/reinstall and CSV deletion. Extension local storage holds settings only; no durable duplicate application database. V1 does not import Chrome's past history and cannot reconstruct unrecorded past applications.
+6. **Mark applied** requires company and title, shows current URL/account and any duplicate/company warning, then confirms once. Exact/canonical existing application evidence is returned unchanged; same-company/different-role remains allowed. Existing advanced pipeline status must not regress to `applied` on retry.
+7. **Open in JobGrid**, **Pause tracking**, **Forget visits**, and **Disconnect** are accessible popup/settings actions. Forget visits never removes applications. Disconnect clears all transient private state immediately.
+
+**Short UI copy:** `Checking…`, `Visited before`, `Already applied · {date}`, `Applied to this company · {count}`, `Possible duplicate`, `No recorded application`, `Company unknown`, `Sign in to JobGrid`, `Open JobGrid to connect`, `Tracking paused`, `Manual check only`, `Couldn’t check · Retry`, `Saving…`, `Saved`, `Visit limit reached`. Use text/icons as well as color. Applied warning outranks possible duplicate, company history, visit, then no recorded application; the popup can display multiple relevant facts. Dates use the user's locale with the UTC instant available in details.
+
+**Non-goals:** AI/LLMs, autofill, automated submission, reading application answers, scraping authenticated ATS APIs, hidden DOM injection, blocking applications, universal employer identification, cross-browser support, historical browser-history ingestion, team/shared accounts, a separate token/pairing service, new hosting, paid infrastructure, a full visit analytics dashboard, and tracking while JobGrid is closed. Later requests can reconsider these after pilot evidence.
+
+**Success criteria:** All identity/security fixture cases below pass; zero application writes from visit/check; one application and one first application timestamp after retries/concurrent requests; no cross-account history; server visits remain after reinstall/source deletion; keyboard-only popup flow works; warm check p95 <=2 seconds over 30 synthetic checks with environment recorded. Render cold starts are reported separately, with an 8-second client timeout. No production browsing telemetry is needed to measure pilot timing.
+
+### 9.2 Evidence, alternatives, and architecture decision
+
+**Confirmed at the baseline:** See the focused extension refresh in `docs/repo_context.md`. `crm.py::_find_application_matches` already limits matches and company counts to non-null `applied_at`, uses company aliases, and distinguishes exact/canonical/possible. `services/capture.py` saves without visiting/applying. `crm.py::bulk_create_from_rows` uses lifecycle writers. `models.py::UrlHistory` is import memory, not visit evidence. `frontend/vercel.json` has the same-origin API proxy. No tracked extension package exists. Migration head is `018`; choose the next free revision at implementation time.
+
+| Option | Complexity / delivery / maintenance | Reliability / security / cost | Migration / reversibility |
+|---|---|---|---|
+| A. Local-only extension with exported/imported history | Smallest isolated prototype; duplicates matcher/storage logic | Works without app tab, but stale imports miss applications and reinstall loses unsynced history; private data duplicated; no service cost | No server migration, but hard to reconcile two truth sources |
+| B. Account history through open JobGrid tab (**selected for V1**) | Moderate; native JS extension and thin server routes; reuse cookie auth and identity/lifecycle services | Live account truth, no browser-readable token; unavailable when app tab is closed; existing hosting cost only | Additive visit/receipt tables plus backup extension; rollback disables new feature while preserving records |
+| C. Extension-scoped tokens and device pairing | Largest scope; new credential issuance, storage, rotation/revocation and support | Can work without app tab; additional credential theft/revocation risk; more backend/support load | New auth schema/lifecycle and security review; postpone until pilot demonstrates need |
+
+**ADR-EXT-01 (proposed implementation decision):** Select B, with server-side durable visits and explicit application confirmation. No new framework or runtime dependency. Plain ES modules/HTML/CSS under `extension/`, existing pytest/Playwright plus Node's test runner. No web-accessible resources, external messaging, remotely hosted executable code, arbitrary-URL fetch relay, or inline/eval scripts. The open-tab dependency is intentionally visible in onboarding. If real OAuth/proxy tests fail, stop the auth-dependent work and revise this ADR; do not weaken cookies/CORS or silently implement token authentication.
+
+**Assumptions to validate:** users accept an open JobGrid tab for the pilot; supported ATS routes and metadata fixtures reflect current pages; the chosen deployment authenticates through its same-origin proxy. Wrong assumptions cause paused/unavailable states, never fabricated history. **Needs Architect Decision before a public release:** exact trusted frontend origins and selected deployment; stable store extension ID/distribution owner; privacy/support URLs and approved store disclosures. These are external release inputs, not excuses to block local fixture-based work.
+
+Official Chrome references checked for this plan: [permissions](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions), [content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts), [message passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging), [network requests and relay restrictions](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests), and [extension E2E testing](https://developer.chrome.com/docs/extensions/how-to/test/end-to-end-testing). Host permission does not make a job-site content script a safe place to fetch private JobGrid history.
+
+### 9.3 Micro-architecture units and file ownership
+
+All `extension/` paths and browser-memory modules listed below are **proposed new files**. Existing files are reuse anchors, not permission for broad rewrites.
+
+| Unit | Responsibility / input → output | Owned files and data | Failure, security, tests, observability |
+|---|---|---|---|
+| MAS-EXT-1 Memory API | Validated job identity → visit/application/company context; explicit writes → durable receipts | NEW `backend/app/browser_memory_schemas.py`, `backend/app/services/browser_memory.py`, `backend/app/routers/browser_memory.py`; EDIT `models.py`, `main.py`; new next Alembic revision | Cookie account required; bounded reads/writes; two-account/concurrency tests; aggregate outcome/latency only |
+| MAS-EXT-2 Browser transport | Extension command → selected trusted JobGrid tab → fixed same-origin API route → response | NEW `extension/manifest.json`, `extension/background.js`, `extension/jobgrid-bridge.js`, `extension/config.js` | No selected authenticated tab = paused; internal messages only; forged-sender/account-switch tests; no cookies or URLs in logs |
+| MAS-EXT-3 Job-page detection | Allowed site/detail route or user gesture → public URL/title/company candidate | NEW `extension/job-page.js`, `extension/site-rules.js` | Missing/ambiguous employer stays unknown; never read input values; hostile DOM/route tests; no private results sent to this unit |
+| MAS-EXT-4 Popup and controls | Current tab/context + explicit gesture → concise state or command | NEW `extension/popup.html`, `extension/popup.js`, `extension/popup.css` | Safe text rendering, keyboard/focus/live status; validation/failure/accessibility tests; no private persistent cache |
+| MAS-EXT-5 Recovery and delivery | Visit data/versioned package → portable recovery and reproducible pilot | EDIT backup schemas/services/tests, existing CI; NEW `extension/README.md`, `extension/tests/`, `frontend/tests/extension.spec.ts` | Legacy/malformed restore tests; manifest permissions review; real Chrome pilot; sanitized release evidence |
+
+Reuse `services/job_identity.py`, `services/lifecycle.py`, `services/capture.py`, existing validation and request-window machinery. If shared logic must move out of `routers/crm.py`, preserve public signatures/return values, query ordering, limits and errors; trace all callers first. Do not call HTTP handlers or introduce nested commits. No background queue or new scheduler: MV3 events initiate a check/visit; application writes require a popup confirmation.
+
+### 9.4 Contracts — CCR-EXT-01
+
+**Current shape:** no browser-memory endpoints, extension protocol or durable visit table. Existing `/crm/application-matches`, capture, row-click, lifecycle, aliases and backup contracts retain their meanings. **New shape:** additive contracts below. **Breaking:** no existing routes/fields removed or repurposed. **Downstream:** EXT-01–50; models, router registration, identity/lifecycle consumers, backup inventory, extension transport/popup, tests and docs. **Compatibility:** old clients keep working; feature disabled/unsupported server returns an unavailable state; keep protocol v1 throughout pilot. Architect updates this section, affected tasks and `docs/repo_context.md` together for any contract change.
+
+#### A. Durable data and identity
+
+NEW table `job_visits`: `id` integer primary key; `user_id` required FK `users.id` with account deletion cascade; `canonical_url` Text required; `canonical_url_hash` String(64) required; `first_visited_at` UTC DateTime required with server time; unique `(user_id, canonical_url_hash)` plus owner/time index. A hash collision with a different canonical URL is rejected as `409 identity_conflict`, never merged. No company/title/form/body/token stored in this table. No FK to CSV rows. Canonicalization version is the existing `ccr-identity-1`; version changes require a migration/CCR. Store canonical URLs with the current tracking/fragment removal; reject URL userinfo, private/loopback hosts, unsupported schemes and credential-like query keys (`token`, `access_token`, `auth`, `authorization`, `code`, `password`, `session`, `session_token`, case-insensitive) on these new routes. Do not fetch submitted URLs server-side. Arbitrary query strings can still contain private values: disclose URL storage and allow forgetting visits.
+
+A visit is one remembered job, not an event stream: insert once; retry/revisit does not change first time, increase a counter or emit repeated lifecycle events. Per-account maximum 10,000 remembered URLs; existing visits remain readable at capacity and repeated writes succeed. New URL at capacity returns `409 visit_limit_reached`; no automatic eviction/purge. **Forget visits** deletes this table's rows for the authenticated account only. Server evidence can outlive a deleted source row. Account deletion includes visits. Existing backup restore may restore user-selected forgotten history; disclose that behavior.
+
+`CsvRow.clicked` remains the source of row discovery state. Browser visits also set matching owned existing rows clicked through the shared row-visit mutation, preserving first clicked time; they do not create rows/tracks, apply jobs, or inflate session counters. Existing clicked rows/tracks can provide conservative legacy visit evidence at lookup; `UrlHistory` and imported/saved-only records cannot. The new visit table is the durable source for external URLs. No inferred bulk backfill from import history.
+
+`JobTrack.applied_at != null` remains application evidence even if current status is rejected/withdrawn/archived; archive is not forgetting. Permanent application deletion follows existing product semantics; do not silently reconstruct deleted applications from visit memory. Alias grouping is account-owned. Company count means application records with non-null `applied_at`, not unique employers, saved jobs or visits.
+
+#### B. HTTP routes and limits
+
+All NEW routes live under `/crm/browser-memory`; extension transport uses `/api/crm/browser-memory` on the trusted frontend tab. Guard with `get_current_user`; derive owner from cookie, never client input. Requests require JSON, disallow unknown fields, and accept `url` public HTTP(S) <=2048 characters, optional `company` <=320 and `title` <=500. `apply` requires nonblank company/title. Reuse existing URL/text validation with these stricter browser-memory privacy checks; never alter existing canonicalization policy globally.
+
+| Route | Request | Success response |
+|---|---|---|
+| `POST /check` | `{url, company?:string|null, title?:string|null}` | `200 {protocol_version:1, checked_at:UTC, account_id:int, visit:{visited:bool, first_visited_at:UTC|null}, matches:[{track_id:int, confidence:"exact"|"canonical"|"possible", reason:string, company:string|null, title:string|null, status:string, applied_at:UTC}], company_history_count:int, company_known:bool, lookup_complete:bool}` |
+| `POST /visit` | `{url}` | `200 {protocol_version:1, account_id:int, created:bool, first_visited_at:UTC}`; repeats return `created:false` |
+| `POST /apply` | `{url, company:string, title:string, confirmed:true}` with required UUID `Idempotency-Key` | `200 {protocol_version:1, account_id:int, application_id:int, created:bool, already_applied:bool, applied_at:UTC}` |
+| `DELETE /visits` | No body; explicit popup confirmation | `200 {protocol_version:1, account_id:int, deleted:int}`; repeat returns zero |
+| `GET /session` | No body | `200 {protocol_version:1, account_id:int, account_label:string}`; use current user display label, no token/cookie/email dump |
+
+`UTC` means canonical RFC3339 string with `Z`, using existing timestamp helpers. Matches return at most 20 records, exact then canonical then possible, newest application then ID for stable ties. Exact/canonical candidates must be fetched separately from bounded company/title candidates so a scan cap cannot hide a known applied URL. `lookup_complete:false` is required when possible-match search hits its cap (500 candidates); still show definite results, but never imply complete clearance. Count uses a separate owner-scoped aggregate. Shared matcher changes require existing regression parity.
+
+`apply` locks the account using the existing mutation pattern, validates the complete request, checks exact/canonical applied evidence first and returns it without timestamp/status changes. Otherwise create/update an exact URL track using existing lifecycle validation/event writing; a matching never-applied exact track may be marked applied. A canonical but never-applied separate track is not silently merged. Possible/company-only matches never select an application target. No captured CSV row is required. Event and first `applied_at` commit in the same transaction. Unique owner/URL constraints plus lock/retry resolve races; test SQLite and PostgreSQL separately. Do not use `upsert_from_row`, which synthesizes an open and increments counts.
+
+An exact-match never-applied track keeps its existing metadata unless empty; supplied metadata cannot overwrite notes or unrelated fields. A new track records supplied company/title, an explicit application time and lifecycle event with no synthetic open.
+
+Existing receipts are domain-specific (capture, evidence and documents), so reuse their transaction/digest pattern, not their tables. Add `browser_apply_receipts`: `id` integer PK; `user_id` required FK with account deletion cascade; `request_key` String(36) required UUID; `payload_hash` String(64) required; `response_json` JSON required containing only the frozen apply response; `created_at` UTC DateTime required. Unique `(user_id, request_key)` and owner/time index. Same key/payload returns original result; changed payload returns `409 idempotency_conflict`. If the recorded application was permanently deleted, return `409 application_deleted`, never resurrect it from a receipt. Prune expired receipts under the write lock after 30 days; maximum 10,000 active receipts/account, otherwise `409 receipt_limit_reached`. Preserve first application time even after receipt expiry by checking durable application evidence. Store no credential data in receipts; classify them as excluded operational state in the backup inventory. A lost response leaves **Save status unknown · Retry** and retains the same key/payload in session storage; never retry a changed payload/key silently. User closes/restarts browser: recheck durable history before offering a fresh confirmation; no offline application queue.
+
+New-route errors use `{detail:{code:string,message:string,field?:string}}`; session-auth 401 keeps existing `get_current_user` response compatibility. `422 invalid_browser_memory_payload` covers missing/wrong/extra fields, `confirmed` other than literal true, invalid URL/text/key; `403 origin_not_allowed` rejects untrusted browser origins; `409` codes above cover deterministic conflicts; `429 browser_memory_rate_limited` includes `Retry-After`; `503 browser_memory_unavailable` hides provider details. Foreign IDs/records are never returned. Do not log payloads. Fixed per-account shared limits: 120 checks/minute; 60 visit attempts/minute; 20 apply attempts/minute; 5 forget attempts/hour. Rejected authenticated attempts count; unauthenticated requests do no private query. Rate-limiter failure fails closed with 503. Reuse persistent request windows, not in-process counters. Session checks are debounced to at most once per 5 seconds per selected tab.
+
+Require `X-JobGrid-Account-ID` with the connected account ID on all new writes; compare it with the cookie-derived owner before any mutation/receipt lookup and return `409 account_changed` on mismatch. This is an expected-account assertion, never owner authority. Require exact configured trusted frontend `Origin` on new write routes and a fixed `X-JobGrid-Browser: 1` header; the header is a CSRF boundary component, not authentication. No wildcard CORS, no extension origins in cookie CORS allowlists, no GET mutations. Verify real proxy Origin behavior before accepting the deployed configuration. Authentication/session routes remain backward compatible.
+
+#### C. Chrome transport, permissions and lifecycle
+
+Manifest v3: `storage`, `activeTab`, `scripting`; optional host permissions restricted to the three named ATS hosts and the exact selected JobGrid frontend origin. Request host access only from onboarding/site-enable gestures. Avoid `tabs`, `history`, `cookies`, `<all_urls>`, wildcard JobGrid subdomains and external messaging. Dynamically register job-site scripts after permission grant; `chrome.tabs` events can inspect only accessible hosts. Unknown page metadata uses a current-tab `activeTab` gesture. Packaged config contains public exact origins only; local development uses a separate localhost manifest/config, never shipping localhost in the release artifact. Origin selection is a build/release input, not a popup text box accepting arbitrary API servers.
+
+Background-owned protocol: `{version:1, request_id:UUID, kind:"session"|"check"|"visit"|"apply"|"forget_visits", account_id?:int, payload:object}`. Response `{version:1, request_id, ok:boolean, data?:object, error?:{code,message,retry_after?:int}}`. Bound message JSON to 8 KiB. Validate message kind/fields/sender/extension ID; mutations accepted from the packaged popup only. Page scripts may send a metadata candidate for their own top-level tab only; background re-reads accessible tab URL and ignores supplied owner/account/visit/action flags. Reject subframes, mismatched URL/tab/document, external senders and unsupported protocol.
+
+`jobgrid-bridge.js` runs isolated on the exact trusted JobGrid frontend only, receives internal runtime messages, and maps an enumerated command to a hard-coded method/path above with `credentials:'same-origin'`, JSON, the fixed header and the expected-account header for writes. It never accepts an arbitrary destination/method/headers and never exposes a `window.postMessage` relay. It returns private responses only to background. Backend session identity is checked against selected account before every write and every displayed response; changed identity cancels the action, clears private UI and requires reconnection. The worker never reads a cookie and never sends private results back to a job tab.
+
+8-second timeout for bridge/API calls; no periodic polling or keep-alive loop. Debounce navigation by 500 ms, one request per tab/URL in flight; discard responses if tab URL/document/account/request generation changed. On a qualifying navigation: check first, then record visit; retain the pre-write result so the first visit does not display **Visited before**. A failed check records no automatic visit. A failed visit after a good check leaves warnings visible and says **Visit not saved · Retry**. Only a user Retry reattempts; 429 respects `Retry-After`. Permission revocation unregisters the relevant script and stops tracking immediately. MV3 restart clears the connection/private context, requiring explicit reconnect; persisted settings never imply an authenticated account binding.
+
+No pending browser-wide queue. `chrome.storage.local` stores site opt-ins, pause state and selected public environment only. `chrome.storage.session` holds selected tab/account, bounded in-flight state and one unresolved apply payload/key (maximum 24 hours; delete on success/disconnect/account change). Never `chrome.storage.sync` private data. Use session storage restricted to trusted extension contexts. On reconnect after service-worker suspension, verify session and URL afresh; do not replay a mutation automatically.
+
+#### D. Recovery, deletion and compatibility
+
+Add `job_visits_v1` as a checksummed optional backup extension using the repository's composed extension pattern; do not append an unversioned base section that strict old readers will reject. Each entry contains canonical URL/hash and first visit UTC; portable backup-local references replace source IDs and destination owner comes from the restore session. Version is exactly 1; duplicate canonical hashes with mismatched URL, invalid time, >10,000 entries, or invalid checksum reject the whole restore before any write. Recompute hashes server-side; earliest first-visit time wins on replay/union with existing visits; reject a union over quota atomically. Missing extension in old backups means no visits, not a fabricated history. JSON and ZIP include this metadata; no bytes/secrets/browser settings are required.
+
+Before enabling the new exporter, verify what existing readers do with unknown optional extensions. If legacy code cannot safely read/skip it, add a capability/version rejection with a clear compatibility message and retain export-to-old-format only when omissions are explicit. Never claim silent loss is a complete restore. Test this decision against real legacy fixtures. Visit delete/restore does not mutate application history, import memory, CSV row state or analytics. Clearing visits therefore does not clear a separately retained row click; UI must explain which evidence remains.
+
+Alembic adds only the visit/receipt tables/indexes; existing records/timestamps are unchanged, no speculative backfill. Preserve old-code rollback by leaving the added table in place and disabling extension calls. Downgrade that drops visit data is a deliberate export-first operator action, never automatic rollback. Restore receipts/rate windows/session settings are operational state, not recoverable private application truth; preserve existing backup exclusions and document any new receipt policy explicitly.
