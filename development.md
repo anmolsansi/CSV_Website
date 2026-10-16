@@ -2980,11 +2980,11 @@ Inspect Chrome references, frozen protocol and `extension/config.js`; rules: sec
 
 | Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
 |---|---|---|
-| [ ] EXT-26 | Implement selected JobGrid tab/account connection and internal command dispatcher. | `extension/background.js`, `extension/tests/bridge.test.mjs`; exact host/tab/version/request limit, reject external/subframe/forged popup writes; dep: 05,14,19. Docs: connection. |
-| [ ] EXT-27 | Enforce account recheck, timeouts and stale-response cancellation. | `background.js`, `jobgrid-bridge.js`, `tests/bridge.test.mjs`; URL/account/tab changes mid-request and missing tab never display other account data; dep: 26. Docs: failure states. |
-| [ ] EXT-28 | Add exact ATS detail route classifier with safe URL handling. | `extension/site-rules.js`, `extension/tests/site-rules.test.mjs`; three hosts, spoofed suffix, listing/form/private scheme/query negatives; dep: 02. Docs: supported routes. |
-| [ ] EXT-29 | Extract editable public title/company candidates without reading forms. | `extension/job-page.js`, `extension/tests/fixtures/job-pages.html`, `frontend/tests/extension.spec.ts`; metadata/JSON-LD/display text, ambiguous/missing company null, hostile markup text only; dep: 28. Docs: metadata limits. |
-| [ ] EXT-30 | Register/unregister scripts per granted host and site opt-in. | `background.js`, `manifest.json`, `tests/bridge.test.mjs`; deny/revoke permission stops collection, install defaults off, unknown sites manual only; dep: 27,29. Docs: permissions. |
+| [ ] [EXT-26](#ext-26) | Implement selected JobGrid tab/account connection and internal command dispatcher. | `extension/background.js`, `extension/tests/bridge.test.mjs`; exact host/tab/version/request limit, reject external/subframe/forged popup writes; dep: 05,14,19. Docs: connection. |
+| [ ] [EXT-27](#ext-27) | Enforce account recheck, timeouts and stale-response cancellation. | `background.js`, `jobgrid-bridge.js`, `tests/bridge.test.mjs`; URL/account/tab changes mid-request and missing tab never display other account data; dep: 26. Docs: failure states. |
+| [ ] [EXT-28](#ext-28) | Add exact ATS detail route classifier with safe URL handling. | `extension/site-rules.js`, `extension/tests/site-rules.test.mjs`; three hosts, spoofed suffix, listing/form/private scheme/query negatives; dep: 02. Docs: supported routes. |
+| [ ] [EXT-29](#ext-29) | Extract editable public title/company candidates without reading forms. | `extension/job-page.js`, `extension/tests/fixtures/job-pages.html`, `frontend/tests/extension.spec.ts`; metadata/JSON-LD/display text, ambiguous/missing company null, hostile markup text only; dep: 28. Docs: metadata limits. |
+| [ ] [EXT-30](#ext-30) | Register/unregister scripts per granted host and site opt-in. | `background.js`, `manifest.json`, `tests/bridge.test.mjs`; deny/revoke permission stops collection, install defaults off, unknown sites manual only; dep: 27,29. Docs: permissions. |
 
 #### Band 7 — Navigation and visit transport (MAS-EXT-2/3)
 
@@ -3069,11 +3069,11 @@ Inspect `.github/workflows/ci.yml`, section 7 deployment runbook, C-09/C-10 evid
 <a id="extension-detailed-tickets"></a>
 ### 9.7 Detailed extension execution tickets
 
-These packets expand the EXT-01–50 index to the JG-009 execution format. **All 50 are PLANNED / not implemented / no acceptance evidence. Detailed packets currently written: EXT-01–25; later entries remain in the index pending the next documentation commits.** Keep the same IDs and dependency order; a detailed packet does not create another task or issue. Relative size estimates are not calendar promises. P0 means a correctness/security prerequisite within this feature, P1 means a required V1 deliverable; neither changes the original app release priorities.
+These packets expand the EXT-01–50 index to the JG-009 execution format. **All 50 are PLANNED / not implemented / no acceptance evidence. Detailed packets currently written: EXT-01–30; later entries remain in the index pending the next documentation commits.** Keep the same IDs and dependency order; a detailed packet does not create another task or issue. Relative size estimates are not calendar promises. P0 means a correctness/security prerequisite within this feature, P1 means a required V1 deliverable; neither changes the original app release priorities.
 
 Read one selected packet together with `docs/repo_context.md` and its named current source. Contracts needed by that task are repeated below. The matching section-9.4 CCR remains the authoritative owner; if a copied extract drifts, update both before coding. This expansion records contract clarifications: explicit optional-backup envelope/checksum, missing-header error mapping, worker-only automatic visit authorization and worker-suspension versus browser-restart behavior. These are part of CCR-EXT-01 and are copied into the affected packets. Each packet still needs current source contents and the applicable skill rules attached for a separate builder session. A future file is not evidence that its dependency is implemented. Recheck snapshot states, migration head and fixtures at intake. No existing JG completed status, historical PR, test count or merge evidence transfers to an EXT ticket.
 
-**Navigation:** [EXT-01](#ext-01), [EXT-02](#ext-02), [EXT-03](#ext-03), [EXT-04](#ext-04), [EXT-05](#ext-05), [EXT-06](#ext-06), [EXT-07](#ext-07), [EXT-08](#ext-08), [EXT-09](#ext-09), [EXT-10](#ext-10), [EXT-11](#ext-11), [EXT-12](#ext-12), [EXT-13](#ext-13), [EXT-14](#ext-14), [EXT-15](#ext-15), [EXT-16](#ext-16), [EXT-17](#ext-17), [EXT-18](#ext-18), [EXT-19](#ext-19), [EXT-20](#ext-20), [EXT-21](#ext-21), [EXT-22](#ext-22), [EXT-23](#ext-23), [EXT-24](#ext-24), [EXT-25](#ext-25), EXT-26, EXT-27, EXT-28, EXT-29, EXT-30, EXT-31, EXT-32, EXT-33, EXT-34, EXT-35, EXT-36, EXT-37, EXT-38, EXT-39, EXT-40, EXT-41, EXT-42, EXT-43, EXT-44, EXT-45, EXT-46, EXT-47, EXT-48, EXT-49, EXT-50.
+**Navigation:** [EXT-01](#ext-01), [EXT-02](#ext-02), [EXT-03](#ext-03), [EXT-04](#ext-04), [EXT-05](#ext-05), [EXT-06](#ext-06), [EXT-07](#ext-07), [EXT-08](#ext-08), [EXT-09](#ext-09), [EXT-10](#ext-10), [EXT-11](#ext-11), [EXT-12](#ext-12), [EXT-13](#ext-13), [EXT-14](#ext-14), [EXT-15](#ext-15), [EXT-16](#ext-16), [EXT-17](#ext-17), [EXT-18](#ext-18), [EXT-19](#ext-19), [EXT-20](#ext-20), [EXT-21](#ext-21), [EXT-22](#ext-22), [EXT-23](#ext-23), [EXT-24](#ext-24), [EXT-25](#ext-25), [EXT-26](#ext-26), [EXT-27](#ext-27), [EXT-28](#ext-28), [EXT-29](#ext-29), [EXT-30](#ext-30), EXT-31, EXT-32, EXT-33, EXT-34, EXT-35, EXT-36, EXT-37, EXT-38, EXT-39, EXT-40, EXT-41, EXT-42, EXT-43, EXT-44, EXT-45, EXT-46, EXT-47, EXT-48, EXT-49, EXT-50.
 
 <a id="ext-01"></a>
 
@@ -7071,6 +7071,786 @@ Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for 
 ##### Evidence record and suggested tracking metadata
 
 Document ID: `EXT-25`; title: **Verify deletion, backup and account lifecycle boundaries**; parent: one Chrome job/company memory main issue; band 5: Security and recovery; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-26"></a>
+
+#### EXT-26 — Build the account-bound extension command dispatcher
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Extension worker\
+**Execution position:** 26/50; band 6/10 — Connection and metadata; group step 1/5.
+
+##### Goal — what to complete
+
+Implement selected JobGrid tab/account connection and internal command dispatcher.
+
+##### Why this exists
+
+Implement selected JobGrid tab/account connection and internal command dispatcher. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-05](#ext-05), [EXT-14](#ext-14), [EXT-19](#ext-19) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `extension/config.js` — PROPOSED; supplied by EXT-01 before use; inspect current behavior/fixtures if present.
+- `extension/manifest.json` — PROPOSED; supplied by EXT-02 before use; inspect current behavior/fixtures if present.
+- `extension/jobgrid-bridge.js` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+- `extension/background.js` — PROPOSED; supplied by EXT-05 before use; inspect current behavior/fixtures if present.
+- `backend/app/routers/browser_memory.py` — PROPOSED; supplied by EXT-04 before use; inspect current behavior/fixtures if present.
+- `extension/tests/bridge.test.mjs` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `frontend_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+Priority: Already applied · {date}, Possible duplicate, Applied to this company · {count}, Visited before, then No recorded application only for successful complete lookup. Independent facts may coexist. Other states: Checking…, Company unknown, Sign in to JobGrid, Open JobGrid to connect, Tracking paused, Manual check only, Couldn’t check · Retry, Saving…, Saved, Visit limit reached, Visit not saved · Retry, Save status unknown · Retry. Loading disables overlapping actions; empty is a successful fact, not a network fallback. Render text only, locale display dates with UTC detail, labels/focus/live status and meaning beyond color. Never expose private facts to the job page.
+
+##### Frozen source requirements / exact scope
+
+- Extend the minimal spike worker with protocol-v1 message validation and explicit trusted JobGrid tab selection.
+- Allow check/session plus popup-confirmed apply/forget and worker-derived visit commands only; a page candidate cannot request writes.
+- Bind requests/responses to connected account/tab/request generation and pass fixed-route commands to the isolated JobGrid bridge.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `extension/background.js` | PROPOSED; supplied by EXT-05 before use | Task-owned implementation/configuration boundary |
+| `extension/tests/bridge.test.mjs` | PROPOSED; supplied by EXT-03 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+storage.local: site opt-ins, pause, selected public environment only. storage.session restricted to trusted extension contexts: selected app tab/account, bounded request state and at most one unresolved apply key/payload for <=24h. No private storage.sync. Worker suspension clears active connection/results and requires deliberate reconnect + fresh session/URL verification; retained unresolved apply may be used only for deliberate same-key retry after validation. Full browser restart removes session state. Success/disconnect/account change deletes private pending state. No auto-replay, periodic polling, hidden keepalive or offline queue.
+
+##### API / event / cache / integration contracts
+
+Internal request `{version:1,request_id:UUID,kind:"session"|"check"|"visit"|"apply"|"forget_visits",account_id?:int,payload:object}` → `{version:1,request_id,ok:bool,data?:object,error?:{code,message,retry_after?:int}}`; max8192 UTF-8 bytes. Worker accepts apply/forget only from its own packaged popup sender. Automatic visit is worker-internal, derived from successful check + opted-in current top-frame detail navigation; page candidate may never request a write. Bridge validates own extension sender and maps only fixed routes/methods under same-origin `/api/crm/browser-memory`, credentials same-origin, fixed browser/expected-account headers on writes; no arbitrary URL/method/headers, external messaging or window relay. Response remains in worker/popup, never a job page. Version/shape/sender mismatch fails closed with a safe protocol error, no fetch. Timeout8s; response must match selected account/tab/document/URL/generation. Check account again before writing or displaying response.
+
+`GET /crm/browser-memory/session` (bridge: `/api/crm/browser-memory/session`), cookie auth via `get_current_user`, no body → `200 {"protocol_version":1,"account_id":101,"account_label":"Pilot A"}`. Example is synthetic. Missing/expired cookie → existing auth-compatible `401 {"detail":"Not authenticated"}` / invalid-token equivalent; no session token, cookie or raw email is returned. Identity comes from the server, not a client `user_id`.
+
+New mutation requests require cookie auth, exact trusted frontend Origin, `X-JobGrid-Browser: 1`, and `X-JobGrid-Account-ID` equal to the cookie-resolved account before mutation/receipt lookup. That ID is an expectation, not owner authority. Wrong account → 409 account_changed; wrong/missing Origin/browser header → 403 origin_not_allowed; absent/invalid expected-account header → 422 invalid_browser_memory_payload. Other new errors: `{detail:{code,message,field?}}`; invalid input 422, quota/replay conflict 409, attempt limit 429 browser_memory_rate_limited with Retry-After, limiter/dependency failure 503 browser_memory_unavailable. Preserve existing session-auth 401 body. Per owner: check 120/min, visit 60/min, apply 20/min, forget 5/hour; rejected authenticated attempts count through shared persistent windows. No wildcard CORS, payload logging, token export or wrong-owner response. No success on partial failure.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-26.01** — Extend the minimal spike worker with protocol-v1 message validation and explicit trusted JobGrid tab selection.
+2. **EXT-26.02** — Allow check/session plus popup-confirmed apply/forget and worker-derived visit commands only; a page candidate cannot request writes.
+3. **EXT-26.03** — Bind requests/responses to connected account/tab/request generation and pass fixed-route commands to the isolated JobGrid bridge.
+4. **EXT-26.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_26_case_01` — Session/check command reaches only the explicitly selected exact-origin JobGrid tab.
+- `ext_26_case_02` — Forged popup URL, external sender, subframe, extra route/header and >8192-byte messages cause zero API calls.
+- `ext_26_case_03` — A job-site content script cannot invoke apply/forget or receive private matches/counts.
+
+```bash
+
+# From repository root, after this ticket creates its named Node tests
+
+node --test extension/tests/bridge.test.mjs
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Connect with two open app tabs, choose one deliberately, and verify background does not silently choose another account.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Session/check command reaches only the explicitly selected exact-origin JobGrid tab.
+- [ ] Forged popup URL, external sender, subframe, extra route/header and >8192-byte messages cause zero API calls.
+- [ ] A job-site content script cannot invoke apply/forget or receive private matches/counts.
+- [ ] Every numbered EXT-26 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+No externally_connectable or window relay. Automatic visits originate only from the worker state machine accepted in EXT-32. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- No externally_connectable or window relay. Automatic visits originate only from the worker state machine accepted in EXT-32.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-26 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[26/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-26`; title: **Build the account-bound extension command dispatcher**; parent: one Chrome job/company memory main issue; band 6: Connection and metadata; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-27"></a>
+
+#### EXT-27 — Cancel stale requests and enforce transport timeouts
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Extension reliability\
+**Execution position:** 27/50; band 6/10 — Connection and metadata; group step 2/5.
+
+##### Goal — what to complete
+
+Enforce account recheck, timeouts and stale-response cancellation.
+
+##### Why this exists
+
+Enforce account recheck, timeouts and stale-response cancellation. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-26](#ext-26) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `extension/config.js` — PROPOSED; supplied by EXT-01 before use; inspect current behavior/fixtures if present.
+- `extension/manifest.json` — PROPOSED; supplied by EXT-02 before use; inspect current behavior/fixtures if present.
+- `extension/jobgrid-bridge.js` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+- `extension/background.js` — PROPOSED; supplied by EXT-05 before use; inspect current behavior/fixtures if present.
+- `extension/tests/bridge.test.mjs` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `frontend_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+Priority: Already applied · {date}, Possible duplicate, Applied to this company · {count}, Visited before, then No recorded application only for successful complete lookup. Independent facts may coexist. Other states: Checking…, Company unknown, Sign in to JobGrid, Open JobGrid to connect, Tracking paused, Manual check only, Couldn’t check · Retry, Saving…, Saved, Visit limit reached, Visit not saved · Retry, Save status unknown · Retry. Loading disables overlapping actions; empty is a successful fact, not a network fallback. Render text only, locale display dates with UTC detail, labels/focus/live status and meaning beyond color. Never expose private facts to the job page.
+
+##### Frozen source requirements / exact scope
+
+- Capture selected account/tab/document/URL and request generation at dispatch; reject any response that no longer matches.
+- Abort API fetch at 8 seconds and invalidate worker state on app-tab removal, account mismatch or malformed protocol.
+- Debounce session checks to one per 5 seconds per selected tab; no keep-alive polling or silent reconnect.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `extension/background.js` | PROPOSED; supplied by EXT-05 before use | Task-owned implementation/configuration boundary |
+| `extension/jobgrid-bridge.js` | PROPOSED; supplied by EXT-03 before use | Task-owned implementation/configuration boundary |
+| `extension/tests/bridge.test.mjs` | PROPOSED; supplied by EXT-03 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+storage.local: site opt-ins, pause, selected public environment only. storage.session restricted to trusted extension contexts: selected app tab/account, bounded request state and at most one unresolved apply key/payload for <=24h. No private storage.sync. Worker suspension clears active connection/results and requires deliberate reconnect + fresh session/URL verification; retained unresolved apply may be used only for deliberate same-key retry after validation. Full browser restart removes session state. Success/disconnect/account change deletes private pending state. No auto-replay, periodic polling, hidden keepalive or offline queue.
+
+##### API / event / cache / integration contracts
+
+Internal request `{version:1,request_id:UUID,kind:"session"|"check"|"visit"|"apply"|"forget_visits",account_id?:int,payload:object}` → `{version:1,request_id,ok:bool,data?:object,error?:{code,message,retry_after?:int}}`; max8192 UTF-8 bytes. Worker accepts apply/forget only from its own packaged popup sender. Automatic visit is worker-internal, derived from successful check + opted-in current top-frame detail navigation; page candidate may never request a write. Bridge validates own extension sender and maps only fixed routes/methods under same-origin `/api/crm/browser-memory`, credentials same-origin, fixed browser/expected-account headers on writes; no arbitrary URL/method/headers, external messaging or window relay. Response remains in worker/popup, never a job page. Version/shape/sender mismatch fails closed with a safe protocol error, no fetch. Timeout8s; response must match selected account/tab/document/URL/generation. Check account again before writing or displaying response.
+
+storage.local: site opt-ins, pause, selected public environment only. storage.session restricted to trusted extension contexts: selected app tab/account, bounded request state and at most one unresolved apply key/payload for <=24h. No private storage.sync. Worker suspension clears active connection/results and requires deliberate reconnect + fresh session/URL verification; retained unresolved apply may be used only for deliberate same-key retry after validation. Full browser restart removes session state. Success/disconnect/account change deletes private pending state. No auto-replay, periodic polling, hidden keepalive or offline queue.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-27.01** — Capture selected account/tab/document/URL and request generation at dispatch; reject any response that no longer matches.
+2. **EXT-27.02** — Abort API fetch at 8 seconds and invalidate worker state on app-tab removal, account mismatch or malformed protocol.
+3. **EXT-27.03** — Debounce session checks to one per 5 seconds per selected tab; no keep-alive polling or silent reconnect.
+4. **EXT-27.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_27_case_01` — Account A response arriving after switch to B is discarded and clears private UI.
+- `ext_27_case_02` — URL/tab/document change before response discards old badges/results; closed app tab returns unavailable.
+- `ext_27_case_03` — At 8 seconds the request resolves to safe timeout and no background retry/write occurs.
+
+```bash
+
+# From repository root, after this ticket creates its named Node tests
+
+node --test extension/tests/bridge.test.mjs
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Delay a synthetic API response, navigate to another job and switch account before releasing it; verify the old warning never appears.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Account A response arriving after switch to B is discarded and clears private UI.
+- [ ] URL/tab/document change before response discards old badges/results; closed app tab returns unavailable.
+- [ ] At 8 seconds the request resolves to safe timeout and no background retry/write occurs.
+- [ ] Every numbered EXT-27 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Do not reuse cached private results after reconnect. A failed transport cannot become No recorded application. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Do not reuse cached private results after reconnect. A failed transport cannot become No recorded application.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-27 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[27/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-27`; title: **Cancel stale requests and enforce transport timeouts**; parent: one Chrome job/company memory main issue; band 6: Connection and metadata; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-28"></a>
+
+#### EXT-28 — Recognize only supported job-detail routes
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P1\
+**Type:** URL classifier\
+**Execution position:** 28/50; band 6/10 — Connection and metadata; group step 3/5.
+
+##### Goal — what to complete
+
+Add exact ATS detail route classifier with safe URL handling.
+
+##### Why this exists
+
+Add exact ATS detail route classifier with safe URL handling. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-02](#ext-02) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `extension/config.js` — PROPOSED; supplied by EXT-01 before use; inspect current behavior/fixtures if present.
+- `extension/manifest.json` — PROPOSED; supplied by EXT-02 before use; inspect current behavior/fixtures if present.
+- `extension/jobgrid-bridge.js` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+- `extension/background.js` — PROPOSED; supplied by EXT-05 before use; inspect current behavior/fixtures if present.
+- `extension/site-rules.js` — PROPOSED NEW in EXT-28; inspect current behavior/fixtures if present.
+- `extension/tests/site-rules.test.mjs` — PROPOSED NEW in EXT-28; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `frontend_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+Priority: Already applied · {date}, Possible duplicate, Applied to this company · {count}, Visited before, then No recorded application only for successful complete lookup. Independent facts may coexist. Other states: Checking…, Company unknown, Sign in to JobGrid, Open JobGrid to connect, Tracking paused, Manual check only, Couldn’t check · Retry, Saving…, Saved, Visit limit reached, Visit not saved · Retry, Save status unknown · Retry. Loading disables overlapping actions; empty is a successful fact, not a network fallback. Render text only, locale display dates with UTC detail, labels/focus/live status and meaning beyond color. Never expose private facts to the job page.
+
+##### Frozen source requirements / exact scope
+
+- Match exact three supported HTTPS hosts and the frozen Greenhouse/Lever detail path shapes.
+- Reject listing/apply/form routes, suffix-spoof hosts, private schemes and credential-like query inputs before automatic tracking.
+- Return supported-site/detail identity only, not an employer identity inferred from a board slug.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `extension/site-rules.js` | PROPOSED NEW in EXT-28 | Task-owned implementation/configuration boundary |
+| `extension/tests/site-rules.test.mjs` | PROPOSED NEW in EXT-28 | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+No database schema change. Public metadata stays transient; server history is authoritative. Local storage contains settings only; private request state uses bounded trusted session storage.
+
+##### API / event / cache / integration contracts
+
+Automatic job detail patterns: HTTPS boards.greenhouse.io or job-boards.greenhouse.io `/{board}/jobs/{job_id}`, and jobs.lever.co `/{board}/{posting_id}`. No listing/apply forms, suffix-spoof hosts, subframes or unknown routes. Classifier returns supported/manual eligibility, not employer identity. Metadata candidate: `{url:string,title:string|null,company:string|null}` plus sender-derived tab/document context; title/company <=500/320; conflicting/missing public metadata → null. No form values, credentials, resume data or app history in candidate messages. Worker re-reads accessible top-level URL before trusting candidate.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-28.01** — Match exact three supported HTTPS hosts and the frozen Greenhouse/Lever detail path shapes.
+2. **EXT-28.02** — Reject listing/apply/form routes, suffix-spoof hosts, private schemes and credential-like query inputs before automatic tracking.
+3. **EXT-28.03** — Return supported-site/detail identity only, not an employer identity inferred from a board slug.
+4. **EXT-28.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_28_case_01` — Each declared detail-route fixture qualifies and its original URL remains available for server validation.
+- `ext_28_case_02` — Host suffix spoof, listing, apply route, javascript/file and token-bearing URLs do not auto-track.
+- `ext_28_case_03` — Two companies using the same ATS host are not assigned the same employer by the classifier.
+
+```bash
+
+# From repository root, after this ticket creates its named Node tests
+
+node --test extension/tests/site-rules.test.mjs
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Run the positive/negative URL fixture table and inspect the reported supported/manual classification.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Each declared detail-route fixture qualifies and its original URL remains available for server validation.
+- [ ] Host suffix spoof, listing, apply route, javascript/file and token-bearing URLs do not auto-track.
+- [ ] Two companies using the same ATS host are not assigned the same employer by the classifier.
+- [ ] Every numbered EXT-28 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+New host/path shapes require fixtures and an architect contract update, not a permissive catch-all regex. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- New host/path shapes require fixtures and an architect contract update, not a permissive catch-all regex.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-28 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[28/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-28`; title: **Recognize only supported job-detail routes**; parent: one Chrome job/company memory main issue; band 6: Connection and metadata; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-29"></a>
+
+#### EXT-29 — Extract public editable job metadata without form access
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P1\
+**Type:** Page metadata\
+**Execution position:** 29/50; band 6/10 — Connection and metadata; group step 4/5.
+
+##### Goal — what to complete
+
+Extract editable public title/company candidates without reading forms.
+
+##### Why this exists
+
+Extract editable public title/company candidates without reading forms. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-28](#ext-28) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `extension/config.js` — PROPOSED; supplied by EXT-01 before use; inspect current behavior/fixtures if present.
+- `extension/manifest.json` — PROPOSED; supplied by EXT-02 before use; inspect current behavior/fixtures if present.
+- `extension/jobgrid-bridge.js` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+- `extension/background.js` — PROPOSED; supplied by EXT-05 before use; inspect current behavior/fixtures if present.
+- `extension/job-page.js` — PROPOSED NEW in EXT-29; inspect current behavior/fixtures if present.
+- `extension/tests/fixtures/job-pages.html` — PROPOSED NEW in EXT-29; inspect current behavior/fixtures if present.
+- `frontend/tests/extension.spec.ts` — PROPOSED; supplied by EXT-05 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `frontend_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+Priority: Already applied · {date}, Possible duplicate, Applied to this company · {count}, Visited before, then No recorded application only for successful complete lookup. Independent facts may coexist. Other states: Checking…, Company unknown, Sign in to JobGrid, Open JobGrid to connect, Tracking paused, Manual check only, Couldn’t check · Retry, Saving…, Saved, Visit limit reached, Visit not saved · Retry, Save status unknown · Retry. Loading disables overlapping actions; empty is a successful fact, not a network fallback. Render text only, locale display dates with UTC detail, labels/focus/live status and meaning beyond color. Never expose private facts to the job page.
+
+##### Frozen source requirements / exact scope
+
+- Read bounded public JobPosting JSON-LD or unambiguous displayed job title/employer from the top-level detail page.
+- Prefer one unambiguous employer; keep missing/conflicting metadata null and let the popup ask the user.
+- Send metadata candidate and actual tab context only; never read input/textarea/select values, application answers or credentials.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `extension/job-page.js` | PROPOSED NEW in EXT-29 | Task-owned implementation/configuration boundary |
+| `extension/tests/fixtures/job-pages.html` | PROPOSED NEW in EXT-29 | Task-owned regression/fixture |
+| `frontend/tests/extension.spec.ts` | PROPOSED; supplied by EXT-05 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+No database schema change. Public metadata stays transient; server history is authoritative. Local storage contains settings only; private request state uses bounded trusted session storage.
+
+##### API / event / cache / integration contracts
+
+Automatic job detail patterns: HTTPS boards.greenhouse.io or job-boards.greenhouse.io `/{board}/jobs/{job_id}`, and jobs.lever.co `/{board}/{posting_id}`. No listing/apply forms, suffix-spoof hosts, subframes or unknown routes. Classifier returns supported/manual eligibility, not employer identity. Metadata candidate: `{url:string,title:string|null,company:string|null}` plus sender-derived tab/document context; title/company <=500/320; conflicting/missing public metadata → null. No form values, credentials, resume data or app history in candidate messages. Worker re-reads accessible top-level URL before trusting candidate.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-29.01** — Read bounded public JobPosting JSON-LD or unambiguous displayed job title/employer from the top-level detail page.
+2. **EXT-29.02** — Prefer one unambiguous employer; keep missing/conflicting metadata null and let the popup ask the user.
+3. **EXT-29.03** — Send metadata candidate and actual tab context only; never read input/textarea/select values, application answers or credentials.
+4. **EXT-29.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_29_case_01` — Known synthetic JobPosting metadata produces the expected title/company candidate.
+- `ext_29_case_02` — Multiple conflicting employers, malformed/oversized JSON-LD and missing company produce unknown without script execution.
+- `ext_29_case_03` — Hostile markup renders as text; form-secret fixture values never appear in messages or logs.
+
+```bash
+
+# From frontend/, real disposable local backend running; extension fixture must launch a persistent profile
+
+npx playwright test tests/extension.spec.ts --project=chromium
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Load the synthetic job-pages fixture with a hidden fake form secret and compare outgoing metadata to an explicit allowlist.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Known synthetic JobPosting metadata produces the expected title/company candidate.
+- [ ] Multiple conflicting employers, malformed/oversized JSON-LD and missing company produce unknown without script execution.
+- [ ] Hostile markup renders as text; form-secret fixture values never appear in messages or logs.
+- [ ] Every numbered EXT-29 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Do not fetch ATS APIs or inject history into the job page. An ambiguous employer remains Company unknown. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Do not fetch ATS APIs or inject history into the job page. An ambiguous employer remains Company unknown.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-29 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[29/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-29`; title: **Extract public editable job metadata without form access**; parent: one Chrome job/company memory main issue; band 6: Connection and metadata; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
+
+Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+
+**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+
+<a id="ext-30"></a>
+
+#### EXT-30 — Enable site scripts only after host permission consent
+
+**Status:** PLANNED / not implemented; validation not run.\
+**Priority:** P0\
+**Type:** Permissions\
+**Execution position:** 30/50; band 6/10 — Connection and metadata; group step 5/5.
+
+##### Goal — what to complete
+
+Register/unregister scripts per granted host and site opt-in.
+
+##### Why this exists
+
+Register/unregister scripts per granted host and site opt-in. This ticket owns the bounded work below; later tasks retain their own delivery and release gates.
+
+##### When to do it and dependencies
+
+Start after [EXT-27](#ext-27), [EXT-29](#ext-29) Accept prerequisite implementation and narrow tests on the work branch; a separate consuming branch requires merged dependencies. Local auth proof in EXT-05 gates auth-dependent work. Unavailable deployed credentials do not block independent local fixtures.
+
+##### Estimated effort and execution size
+
+Small–medium, one focused logical change (~2% planning weight). Run the checkpoints separately; no fixed day estimate is asserted. If a checkpoint introduces an unrelated schema, service or contract, split/revise it before widening scope.
+
+##### Read before coding / files to inspect first
+
+- `docs/repo_context.md` — baseline, source conventions and preserved boundaries.
+- This packet’s frozen contracts below; compare with CCR-EXT-01 in section 9.4.
+- `extension/config.js` — PROPOSED; supplied by EXT-01 before use; inspect current behavior/fixtures if present.
+- `extension/manifest.json` — PROPOSED; supplied by EXT-02 before use; inspect current behavior/fixtures if present.
+- `extension/jobgrid-bridge.js` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+- `extension/background.js` — PROPOSED; supplied by EXT-05 before use; inspect current behavior/fixtures if present.
+- `extension/tests/bridge.test.mjs` — PROPOSED; supplied by EXT-03 before use; inspect current behavior/fixtures if present.
+
+Named Premium Product Builder rules: `frontend_rules.md, testing_rules.md, security_rules.md`. Use graph discovery/caller traces before shared-code edits. Attach current source contents, not just these paths, for a separate builder session.
+
+##### User-facing behavior and UI states
+
+Priority: Already applied · {date}, Possible duplicate, Applied to this company · {count}, Visited before, then No recorded application only for successful complete lookup. Independent facts may coexist. Other states: Checking…, Company unknown, Sign in to JobGrid, Open JobGrid to connect, Tracking paused, Manual check only, Couldn’t check · Retry, Saving…, Saved, Visit limit reached, Visit not saved · Retry, Save status unknown · Retry. Loading disables overlapping actions; empty is a successful fact, not a network fallback. Render text only, locale display dates with UTC detail, labels/focus/live status and meaning beyond color. Never expose private facts to the job page.
+
+##### Frozen source requirements / exact scope
+
+- Request an optional supported-host grant only from a site-enable gesture; persist its opt-in separately from permission existence.
+- Dynamically register the top-frame page script only for enabled granted hosts and unregister on disable/revoke.
+- Keep install default off and keep unknown sites manual/current-tab only.
+
+Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrack IDs are different domains; private history belongs to the cookie-resolved owner.
+
+##### Out of scope / do not change
+
+- Other EXT tasks except the named prerequisite interfaces; unrelated backend files, source URLs, notes, historical migrations or accepted C/JG behavior.
+- New auth providers/tokens, AI, paid hosting, dependencies, automated applications, broad browsing-history collection, or application-state inference.
+- Issue/Linear creation, external messages, GitHub publication, provider changes, merge or store/production deployment as an automatic side effect of this local task.
+
+##### Files to create or edit
+
+| Exact repository-relative path | Planning snapshot state | Intended role |
+|---|---|---|
+| `extension/background.js` | PROPOSED; supplied by EXT-05 before use | Task-owned implementation/configuration boundary |
+| `extension/manifest.json` | PROPOSED; supplied by EXT-02 before use | Task-owned implementation/configuration boundary |
+| `extension/tests/bridge.test.mjs` | PROPOSED; supplied by EXT-03 before use | Task-owned regression/fixture |
+| `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
+
+Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
+
+##### Data model
+
+No database schema change. Public metadata stays transient; server history is authoritative. Local storage contains settings only; private request state uses bounded trusted session storage.
+
+##### API / event / cache / integration contracts
+
+MV3 required permissions storage/activeTab/scripting; optional hosts only boards.greenhouse.io, job-boards.greenhouse.io, jobs.lever.co and exact selected JobGrid origin. No tabs/history/cookies/<all_urls>/externally_connectable. Grant via user gesture, then independent per-site opt-in; defaults off. Register content script dynamically in top frame only; revoke/disable unregisters and stops collection. Dev manifest `extension/manifest.dev.json` may allow localhost; release artifact must exclude it. Public exact origins only, no arbitrary API host input. Native ES modules, packaged scripts, no inline/eval/remote executable code.
+
+Automatic job detail patterns: HTTPS boards.greenhouse.io or job-boards.greenhouse.io `/{board}/jobs/{job_id}`, and jobs.lever.co `/{board}/{posting_id}`. No listing/apply forms, suffix-spoof hosts, subframes or unknown routes. Classifier returns supported/manual eligibility, not employer identity. Metadata candidate: `{url:string,title:string|null,company:string|null}` plus sender-derived tab/document context; title/company <=500/320; conflicting/missing public metadata → null. No form values, credentials, resume data or app history in candidate messages. Worker re-reads accessible top-level URL before trusting candidate.
+
+No additional public endpoint or event is authorized by this ticket. Referenced endpoints are consumed or asserted only within the exact scope above.
+
+##### Validation rules and error handling
+
+Validate the entire owned input before state changes. Apply the exact limits/error shapes in the copied contract; preserve null/false/zero distinctly. No partial success or fake Saved/No recorded application state. Roll back caller-owned writes and required events/receipts together; keep safe retry context, close owned resources and return a bounded error. For tests/docs-only tasks, assert these boundaries rather than creating unused validators.
+
+##### Auth, permissions, security and privacy
+
+Cookie-resolved account is authority. Expected account/header/Origin checks protect new writes; page metadata is untrusted and cannot select owner, transport destination or action. No cookies, form answers, private history or page payload URLs in logs/evidence; synthetic fixtures only. No `TEST_AUTH` production bypass. Test a second account whenever private data is read/written; permission denial must fail closed, not trigger broader grants.
+
+##### Step-by-step implementation — how
+
+1. **EXT-30.01** — Request an optional supported-host grant only from a site-enable gesture; persist its opt-in separately from permission existence.
+2. **EXT-30.02** — Dynamically register the top-frame page script only for enabled granted hosts and unregister on disable/revoke.
+3. **EXT-30.03** — Keep install default off and keep unknown sites manual/current-tab only.
+4. **EXT-30.04** — Run the exact assertions below, review the scoped diff and update the owning guide/evidence. Do not start the successor until the acceptance criteria hold.
+
+##### Required automated tests and commands
+
+Scenario names below are **proposed assertion labels**, not a claim that matching test functions already exist. Create/extend only the named task test files; assert exact values and nonempty fixtures, never only a successful response.
+
+- `ext_30_case_01` — Denied permission results in no registration, collection or API write.
+- `ext_30_case_02` — Granted-but-not-enabled site stays off; enabled+granted detail site registers exactly once.
+- `ext_30_case_03` — Revoking access unregisters/stops subsequent navigation collection and clears associated badges.
+
+```bash
+
+# From repository root, after this ticket creates its named Node tests
+
+node --test extension/tests/bridge.test.mjs
+```
+
+New file/command paths become runnable only after their owning task supplies them. Inspect existing fixtures before selecting tests. Real PostgreSQL concurrency, real Chrome and deployed OAuth acceptance remain distinct from mocked/unit/Chromium checks.
+
+##### Manual QA
+
+1. Enable one supported site, deny another, then revoke the first in Chrome settings and navigate both.
+2. Repeat the relevant invalid/foreign-account/permission case above; reload or open a fresh session before comparing durable state. Record expected versus observed, not just screenshots of the current UI.
+
+##### Acceptance criteria
+
+- [ ] Denied permission results in no registration, collection or API write.
+- [ ] Granted-but-not-enabled site stays off; enabled+granted detail site registers exactly once.
+- [ ] Revoking access unregisters/stops subsequent navigation collection and clears associated badges.
+- [ ] Every numbered EXT-30 checkpoint is implemented or proven already satisfied with current evidence.
+- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+
+##### Observability and operations
+
+Existing logging/metrics only: safe action/outcome/error code, affected count and elapsed time; no cookie, URL query/body, title/company, form data or private label. New data and API are additive and remain disconnected until acceptance; disable extension grants/router to roll back while retaining both tables/history. No public/store/provider action is implicit in a local ticket. Use disposable profiles/databases and synthetic accounts only. Installed extension version and backend/frontend SHA are separate release records.
+
+##### Release, rollout and rollback
+
+Never request all hosts to fix a denied optional permission; make the missing permission visible. Keep this capability disconnected until its dependent integration acceptance passes; disabling the extension/new caller retains product history.
+
+##### Stop conditions
+
+- Never request all hosts to fix a denied optional permission; make the missing permission visible.
+- A prerequisite lacks its stated evidence, current source contradicts the frozen contract, or the target is not demonstrably disposable.
+- Ownership, transaction rollback, replay, history preservation, permission or compatibility assertions fail.
+- The allowed files/contract cannot represent the behavior: report `Needs Architect Decision: EXT-30 — <boundary and evidence>`; continue only independent work.
+
+##### Documentation impact and definition of done
+
+Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
+
+- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
+- [ ] Required caller regressions, diff/security review and relevant docs are complete.
+- [ ] One focused micro-commit references main issue and `[30/50]`; no unrelated files or empty filler commits.
+- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [ ] No claim of a later task, store approval or production release is included.
+
+##### Evidence record and suggested tracking metadata
+
+Document ID: `EXT-30`; title: **Enable site scripts only after host permission consent**; parent: one Chrome job/company memory main issue; band 6: Connection and metadata; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
 Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
 
