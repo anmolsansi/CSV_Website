@@ -52,7 +52,7 @@ const ANMOL_VIEW_COLUMNS = [
 
 const COLUMN_PRESETS = {
   anmol_view: ANMOL_VIEW_COLUMNS,
-  essentials: ['url', 'company_guess', 'title', 'ats_group', 'search_bucket', 'location_group', 'decision', 'sponsorship_status', 'resume_match_score', 'posted_age_days', 'error'],
+  essentials: ['url', 'company_guess', 'title', 'ats_group', 'search_bucket', 'location_group', 'location_country', 'location_city', 'decision', 'sponsorship_status', 'resume_match_score', 'posted_age_days', 'error'],
   scoring: ['url', 'company_guess', 'title', 'resume_match_score', 'fit_category', 'score_confidence', 'seniority_level', 'role_family', 'required_years_min', 'core_languages_extracted', 'core_frameworks_extracted', 'matched_resume_skills', 'missing_or_weaker_skills', 'score_reason'],
   location_salary: ['url', 'company_guess', 'title', 'is_usa_role', 'location_country', 'location_city', 'location_state', 'work_model_extracted', 'salary_min_extracted', 'salary_max_extracted', 'salary_currency_extracted'],
   all: null,
