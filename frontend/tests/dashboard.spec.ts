@@ -340,4 +340,35 @@ test.describe('Dashboard', () => {
       }
     }
   });
+  test('country and city filters compose and can group jobs by location', async ({ page }) => {
+    const upload = await page.request.post(`${API_URL}/upload`, {
+      multipart: {
+        file: {
+          name: 'dashboard-country-city.csv',
+          mimeType: 'text/csv',
+          buffer: Buffer.from(
+            'url,title,country,city,location_group\\n' +
+            'https://example.test/jobs/dashboard-geo,Geo Engineer,United States,New York City,remote\\n'
+          ),
+        },
+      },
+    })
+    expect(upload.ok()).toBeTruthy()
+    await page.reload()
+    await expect(page.locator('#country-filter')).toBeVisible()
+    await expect(page.locator('#city-filter')).toBeVisible()
+    await page.locator('#country-filter').selectOption('United States')
+    await page.locator('#city-filter').selectOption('New York City')
+    await page.getByLabel('Group by').selectOption('location_city')
+    await expect(page.locator('tbody .job-group-header').first()).toBeVisible()
+    const response = await page.request.get(`${API_URL}/rows`, {
+      params: { location_country: 'United States', location_city: 'New York City', group_by: 'location_city' },
+    })
+    expect(response.ok()).toBeTruthy()
+    expect((await response.json()).rows.some((row: any) => row.data?.url === 'https://example.test/jobs/dashboard-geo')).toBeTruthy()
+    await page.getByRole('button', { name: 'Clear filters' }).click()
+    await expect(page.locator('#country-filter')).toHaveValue('')
+    await expect(page.locator('#city-filter')).toHaveValue('')
+  })
+
 });
