@@ -43,3 +43,19 @@ test('no grouping leaves the original row order unchanged', () => {
   assert.equal(groups.length, 1)
   assert.equal(groups[0].rows, rows)
 })
+
+test('country and city headings retain multi-location labels without double-counting jobs', () => {
+  const rows = [
+    row(1, { location_country: 'United States', location_city: 'New York City' }),
+    row(2, { location_country: ' Canada; United States ', location_city: 'New York City; Austin' }),
+    row(3, { location_country: 'united states', location_city: 'NEW YORK CITY' }),
+  ]
+  const countries = groupTableRows(rows, 'location_country')
+  assert.deepEqual(countries.map(({ key, rows: matches }) => [key, matches.length]), [
+    ['united states', 2], ['canada; united states', 1],
+  ])
+  const cities = groupTableRows(rows, 'location_city')
+  assert.deepEqual(cities.map(({ key, rows: matches }) => [key, matches.length]), [
+    ['new york city', 2], ['new york city; austin', 1],
+  ])
+})
