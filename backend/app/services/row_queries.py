@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Literal
 
-from sqlalchemy import asc, case, desc, func, or_, select
+from sqlalchemy import asc, case, desc, func, literal, or_, select
 from sqlalchemy.orm import Query, Session
 
 from ..models import CSV_COLUMNS, CsvRow, JobTrack
@@ -16,6 +16,8 @@ class RowQuery:
     archive_scope: Literal["active", "archived", "all"] = "active"
     ats_group: str | None = None
     location_group: str | None = None
+    location_country: str | None = None
+    location_city: str | None = None
     search_bucket: str | None = None
     decision: str | None = None
     sponsorship_status: str | None = None
@@ -33,7 +35,7 @@ class RowQuery:
     openable_only: bool = False
     unique_company: bool = False
     confirmed_usa: bool = False
-    group_by: Literal["company_guess", "ats_group", "is_usa_role", "rejection_reasons"] | None = None
+    group_by: Literal["company_guess", "ats_group", "is_usa_role", "rejection_reasons", "location_country", "location_city"] | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,17 @@ def resolve_row_sort_column(sort_by: str):
     return column
 
 
+def location_token_match(column, value: str):
+    """Portable case-insensitive exact token match for semicolon-delimited locations."""
+    normalized = func.replace(
+        func.replace(func.lower(func.coalesce(column, "")), " ", ""), "\t", ""
+    )
+    needle = value.strip().casefold().replace(" ", "").replace("\t", "")
+    return (literal(";") + normalized + literal(";")).contains(
+        f";{needle};", autoescape=True
+    )
+
+
 def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
     """Build the account-scoped CsvRow predicate query without pagination."""
     query = db.query(CsvRow).filter(CsvRow.user_id == user_id)
@@ -99,6 +112,16 @@ def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
         query = query.filter(CsvRow.archived.is_(True))
     elif params.archive_scope != "all":
         raise ValueError("Invalid archive scope")
+
+    # Country and city may contain semicolon-delimited alternatives. Filter by
+    # whole tokens so "United States" also matches "Canada; United States",
+    # without confusing "York" with "New York".
+    for value, column in (
+        (params.location_country, CsvRow.location_country),
+        (params.location_city, CsvRow.location_city),
+    ):
+        if value:
+            query = query.filter(location_token_match(column, value))
 
     equality_filters = (
         (params.ats_group, CsvRow.ats_group),
@@ -190,6 +213,7 @@ def build_row_query(db: Session, user_id: int, params: RowQuery) -> Query:
 
 GROUPABLE_ROW_COLUMNS = frozenset({
     "company_guess", "ats_group", "is_usa_role", "rejection_reasons",
+    "location_country", "location_city",
 })
 
 
