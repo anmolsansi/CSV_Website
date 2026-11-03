@@ -35,7 +35,7 @@ test.describe('JG-059 deliberate import mapping', () => {
     await page.getByLabel('Upload CSV file').setInputFiles({
       name: 'serper-locations.csv',
       mimeType: 'text/csv',
-      buffer: Buffer.from('url,country,city,job_location\\nhttps://example.test/jobs/serper-locations,United States,New York City,New York\\n'),
+      buffer: Buffer.from('url,country,city,job_location\nhttps://example.test/jobs/serper-locations,United States,New York City,New York\n'),
     })
     await expect(page.getByLabel('Map source column 1 country')).toHaveValue('location_country')
     await expect(page.getByLabel('Map source column 2 city')).toHaveValue('location_city')
