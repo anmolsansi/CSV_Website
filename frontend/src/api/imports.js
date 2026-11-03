@@ -163,13 +163,21 @@ export async function readImportHeaders(file) {
   return lowerName.endsWith('.json') ? parseJsonHeaders(text) : parseCsvHeader(text)
 }
 
+const IMPORT_HEADER_ALIASES = {
+  country: 'location_country',
+  city: 'location_city',
+  job_location: 'location_raw_extracted',
+}
+
 export function defaultImportMapping(headers) {
   const used = new Set()
   const mapping = {}
+  const explicitTargets = new Set(headers.filter((label) => IMPORT_TARGET_FIELDS.includes(label)))
   headers.forEach((label, index) => {
-    if (IMPORT_TARGET_FIELDS.includes(label) && !used.has(label)) {
-      mapping[String(index)] = label
-      used.add(label)
+    const target = IMPORT_TARGET_FIELDS.includes(label) ? label : IMPORT_HEADER_ALIASES[label]
+    if (target && !used.has(target) && (target === label || !explicitTargets.has(target))) {
+      mapping[String(index)] = target
+      used.add(target)
     }
   })
   return mapping

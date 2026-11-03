@@ -8,6 +8,8 @@ const DASHBOARD_FIELDS = [
   ['atsGroup', 'ats_group', 'string'],
   ['groupBy', 'group_by', 'string'],
   ['locationGroup', 'location_group', 'string'],
+  ['locationCountry', 'location_country', 'string'],
+  ['locationCity', 'location_city', 'string'],
   ['searchBucket', 'search_bucket', 'string'],
   ['decision', 'decision', 'string'],
   ['sponsorshipStatus', 'sponsorship_status', 'string'],

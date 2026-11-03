@@ -53,6 +53,14 @@ async def upload_csv(
     filename = file.filename or "unknown.csv"
 
     df = _read_csv(raw)
+    # Legacy uploads also accept headers from the Serper enrichment CSV.
+    for source, target in (
+        ("country", "location_country"),
+        ("city", "location_city"),
+        ("job_location", "location_raw_extracted"),
+    ):
+        if source in df.columns and target not in df.columns:
+            df = df.rename(columns={source: target})
     df = df.where(pd.notnull(df), None)
 
     detected_columns = list(df.columns)

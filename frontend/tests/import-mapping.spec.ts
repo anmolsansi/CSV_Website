@@ -30,6 +30,26 @@ async function review(page: Page) {
 }
 
 test.describe('JG-059 deliberate import mapping', () => {
+  test('Serper country and city headers map to location fields automatically', async ({ page }) => {
+    await resetAndLogin(page)
+    await page.getByLabel('Upload CSV file').setInputFiles({
+      name: 'serper-locations.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('url,country,city,job_location\nhttps://example.test/jobs/serper-locations,United States,New York City,New York\n'),
+    })
+    await expect(page.getByLabel('Map source column 1 country')).toHaveValue('location_country')
+    await expect(page.getByLabel('Map source column 2 city')).toHaveValue('location_city')
+    await expect(page.getByLabel('Map source column 3 job_location')).toHaveValue('location_raw_extracted')
+    await review(page)
+    await page.getByRole('button', { name: 'Commit reviewed import' }).click()
+    await expect(page.getByRole('heading', { name: 'Import committed' })).toBeVisible()
+    const result = await page.request.get(`${API_URL}/rows`, {
+      params: { location_country: 'United States', location_city: 'New York City' },
+    })
+    expect(result.ok()).toBeTruthy()
+    expect((await result.json()).rows.some((row: any) => row.data?.url === 'https://example.test/jobs/serper-locations')).toBeTruthy()
+  })
+
   test('renamed_headers_preview_commit', async ({ page }) => {
     await resetAndLogin(page)
     await chooseRenamedCsv(page, 'renamed-commit')

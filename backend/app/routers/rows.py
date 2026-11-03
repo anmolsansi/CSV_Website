@@ -155,6 +155,17 @@ def _filter_option_values(db: Session, user_id: int, column, archive_scope: str)
     return [value for (value,) in values if value]
 
 
+def _location_option_values(db: Session, user_id: int, column, archive_scope: str) -> list[str]:
+    """Offer individual country/city values from multi-location CSV cells."""
+    options = {}
+    for stored in _filter_option_values(db, user_id, column, archive_scope):
+        for value in stored.split(";"):
+            value = value.strip()
+            if value:
+                options.setdefault(value.casefold(), value)
+    return sorted(options.values(), key=str.casefold)
+
+
 def _legacy_delete_rows(db: Session, *, user_id: int, row_ids: list[int]) -> dict:
     """Keep the pre-F10 omitted-mode DELETE /rows contract for legacy callers.
 
@@ -202,6 +213,8 @@ def list_rows(
     archive_scope: Literal["active", "archived", "all"] = Query("active"),
     ats_group: str | None = Query(None),
     location_group: str | None = Query(None),
+    location_country: str | None = Query(None),
+    location_city: str | None = Query(None),
     search_bucket: str | None = Query(None),
     decision: str | None = Query(None),
     sponsorship_status: str | None = Query(None),
@@ -219,7 +232,7 @@ def list_rows(
     jd_missing: bool = Query(False),
     unique_company: bool = Query(False),
     confirmed_usa: bool = Query(False),
-    group_by: Literal["company_guess", "ats_group", "is_usa_role", "rejection_reasons"] | None = Query(None),
+    group_by: Literal["company_guess", "ats_group", "is_usa_role", "rejection_reasons", "location_country", "location_city"] | None = Query(None),
     clicked_today_start: str | None = Query(None),
     clicked_today_end: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -236,6 +249,8 @@ def list_rows(
         archive_scope=archive_scope,
         ats_group=ats_group,
         location_group=location_group,
+        location_country=location_country,
+        location_city=location_city,
         search_bucket=search_bucket,
         decision=decision,
         sponsorship_status=sponsorship_status,
@@ -303,6 +318,8 @@ def list_rows(
         "filter_options": {
             "ats_groups": _ats_group_values(db, user.id, archive_scope),
             "location_groups": _filter_option_values(db, user.id, CsvRow.location_group, archive_scope),
+            "location_countries": _location_option_values(db, user.id, CsvRow.location_country, archive_scope),
+            "location_cities": _location_option_values(db, user.id, CsvRow.location_city, archive_scope),
             "search_buckets": _filter_option_values(db, user.id, CsvRow.search_bucket, archive_scope),
             "decisions": _filter_option_values(db, user.id, CsvRow.decision, archive_scope),
             "sponsorship_statuses": _filter_option_values(db, user.id, CsvRow.sponsorship_status, archive_scope),
