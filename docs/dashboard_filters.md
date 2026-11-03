@@ -56,3 +56,13 @@ No database migration or new dependency is required. Both filters use existing `
 ## Verification
 
 Focused backend coverage lives in `backend/tests/test_query_contracts.py`. Browser coverage for URL restoration, control state, and top-five forwarding lives in `frontend/tests/filter-export-parity.spec.ts`.
+
+## Country and city
+
+Country and City columns are stored as `location_country` and `location_city` (no new database migration). The import preview maps source headers `country`, `city`, and `job_location` to the existing fields automatically. The classic CSV upload also recognizes these aliases.
+
+Dashboard Country and City dropdowns are independent, composable filters. Values are case-insensitive whole tokens separated by semicolons. For example, Country = United States matches `United States` and `Canada; United States` but not a partial country name. The option menus split multi-location fields so each individual choice appears once.
+
+Use Group by → Country or City to group by the **full original field**. A job with multiple countries appears once under its combined label (for example, `Canada; United States`), and group totals reflect unique jobs rather than counting that job twice. Blank locations group as Unknown. Group counts, pagination, top-five actions, saved-view URLs, and filtered CSV/JSON exports share the same country/city filters.
+
+Wire parameters: `location_country`, `location_city`, and `group_by=location_country|location_city`. Grouping is a dashboard display choice, not an exported CSV grouping operation.
