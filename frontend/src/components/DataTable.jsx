@@ -59,7 +59,7 @@ export default function DataTable({
       ...visibleColumns.map((col) => ({
         accessorFn: (row) => row.data[col],
         id: col,
-        header: col,
+        header: col === 'location_country' ? 'Country' : col === 'location_city' ? 'City' : col,
         cell: (ctx) => {
           if (col === 'url') {
             const row = ctx.row.original
