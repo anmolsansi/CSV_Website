@@ -347,8 +347,8 @@ test.describe('Dashboard', () => {
           name: 'dashboard-country-city.csv',
           mimeType: 'text/csv',
           buffer: Buffer.from(
-            'url,title,country,city,location_group\\n' +
-            'https://example.test/jobs/dashboard-geo,Geo Engineer,United States,New York City,remote\\n'
+            'url,title,country,city,location_group\n' +
+            'https://example.test/jobs/dashboard-geo,Geo Engineer,United States,New York City,remote\n'
           ),
         },
       },
