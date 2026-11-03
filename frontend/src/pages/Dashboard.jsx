@@ -10,13 +10,15 @@ import BackupRestore from '../components/BackupRestore'
 import RetentionSettings from '../components/RetentionSettings'
 
 const DEFAULT_SORT = { sortBy: 'created_at', sortDir: 'desc' }
-const DEFAULT_FILTERS = { groupBy: '', atsGroup: '', locationGroup: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false, uniqueCompany: false, confirmedUsa: false }
+const DEFAULT_FILTERS = { groupBy: '', atsGroup: '', locationGroup: '', locationCountry: '', locationCity: '', searchBucket: '', decision: '', sponsorshipStatus: '', q: '', openedOnly: false, unopenedOnly: false, hasError: false, jdMissing: false, uniqueCompany: false, confirmedUsa: false }
 const EMPTY_STATS = { totalUrls: 0, greenUrls: 0, greenToday: 0 }
 const DEFAULT_PAGINATION = { page: 1, pageSize: 50, totalCount: 0, hasNext: false }
 const DENSITY_OPTIONS = ['comfortable', 'compact', 'dense']
 const EMPTY_FILTER_OPTIONS = {
   atsGroups: [],
   locationGroups: [],
+  locationCountries: [],
+  locationCities: [],
   searchBuckets: [],
   decisions: [],
   sponsorshipStatuses: [],
@@ -125,6 +127,8 @@ function normalizeFilterOptions(options) {
   return {
     atsGroups: options.atsGroups || options.ats_groups || [],
     locationGroups: options.locationGroups || options.location_groups || [],
+    locationCountries: options.locationCountries || options.location_countries || [],
+    locationCities: options.locationCities || options.location_cities || [],
     searchBuckets: options.searchBuckets || options.search_buckets || [],
     decisions: options.decisions || [],
     sponsorshipStatuses: options.sponsorshipStatuses || options.sponsorship_statuses || [],
@@ -811,6 +815,8 @@ export default function Dashboard() {
               <option value="">No grouping</option>
               <option value="company_guess">Company</option>
               <option value="ats_group">ATS group</option>
+              <option value="location_country">Country</option>
+              <option value="location_city">City</option>
               <option value="is_usa_role">USA status</option>
               <option value="rejection_reasons">Rejection reason</option>
             </select>
@@ -833,15 +839,43 @@ export default function Dashboard() {
           </div>
 
           <div>
-            <label htmlFor="location-group-filter">Location</label>
+            <label htmlFor="location-group-filter">Work arrangement</label>
             <select
               id="location-group-filter"
               value={filters.locationGroup}
               onChange={(e) => updateFilter('locationGroup', e.target.value)}
             >
-              <option value="">All locations</option>
+              <option value="">All work arrangements</option>
               {filterOptions.locationGroups?.map((g) => (
                 <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="country-filter">Country</label>
+            <select
+              id="country-filter"
+              value={filters.locationCountry}
+              onChange={(e) => updateFilter('locationCountry', e.target.value)}
+            >
+              <option value="">All countries</option>
+              {filterOptions.locationCountries?.map((country) => (
+                <option key={country} value={country}>{country}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="city-filter">City</label>
+            <select
+              id="city-filter"
+              value={filters.locationCity}
+              onChange={(e) => updateFilter('locationCity', e.target.value)}
+            >
+              <option value="">All cities</option>
+              {filterOptions.locationCities?.map((city) => (
+                <option key={city} value={city}>{city}</option>
               ))}
             </select>
           </div>
@@ -1025,7 +1059,7 @@ export default function Dashboard() {
                   checked={!hidden.includes(col)}
                   onChange={() => toggleColumn(col)}
                 />{' '}
-                {col}
+                {col === 'location_country' ? 'Country' : col === 'location_city' ? 'City' : col}
               </label>
               <div className="column-move-actions">
                 <button type="button" onClick={() => togglePinColumn(col)} title={pinnedColumns.includes(col) ? 'Unpin' : 'Pin left'} style={{ background: pinnedColumns.includes(col) ? '#dbeafe' : undefined }}>
