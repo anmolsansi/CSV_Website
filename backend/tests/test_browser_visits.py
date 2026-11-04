@@ -322,7 +322,7 @@ def test_ext_08_hash_collision_and_rollback_do_not_merge(db_session):
 
 
 # EXT-09: an external visit only changes existing matching owned row click facts.
-from datetime import datetime, timedelta
+from datetime import datetime
 from app.models import CsvRow, JobLifecycleEvent, JobTrack
 from app.services.job_identity import apply_persisted_job_identity
 
@@ -343,7 +343,7 @@ def test_ext_09_marks_owned_matching_rows_and_preserves_first_click(db_session):
     prior = datetime(2025, 4, 1, 12, 10)
     exact = _csv_row(owner.id, url)
     canonical = _csv_row(owner.id, url + "?utm_campaign=testing")
-    already = _csv_row(owner.id, url, clicked=True, clicked_at=prior)
+    already = _csv_row(owner.id, url + "?utm_medium=prior", clicked=True, clicked_at=prior)
     other_job = _csv_row(owner.id, "https://jobs.example.test/job/23")
     foreign_row = _csv_row(foreign.id, url)
     db_session.add_all([exact, canonical, already, other_job, foreign_row])
