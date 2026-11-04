@@ -126,3 +126,104 @@ def test_ext_12_owner_isolation_and_no_company_guess(db_session):
     assert result == {
         "matches": [], "company_history_count": 0, "lookup_complete": True,
     }
+
+
+# EXT-13: independent external/legacy visit facts versus applied evidence.
+from app.models import CsvRow, JobVisit, UrlHistory
+from app.services.browser_memory import read_browser_memory_facts
+from app.services.job_identity import canonicalize_job_url
+
+
+def test_ext_13_imported_and_saved_are_not_visits_or_applications(db_session):
+    owner = _owner(db_session)
+    url = "https://boards.example.test/role/13-imported"
+    row = CsvRow(user_id=owner.id, upload_batch_id=str(uuid4()), url=url,
+                 company_guess="Acme Corp", title="Backend Engineer", clicked=False)
+    apply_persisted_job_identity(row)
+    saved = JobTrack(user_id=owner.id, url=url, company="Acme Corp",
+                     title="Backend Engineer", status="opened", opened_at=None,
+                     applied_at=None)
+    apply_persisted_job_identity(saved)
+    db_session.add_all([row, saved, UrlHistory(user_id=owner.id, url=url)])
+    db_session.commit()
+
+    facts = read_browser_memory_facts(
+        db_session, user_id=owner.id, url=url,
+        company="Acme Corp", title="Backend Engineer",
+    )
+    assert facts["visit"] == {"visited": False, "first_visited_at": None}
+    assert facts["matches"] == []
+    assert facts["company_history_count"] == 0
+    assert facts["company_known"] is True
+    assert facts["lookup_complete"] is True
+
+
+def test_ext_13_clicked_external_and_applied_facts_remain_independent(db_session):
+    owner, foreign = _owner(db_session), _owner(db_session)
+    clicked_url = "https://boards.example.test/role/13-clicked?utm_source=listing"
+    row = CsvRow(
+        user_id=owner.id, upload_batch_id=str(uuid4()), url=clicked_url,
+        clicked=True, clicked_at=datetime(2026, 5, 2, 11, 0, 0),
+    )
+    apply_persisted_job_identity(row)
+    applied_url = "https://boards.example.test/role/13-applied"
+    own_application = _applied(db_session, owner, applied_url)
+    _applied(db_session, foreign, clicked_url)
+    external_url = "https://boards.example.test/role/13-visit"
+    identity = canonicalize_job_url(external_url)
+    db_session.add_all([
+        row, JobVisit(user_id=owner.id, canonical_url=identity.canonical_url,
+                      canonical_url_hash=identity.canonical_url_hash),
+    ])
+    db_session.commit()
+
+    clicked = read_browser_memory_facts(db_session, user_id=owner.id,
+                                        url=clicked_url)
+    assert clicked["visit"] == {
+        "visited": True, "first_visited_at": "2026-05-02T11:00:00Z",
+    }
+    assert clicked["matches"] == []
+    assert clicked["company_known"] is False
+
+    application = read_browser_memory_facts(db_session, user_id=owner.id,
+                                            url=applied_url)
+    assert application["visit"] == {"visited": False, "first_visited_at": None}
+    assert [item["track_id"] for item in application["matches"]] == [own_application.id]
+    assert application["matches"][0]["confidence"] == "exact"
+
+    external = read_browser_memory_facts(db_session, user_id=owner.id, url=external_url)
+    assert external["visit"]["visited"] is True
+    assert external["visit"]["first_visited_at"].endswith("Z")
+    assert external["matches"] == []
+    assert read_browser_memory_facts(
+        db_session, user_id=foreign.id, url=external_url
+    )["visit"]["visited"] is False
+
+
+def test_ext_13_company_history_counts_other_roles_but_not_shared_ats_host(db_session):
+    owner, foreign = _owner(db_session), _owner(db_session)
+    _applied(db_session, owner, "https://boards.example.test/company/other-role",
+             company="Acme Corp", title="Staff Engineer", status="rejected")
+    _applied(db_session, foreign, "https://boards.example.test/company/foreign",
+             company="Acme Corp")
+    _applied(db_session, owner, "https://boards.example.test/other-employer/role",
+             company="Other Co", title="Backend Engineer")
+    db_session.commit()
+
+    result = read_browser_memory_facts(
+        db_session, user_id=owner.id,
+        url="https://boards.example.test/company/candidate",
+        company="Acme Corp", title="Backend Engineer",
+    )
+    assert result["company_history_count"] == 1
+    assert result["matches"] == []
+    assert result["visit"]["visited"] is False
+
+    unknown = read_browser_memory_facts(
+        db_session, user_id=owner.id,
+        url="https://boards.example.test/company/candidate",
+        company=None, title="Backend Engineer",
+    )
+    assert unknown["company_known"] is False
+    assert unknown["company_history_count"] == 0
+    assert unknown["matches"] == []
