@@ -11,8 +11,14 @@ function failure(code) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Only our own packaged popup can request this read-only probe.
-  if (message?.type !== PROBE || sender?.id !== chrome.runtime.id ||
-      sender?.url !== chrome.runtime.getURL('popup.html') || sender?.tab) {
+  if (message?.type !== PROBE) return false
+  const ownExtension = sender?.id === chrome.runtime.id &&
+    (!sender.origin || sender.origin === `chrome-extension://${chrome.runtime.id}`)
+  const ownPopup = !sender?.tab && sender?.url === chrome.runtime.getURL('popup.html')
+  if (!ownExtension || !ownPopup) {
+    // Respond safely instead of silently dropping an internal probe; this
+    // distinguishes sender rejection from a missing/unstarted worker in CI.
+    sendResponse(failure('forbidden_sender'))
     return false
   }
 
