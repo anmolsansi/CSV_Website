@@ -442,3 +442,87 @@ def test_ext_08_concurrent_same_url_replays_once_on_disposable_sqlite(sqlite_acc
     assert outcomes[0].first_visited_at == outcomes[1].first_visited_at
     with sessions() as verify:
         assert verify.query(JobVisit).filter_by(user_id=owner_id).count() == 1
+
+
+
+# EXT-10: service-only privacy reset. The DELETE transport belongs to EXT-19.
+from app.models import UrlHistory
+from app.services.browser_memory import forget_browser_visits
+
+
+def test_ext_10_forget_only_owned_visits_and_preserve_application_facts(db_session):
+    owner, foreign = _user(db_session), _user(db_session)
+    db_session.commit()
+    url = "https://jobs.example.test/role/private-history"
+    timestamp = datetime(2026, 9, 20, 15, 30, 0)
+    row = _csv_row(owner.id, url, clicked=True, clicked_at=timestamp)
+    track = JobTrack(
+        user_id=owner.id, url=url, company="Example", title="Engineer",
+        status="rejected", applied_at=timestamp,
+    )
+    history = UrlHistory(user_id=owner.id, url=url)
+    receipt = _receipt(owner.id, str(uuid4()))
+    db_session.add_all([row, track, history, receipt])
+    db_session.commit()
+    row_id, track_id, history_id, receipt_id = row.id, track.id, history.id, receipt.id
+
+    save_browser_visit(db_session, user_id=owner.id, url=url)
+    save_browser_visit(db_session, user_id=owner.id, url=url + "/other")
+    save_browser_visit(db_session, user_id=foreign.id, url=url)
+    db_session.commit()
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 2
+
+    forgotten = forget_browser_visits(db_session, user_id=owner.id)
+    assert forgotten == {"protocol_version": 1, "account_id": owner.id, "deleted": 2}
+    db_session.commit()
+    db_session.expire_all()
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 0
+    assert db_session.query(JobVisit).filter_by(user_id=foreign.id).count() == 1
+    assert db_session.get(CsvRow, row_id).clicked is True
+    assert db_session.get(CsvRow, row_id).clicked_at == timestamp
+    assert db_session.get(JobTrack, track_id).applied_at == timestamp
+    assert db_session.get(JobTrack, track_id).status == "rejected"
+    assert db_session.get(UrlHistory, history_id).url == url
+    # Forgetting a visit is not deletion of operational apply receipts.
+    assert db_session.get(BrowserApplyReceipt, receipt_id) is not None
+
+    assert forget_browser_visits(db_session, user_id=owner.id)["deleted"] == 0
+    db_session.commit()
+    assert db_session.query(JobVisit).filter_by(user_id=foreign.id).count() == 1
+
+
+def test_ext_10_forget_is_transactional_and_owner_delete_cascades(db_session):
+    owner, foreign = _user(db_session), _user(db_session)
+    db_session.commit()
+    owner_id, foreign_id = owner.id, foreign.id
+    save_browser_visit(db_session, user_id=owner_id, url="https://jobs.example.test/rollback")
+    save_browser_visit(db_session, user_id=foreign_id, url="https://jobs.example.test/foreign")
+    db_session.add_all([
+        _receipt(owner_id, str(uuid4())),
+        _receipt(foreign_id, str(uuid4())),
+    ])
+    db_session.commit()
+
+    assert forget_browser_visits(db_session, user_id=owner_id)["deleted"] == 1
+    db_session.rollback()
+    assert db_session.query(JobVisit).filter_by(user_id=owner_id).count() == 1
+
+    # Raw owner removal verifies actual FK cascade, not just ORM in-memory effects.
+    db_session.execute(text("DELETE FROM users WHERE id = :id"), {"id": owner_id})
+    db_session.commit()
+    assert db_session.query(JobVisit).filter_by(user_id=owner_id).count() == 0
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner_id).count() == 0
+    assert db_session.query(JobVisit).filter_by(user_id=foreign_id).count() == 1
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=foreign_id).count() == 1
+
+
+def test_ext_10_missing_owner_does_not_delete_visits(db_session):
+    owner = _user(db_session)
+    db_session.commit()
+    save_browser_visit(db_session, user_id=owner.id, url="https://jobs.example.test/safe")
+    db_session.commit()
+
+    with pytest.raises(BrowserVisitConflict) as error:
+        forget_browser_visits(db_session, user_id=owner.id + 100000)
+    assert error.value.code == "browser_memory_unavailable"
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 1
