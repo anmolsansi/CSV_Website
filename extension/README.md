@@ -1,6 +1,6 @@
 # JobGrid Chrome extension, foundation pilot
 
-This directory includes the EXT-01–03 foundation and the EXT-05 disposable session-worker probe for the 50-step roadmap in `development.md` §9. **It is not a functioning history tracker yet.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The session bridge has unit-test coverage but is **not injected** by the shell. A read-only backend `/session` route now exists under EXT-04, and EXT-05's worker is registered **only in the dev manifest**. Full onboarding, page detection, user confirmation and tracking remain future work.
+This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, and EXT-26–28 account-bound worker and ATS route classifier for the 50-step roadmap in `development.md` §9. **It is not a functioning history tracker yet.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Full onboarding, page observation, confirmation UI and Chrome/OAuth pilot remain future work.
 
 ## Environment and trust
 
@@ -22,7 +22,7 @@ This directory includes the EXT-01–03 foundation and the EXT-05 disposable ses
 
 ## Session bridge contract (EXT-03)
 
-The isolated `jobgrid-bridge.js` does not auto-run. A later worker will inject it **only after** the user grants the exact JobGrid frontend host and selects the authenticated tab. Its internal message envelope is `{version:1,request_id:UUID,kind,account_id?,payload}` (maximum 8192 UTF-8 bytes). No external sender or page-to-extension relay is supported. Only fixed same-origin `/api/crm/browser-memory` routes are allowed. `GET /session` uses the existing browser cookie without reading or copying it. Before another route, the bridge rechecks the session account against `account_id`; for writes it sends fixed browser/expected-account headers. Responses and errors return only to the extension's internal runtime, never to the page DOM. The bridge has an eight-second timeout and safe 401, rate-limit, and malformed-response results.
+The isolated `jobgrid-bridge.js` does not auto-run. The EXT-26 development worker injects it **only after** the user grants the exact JobGrid frontend host and explicitly selects an authenticated app tab. Its internal message envelope is `{version:1,request_id:UUID,kind,account_id?,payload}` (maximum 8192 UTF-8 bytes). No external sender or page-to-extension relay is supported. Only fixed same-origin `/api/crm/browser-memory` routes are allowed. `GET /session` uses the existing browser cookie without reading or copying it. Before another route, the bridge rechecks the session account against `account_id`; for writes it sends fixed browser/expected-account headers. Responses and errors return only to the extension's internal runtime, never to the page DOM. The bridge has an eight-second timeout and safe 401, rate-limit, and malformed-response results.
 
 The fixed route mapping is `session → GET /session`, `check → POST /check`, `visit → POST /visit`, `apply → POST /apply`, and `forget_visits → DELETE /visits`. The backend session GET is implemented by EXT-04; check, visit, apply and forget endpoints remain scheduled for later tasks. The bridge is **transport only**: it does not authorize writes by itself, and the later worker must enforce popup-only apply/forget and navigation-only automatic visits, stale context cancellation, site opt-ins and selected-tab lifecycle. A failed/absent session produces an unavailable error, never a claim that no application exists.
 
@@ -41,7 +41,7 @@ If the deployment origin changes, update the public config, release manifest and
 
 ## Disposable real-browser account probe (EXT-05)
 
-The **development manifest only** registers `background.js`, which accepts exactly one `ext05:session-probe` message from this packaged popup. It requires the optional exact app host grant and exactly one matching JobGrid tab, injects `jobgrid-bridge.js` in that tab's isolated world and forwards only a session GET. There is no automatic permission request, persistence, job-page tracking or application write. The production `manifest.json` does not run this worker.
+The **development manifest only** registers `background.js`. Its legacy `ext05:session-probe` remains read-only. EXT-26 adds internal popup-only `ext26:connect`, `ext26:command`, and `ext26:disconnect` with explicit tab and account binding. It requires the optional exact app host grant and exactly one matching JobGrid tab, injects `jobgrid-bridge.js` in that tab's isolated world and forwards only a session GET. There is no automatic permission request, persistence, job-page tracking or application write. The production `manifest.json` does not run this worker.
 
 From a disposable `backend/` server with `TEST_AUTH=true`, `ENVIRONMENT=test` and a test-only database:
 
@@ -58,4 +58,12 @@ This automated test does **not** prove the Chrome optional permission approval U
 
 ## Data boundary (EXT-06)
 
-Alembic 019 adds owner-owned `job_visits` and `browser_apply_receipts`. Neither is populated by this probe. Visited pages are not imported CSV URLs, saved jobs or applications. Visits are intended to become portable backup data in EXT-22–24, but **are not yet exported by backup v2**. Receipts are operational and must not be backed up. See `docs/JOBGRID_BUILD_GUIDE.md` for schema, migration, tests and rollback details.
+Alembic 019 adds owner-owned `job_visits` and `browser_apply_receipts`. Neither is populated by this probe. Visited pages are not imported CSV URLs, saved jobs or applications. Since EXT-22–24, visits are included in optional checksummed `job_visits_v1` metadata in v2 JSON/ZIP exports and restored to the authenticated destination account. Receipts are operational and must not be backed up. See `docs/JOBGRID_BUILD_GUIDE.md` for schema, migration, tests and rollback details.
+
+## Development-only command safety and ATS routes (EXT-25–28)
+
+The EXT-26 worker requires a packaged popup sender and an explicitly selected, exact-origin JobGrid tab. It rejects forged sender/extra route/header/oversized packets, sends only fixed-route protocol-v1 messages through the isolated bridge and checks the server-owned account. Popup confirmation is required for apply and visit forgetting. Site candidates cannot perform writes. The EXT-27 worker also invalidates results on app-tab navigation/removal or account change and limits replies to eight seconds with no automatic retry or private offline cache. Worker restarts require a fresh connection.
+
+`site-rules.js` recognizes only exact HTTPS Greenhouse and Lever job-detail paths and treats unknown/listing/apply/token-bearing URLs as manual-only. It never identifies a company from the ATS slug or fetches pages. User-visible UI, automatic visit tracking and ATS observation remain EXT-29–40 scope.
+
+Validate with `node --test extension/tests/*.test.mjs` and disposable backend tests documented in `docs/JOBGRID_BUILD_GUIDE.md`. These fixtures do not replace manual Chrome permission or live OAuth acceptance.
