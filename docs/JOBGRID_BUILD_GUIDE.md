@@ -3526,6 +3526,43 @@ JSON/ZIP visit backup acceptance is claimed. To roll back the disconnected
 feature, leave the future extension write route disabled. Do not downgrade
 019 on populated production tables without an export-first migration plan.
 
+### Owner-only forgetting of browser visits, EXT-10
+
+`backend/app/services/browser_memory.py::forget_browser_visits` deletes all
+`job_visits` rows for the server-authenticated account ID and returns
+`{protocol_version: 1, account_id, deleted}`. The caller supplies the ID from
+the cookie-authenticated session and commits or rolls back the transaction.
+The service locks the owner on PostgreSQL and refuses a missing owner. A second
+call after commit returns `deleted: 0`. The future
+`DELETE /crm/browser-memory/visits` route and popup confirmation belong to
+EXT-19/40 and are **not** active yet.
+
+This reset removes **only external visit memory**. It never resets
+`CsvRow.clicked`/`clicked_at`, deletes imported `UrlHistory`, alters
+`JobTrack` or application evidence, or clears browser apply receipts. Deleting
+a user account separately cascades visits and apply receipts through their
+owner foreign keys. Those distinctions prevent forgetting a visit from erasing
+real application history.
+
+The reset cannot be reversed using an extension-side cache. Visits are not yet
+included in the current portable backup format. Once EXT-22–24 implement
+visit export/restore, importing an older user-selected backup may restore
+previously forgotten visits, so future UI must disclose that possibility.
+No external extension is permitted to invoke this service before account and
+Origin checks are wired in EXT-19. To roll back this disconnected capability,
+stop the caller rather than dropping populated tables.
+
+Disposable regression command:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py -q
+```
+
+The tests cover owner isolation, two-visit deletion, repeated deletion,
+retained CSV/import/application/receipt state, transaction rollback and FK
+cascade. Real Chrome/OAuth remains separately unverified.
+
 ### Verification and outstanding acceptance
 
 The tests above are the executable verification targets; per-run CI and browser results belong in issue #184 and the PR. Passing backend unit tests cannot replace a real Chrome account-switch check. Once Chrome acceptance passes, the next write/API tickets still need authorization, input validation, backup compatibility and rate-limit work before any history-tracking pilot can be called complete.
