@@ -648,8 +648,8 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
         **_entries(
             ["canonical_url", "canonical_url_hash", "first_visited_at"],
             "exported",
-            "Recoverable product data: EXT-22–24 must add portable JSON/ZIP export and restore. "
-            "The current v2 backup does not yet contain this section; do not claim backup coverage.",
+            "Recoverable visit history belongs in the optional checksummed job_visits_v1 "
+            "extension, not the frozen v2 base sections. Destination ownership is remapped.",
         ),
     },
     "BrowserApplyReceipt": _entries(
