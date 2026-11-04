@@ -3417,3 +3417,52 @@ JobGrid now includes a **pilot-only, inactive** Manifest V3 shell under `extensi
 **Verification:** Node 22.16.0, `node --test extension/tests/*.test.mjs`: 12 passed, 0 failed in a disposable local fixture. Tests cover strict origins/suffix spoofing, manifest permission allowlist, no shell scripts or network, fixed routes/headers, request IDs, invalid/external/oversize messages, malformed/HTML/401/429 replies and account-switch handling. **Unpacked Chrome UI acceptance is not yet verified** because the available sandbox Chromium blocks `chrome://extensions` and extension URLs, so a normal Chrome profile load/popup check is still required. Real cookie/OAuth, backend `/session`, Chrome navigation, write permissions, stale-tab handling and deployed acceptance are not claimed. The bridge cannot work live before EXT-04/05.
 
 Run the three commands in `extension/README.md` from the repository root. To roll back these foundation changes, remove/unload the extension; no server schema or user data has changed. Never add a wildcard host, export cookies/tokens or configure an arbitrary server to bypass a failed session.
+
+## Chrome extension session, local probe, and durable-data foundation (EXT-04–06)
+
+**Implementation scope:** This is a local/test foundation, not a released extension feature. It does not automatically read job pages or record visits/applications. The release manifest and existing popup remain inactive. Real unpacked Chrome and deployed OAuth acceptance must be recorded separately.
+
+### Read-only account handshake, EXT-04
+
+`backend/app/routers/browser_memory.py` registers `GET /crm/browser-memory/session` from `backend/app/main.py`. The API uses the existing `get_current_user` dependency and the caller's HttpOnly `session_token` cookie. It returns only `{"protocol_version":1,"account_id":123,"account_label":"JobGrid account 123"}` with `Cache-Control: no-store`. The account label is derived from the numeric account ID, never the raw email address. Missing, invalid or expired sessions use existing 401 errors. No authentication routes, cookie settings, tokens or public write APIs were added.
+
+The production Vercel `/api/:path*` rewrite maps `/api/crm/browser-memory/session` to the backend route. A GET does not mutate history or add application records.
+
+### Disposable real-browser bridge probe, EXT-05
+
+`extension/background.js` implements only a **popup-originated read-only session probe**. It refuses external senders, refuses absent or multiple matching app tabs, requires the exact optional frontend host grant and injects the already isolated `jobgrid-bridge.js` only into the matching top-frame JobGrid tab. It never stores the response, polls, registers navigation monitoring or issues a visit/apply request. This temporary diagnostic worker is registered only in `extension/manifest.dev.json`. The release `manifest.json` intentionally has no worker until later tickets build the full account-connection lifecycle.
+
+`frontend/tests/extension.spec.ts` creates a disposable Chromium persistent profile, copies the actual extension source, substitutes the dev manifest **only in the temporary copy**, overlays three public origin constants to `http://localhost:5173` without editing the release source, and uses a real click to request the exact localhost host permission. Vite's `JOBGRID_LOCAL_API_PROXY=1` test-only proxy forwards same-origin `/api/*` to `http://localhost:8000/*`. The test signs in with two disposable `/auth/dev-login` accounts, probes account A then B, logs out, closes the app tab and verifies errors cannot expose a stale private identity. A mock fetch or static manifest test does **not** satisfy the browser acceptance gate.
+
+From a disposable local backend with `TEST_AUTH=true`, `ENVIRONMENT=test` and no production database:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_api.py -q
+cd ../frontend
+npx playwright test tests/extension.spec.ts --project=chromium
+```
+
+Playwright launches the Vite server with the local API proxy enabled. The FastAPI server must be running separately at `localhost:8000`. The browser runner may reject extension loading or optional host grants in managed environments. Report those as pending **real-browser** acceptance instead of substituting mocks or broadening permissions. Deployed OAuth proxy acceptance also remains unverified.
+
+### Additive visit and receipt storage, EXT-06
+
+`backend/app/models.py` and Alembic `backend/alembic/versions/019_browser_visits.py` add these independent private tables after revision `018`:
+
+- `job_visits`: integer PK, owner FK `users.id ON DELETE CASCADE`, original derived canonical URL, SHA-256 identity hash, server-created UTC visit timestamp, unique `(user_id, canonical_url_hash)`, and owner/time index. The value is **visited**, not imported, saved or applied.
+- `browser_apply_receipts`: integer PK, owner FK/cascade, UUID request key, payload hash, frozen JSON result, server-created UTC timestamp, unique `(user_id, request_key)`, and owner/time index. It is operational idempotency state, **not** portable application history.
+
+No existing data is backfilled, no `CsvRow` or `JobTrack` key is reused, and neither table is written by the extension yet. Model-field inventory in `backend/app/backup_schemas.py` identifies visits as **future recoverable product data** and receipts as excluded operational state. **Current portable backup v2 does not include visits.** Do not claim recoverability until EXT-22–24 add and verify export and restore.
+
+Run the disposable schema/regression checks:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py tests/test_backup_contract.py tests/test_schema_parity.py -q
+```
+
+PostgreSQL schema and existing application acceptance require a separately disposable test database and the normal CI suite. Revision 019 is an additive upgrade. Old code can continue using its existing tables after rollback. A `downgrade` drops visit/receipt tables and is **only safe for empty/disposable databases**. Never run it against live user visit data without an export-first recovery plan.
+
+### Verification and outstanding acceptance
+
+The tests above are the executable verification targets; per-run CI and browser results belong in issue #184 and the PR. Passing backend unit tests cannot replace a real Chrome account-switch check. Once Chrome acceptance passes, the next write/API tickets still need authorization, input validation, backup compatibility and rate-limit work before any history-tracking pilot can be called complete.
