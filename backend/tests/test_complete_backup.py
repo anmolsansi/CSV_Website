@@ -367,3 +367,40 @@ def test_ext_24_zip_restore_commits_visits_with_existing_sections(db_session, co
     assert len(_read_visits(db_session, target)) == 1
     replay = backups.restore_backup_bundle(db_session, target, raw, "merge_missing")
     assert replay["counts"]["job_visits"]["created"] == 0
+
+
+def test_ext_24_explicit_null_extension_is_invalid(db_session, complete_backup):
+    source, target, payload = complete_backup
+    payload["job_visits_v1"] = None
+    with pytest.raises(BackupContractError, match="required fields"):
+        _visit_restore(db_session, target, payload, "merge_missing")
+    assert_empty(db_session, target)
+
+
+def test_ext_23_public_json_export_and_restore_use_visit_wrapper(client, db_session):
+    response = client.post(
+        "/auth/dev-login",
+        json={"email": f"ext23-source-{uuid4()}@example.test"},
+    )
+    assert response.status_code == 200
+    source = response.json()["id"]
+    _add_visit(db_session, source, "https://jobs.example.test/23/api")
+    exported = client.get("/crm/backup/export?version=2.0")
+    assert exported.status_code == 200, exported.text
+    payload = exported.json()
+    assert len(payload["job_visits_v1"]["visits"]) == 1
+    target_login = client.post(
+        "/auth/dev-login",
+        json={"email": f"ext23-target-{uuid4()}@example.test"},
+    )
+    assert target_login.status_code == 200
+    target = target_login.json()["id"]
+    upload = {"file": ("recovery.json", exported.content, "application/json")}
+    preview = client.post("/crm/backup/import?mode=verify_only", files=upload)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["counts"]["job_visits"]["created"] == 1
+    assert _read_visits(db_session, target) == []
+    recovered = client.post("/crm/backup/import?mode=merge_missing", files=upload)
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["counts"]["job_visits"]["created"] == 1
+    assert len(_read_visits(db_session, target)) == 1
