@@ -169,3 +169,196 @@ def test_bundle_contains_and_restores_extensions(db_session, complete_backup, tm
     assert result["counts"]["contacts"]["created"] == 1
     assert result["counts"]["interviews"]["created"] == 1
     assert result["counts"]["import_mappings"]["created"] == 1
+
+
+# EXT-23/24: visit history is portable, but rate/receipt/session state is not.
+def _add_visit(db, owner, url, first=datetime(2026, 11, 3, 11, 30)):
+    from app.models import JobVisit
+    from app.services.job_identity import canonicalize_job_url
+
+    canonical = canonicalize_job_url(url)
+    visit = JobVisit(
+        user_id=owner,
+        canonical_url=canonical.canonical_url,
+        canonical_url_hash=canonical.canonical_url_hash,
+        first_visited_at=first,
+    )
+    db.add(visit)
+    db.commit()
+    return visit
+
+
+def _visit_backup(db, owner):
+    from app.services.browser_memory_backup import export_backup_v2_with_browser_visits
+    return export_backup_v2_with_browser_visits(db, owner)
+
+
+def _visit_restore(db, owner, payload, mode):
+    from app.services.browser_memory_backup import restore_backup_payload_with_browser_visits
+    return restore_backup_payload_with_browser_visits(
+        db, owner, json.dumps(payload).encode(), mode,
+    )
+
+
+def _read_visits(db, owner):
+    from app.models import JobVisit
+    with Session(db.get_bind()) as fresh:
+        return [
+            (visit.canonical_url, visit.first_visited_at)
+            for visit in fresh.query(JobVisit).filter(JobVisit.user_id == owner).all()
+        ]
+
+
+def test_ext_23_json_and_zip_have_equal_owner_visit_facts(db_session, complete_backup, tmp_path, monkeypatch):
+    from app.config import settings
+    from app.browser_memory_backup_schemas import VISIT_BACKUP_KEY, validate_visit_extension
+    from app.models import BrowserApplyReceipt, RequestWindowCounter
+
+    source, target, _ = complete_backup
+    visit = _add_visit(db_session, source, "https://jobs.example.test/23/a?req=7")
+    _add_visit(db_session, target, "https://jobs.example.test/23/foreign?req=9")
+    db_session.add(BrowserApplyReceipt(
+        user_id=source, request_key=str(uuid4()), payload_hash="a" * 64,
+        response_json={"secret": "must-not-export"}, created_at=datetime(2026, 11, 4, 10),
+    ))
+    db_session.add(RequestWindowCounter(
+        user_id=source, scope="browser_memory_check",
+        window_start=datetime(2026, 11, 4, 10), count=3,
+    ))
+    db_session.commit()
+    direct = _visit_backup(db_session, source)
+    monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(tmp_path / "documents"))
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+    (tmp_path / "documents").mkdir()
+    raw = backups.export_backup_bundle(db_session, source)
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        zipped = json.loads(archive.read("backup.json"))
+    for payload in (direct, zipped):
+        assert len(validate_visit_extension(payload[VISIT_BACKUP_KEY])) == 1
+        record = payload[VISIT_BACKUP_KEY]["visits"][0]
+        assert record["canonical_url"] == visit.canonical_url
+        assert record["canonical_url_hash"] == visit.canonical_url_hash
+        assert "user_id" not in record and "id" not in record
+        assert "f8_private" in payload and "f9_import_mappings" in payload
+        serialized = json.dumps(payload)
+        assert "must-not-export" not in serialized
+        assert "browser_apply_receipts" not in serialized
+        assert "request_window_counters" not in serialized
+        assert "foreign?req=9" not in serialized
+    # Unique backup IDs produce different backup-local UUIDs/checksums,
+    # but the signed visit facts are equivalent within each snapshot.
+    assert [
+        (r["canonical_url"], r["canonical_url_hash"], r["first_visited_at"])
+        for r in direct[VISIT_BACKUP_KEY]["visits"]
+    ] == [
+        (r["canonical_url"], r["canonical_url_hash"], r["first_visited_at"])
+        for r in zipped[VISIT_BACKUP_KEY]["visits"]
+    ]
+
+
+def test_ext_24_visit_restore_replays_earliest(db_session, complete_backup):
+    from app.models import JobVisit, BrowserApplyReceipt
+    from app.browser_memory_backup_schemas import VISIT_BACKUP_KEY
+    source, target, _ = complete_backup
+    url = "https://jobs.example.test/24/a?req=42"
+    _add_visit(db_session, source, url, datetime(2026, 11, 2, 7, 0))
+    payload = _visit_backup(db_session, source)
+    assert len(payload[VISIT_BACKUP_KEY]["visits"]) == 1
+    preview = _visit_restore(db_session, target, payload, "verify_only")
+    assert preview["verified"]
+    assert preview["counts"]["job_visits"] == {"created": 1, "existing": 0}
+    assert _read_visits(db_session, target) == []
+    first = _visit_restore(db_session, target, payload, "merge_missing")
+    assert first["counts"]["job_visits"]["created"] == 1
+    assert _read_visits(db_session, target) == [(url, datetime(2026, 11, 2, 7, 0))]
+    # Existing later timestamp does not overwrite earlier portable evidence.
+    with Session(db_session.get_bind()) as fresh:
+        item = fresh.query(JobVisit).filter_by(user_id=target).one()
+        item.first_visited_at = datetime(2026, 11, 4, 10)
+        fresh.commit()
+    replay = _visit_restore(db_session, target, payload, "merge_missing")
+    assert replay["counts"]["job_visits"] == {"created": 0, "existing": 1}
+    assert _read_visits(db_session, target) == [(url, datetime(2026, 11, 2, 7, 0))]
+    with Session(db_session.get_bind()) as fresh:
+        assert fresh.query(BrowserApplyReceipt).filter_by(user_id=target).count() == 0
+        assert fresh.query(JobVisit).filter_by(user_id=source).count() == 1
+
+
+def test_ext_24_invalid_late_extension_rejects_entire_restore(db_session, complete_backup):
+    from app.browser_memory_backup_schemas import VISIT_BACKUP_KEY
+    source, target, _ = complete_backup
+    _add_visit(db_session, source, "https://jobs.example.test/24/corrupt")
+    payload = _visit_backup(db_session, source)
+    payload[VISIT_BACKUP_KEY]["checksum_sha256"] = "0" * 64
+    with pytest.raises(BackupContractError):
+        _visit_restore(db_session, target, payload, "merge_missing")
+    assert_empty(db_session, target)
+    assert _read_visits(db_session, target) == []
+
+
+def test_ext_24_union_over_quota_rejects_without_core_writes(db_session, complete_backup, monkeypatch):
+    from app.services import browser_memory_backup
+    source, target, _ = complete_backup
+    _add_visit(db_session, source, "https://jobs.example.test/24/new")
+    _add_visit(db_session, target, "https://jobs.example.test/24/old")
+    payload = _visit_backup(db_session, source)
+    monkeypatch.setattr(browser_memory_backup, "MAX_PORTABLE_VISITS", 1)
+    with pytest.raises(BackupContractError, match="10,000-record limit"):
+        _visit_restore(db_session, target, payload, "merge_missing")
+    assert len(_read_visits(db_session, target)) == 1
+    assert_empty(db_session, target)
+
+
+def test_ext_24_late_visit_insert_failure_rolls_back_core(db_session, complete_backup):
+    from app.models import JobVisit
+    source, target, _ = complete_backup
+    _add_visit(db_session, source, "https://jobs.example.test/24/fault")
+    payload = _visit_backup(db_session, source)
+    def fail_visit(mapper, connection, item):
+        if item.user_id == target:
+            raise RuntimeError("injected visit failure")
+    event.listen(JobVisit, "before_insert", fail_visit)
+    try:
+        with pytest.raises(RuntimeError, match="injected visit failure"):
+            _visit_restore(db_session, target, payload, "merge_missing")
+    finally:
+        event.remove(JobVisit, "before_insert", fail_visit)
+    assert_empty(db_session, target)
+    assert _read_visits(db_session, target) == []
+
+
+def test_ext_24_legacy_backup_has_no_inferred_visits(db_session, complete_backup):
+    source, target, payload = complete_backup
+    assert "job_visits_v1" not in payload
+    result = _visit_restore(db_session, target, payload, "merge_missing")
+    assert result["verified"]
+    assert _read_visits(db_session, target) == []
+
+
+def test_ext_23_old_reader_rejects_unknown_visit_extension(db_session, complete_backup):
+    from app.services import import_backups
+    source, target, _ = complete_backup
+    _add_visit(db_session, source, "https://jobs.example.test/23/legacy")
+    payload = _visit_backup(db_session, source)
+    with pytest.raises(BackupContractError):
+        import_backups.restore_backup_payload_with_import_mappings(
+            db_session, target, json.dumps(payload).encode(), "verify_only",
+        )
+    assert_empty(db_session, target)
+
+
+def test_ext_24_zip_restore_commits_visits_with_existing_sections(db_session, complete_backup, tmp_path, monkeypatch):
+    from app.config import settings
+    source, target, _ = complete_backup
+    _add_visit(db_session, source, "https://jobs.example.test/24/bundle")
+    monkeypatch.setattr(settings, "DOCUMENT_STORAGE_DIR", str(tmp_path / "documents"))
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+    (tmp_path / "documents").mkdir()
+    raw = backups.export_backup_bundle(db_session, source)
+    assert backups.restore_backup_bundle(db_session, target, raw, "verify_only")["counts"]["job_visits"]["created"] == 1
+    assert _read_visits(db_session, target) == []
+    result = backups.restore_backup_bundle(db_session, target, raw, "merge_missing")
+    assert result["counts"]["job_visits"]["created"] == 1
+    assert len(_read_visits(db_session, target)) == 1
+    replay = backups.restore_backup_bundle(db_session, target, raw, "merge_missing")
+    assert replay["counts"]["job_visits"]["created"] == 0
