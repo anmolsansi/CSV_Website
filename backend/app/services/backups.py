@@ -2501,7 +2501,11 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
                 raise _bundle_error("unsupported_backup_version", "Document bundles require backup v2.")
             from .contact_backups import F8_BACKUP_KEY
             from .import_backups import F9_BACKUP_KEY, F10_BACKUP_KEY
-            from ..browser_memory_backup_schemas import VISIT_BACKUP_KEY
+            from ..browser_memory_backup_schemas import VISIT_BACKUP_KEY, validate_visit_extension
+            # Reject malformed optional visit metadata before extracting or
+            # publishing any uploaded document members.
+            if VISIT_BACKUP_KEY in payload:
+                validate_visit_extension(payload[VISIT_BACKUP_KEY])
 
             document = validate_backup_v2({
                 key: value for key, value in payload.items()
