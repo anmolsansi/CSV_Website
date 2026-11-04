@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import and_, or_
 
@@ -15,7 +16,12 @@ from sqlalchemy.orm import Session
 
 from ..browser_memory_schemas import parse_browser_memory_payload
 from ..models import CsvRow, JobTrack, JobVisit, User
-from .job_identity import canonicalize_job_url, find_browser_applied_matches
+from .job_identity import (
+    apply_persisted_job_identity,
+    canonicalize_job_url,
+    find_browser_applied_matches,
+)
+from .lifecycle import apply_job_track_changes
 
 MAX_BROWSER_VISITS_PER_OWNER = 10_000
 
@@ -289,3 +295,137 @@ def read_browser_memory_facts(
         "company_known": bool(request.company and request.company.strip()),
         "lookup_complete": applied["lookup_complete"],
     }
+
+
+
+@dataclass(frozen=True)
+class BrowserApplicationResult:
+    account_id: int
+    application_id: int
+    created: bool
+    already_applied: bool
+    applied_at: datetime
+
+    def as_response(self) -> dict:
+        return {
+            "protocol_version": 1,
+            "account_id": self.account_id,
+            "application_id": self.application_id,
+            "created": self.created,
+            "already_applied": self.already_applied,
+            "applied_at": utc_z(self.applied_at),
+        }
+
+
+def record_browser_application(
+    session: Session,
+    *,
+    user_id: int,
+    url: str,
+    company: str,
+    title: str,
+    confirmed: bool,
+    operation_id: str | None = None,
+    now: datetime | None = None,
+) -> BrowserApplicationResult:
+    """Explicitly record a job application without capture or a synthetic open.
+
+    EXT-16 is an internal service, not an HTTP route or an idempotency receipt.
+    The authenticated caller owns commit/rollback; EXT-18 adds durable receipts.
+    Exact/canonical already-applied history is returned without mutation.
+    """
+    request = parse_browser_memory_payload(
+        "apply", {
+            "url": url, "company": company, "title": title,
+            "confirmed": confirmed,
+        },
+    )
+    identity = canonicalize_job_url(request.url)
+    owner = (
+        session.query(User).filter(User.id == user_id).with_for_update()
+        .one_or_none()
+    )
+    if owner is None:
+        raise BrowserVisitConflict(
+            "browser_memory_unavailable", "Account unavailable."
+        )
+
+    exact = (
+        session.query(JobTrack)
+        .filter(JobTrack.user_id == user_id, JobTrack.url == request.url)
+        .with_for_update()
+        .one_or_none()
+    )
+    if exact is not None and exact.applied_at is not None:
+        return BrowserApplicationResult(
+            account_id=user_id, application_id=exact.id, created=False,
+            already_applied=True, applied_at=exact.applied_at,
+        )
+
+    # A tracking-only URL variant must not create a second application.
+    # Company/title similarity alone is never sufficient to reuse a track.
+    prior = (
+        session.query(JobTrack)
+        .filter(
+            JobTrack.user_id == user_id,
+            JobTrack.applied_at.isnot(None),
+            JobTrack.canonical_url_hash == identity.canonical_url_hash,
+            JobTrack.canonical_url == identity.canonical_url,
+        )
+        .order_by(JobTrack.applied_at.desc(), JobTrack.id.desc())
+        .first()
+    )
+    if prior is not None:
+        return BrowserApplicationResult(
+            account_id=user_id, application_id=prior.id, created=False,
+            already_applied=True, applied_at=prior.applied_at,
+        )
+
+    created = exact is None
+    if created:
+        item = JobTrack(
+            user_id=user_id,
+            url=request.url,
+            company=request.company.strip(),
+            title=request.title.strip(),
+            status="applied",
+            open_count=0,
+            opened_at=None,
+            last_opened_at=None,
+            applied_at=None,
+        )
+        apply_persisted_job_identity(item)
+        session.add(item)
+    else:
+        item = exact
+        # Explicit confirmation must not replace existing curated metadata.
+        if not item.company or not item.company.strip():
+            item.company = request.company.strip()
+        if not item.title or not item.title.strip():
+            item.title = request.title.strip()
+        apply_persisted_job_identity(item)
+
+    stamp = now or datetime.now(timezone.utc)
+    if stamp.tzinfo is not None:
+        stamp = stamp.astimezone(timezone.utc).replace(tzinfo=None)
+
+    change = {"mark_applied": True}
+    if not created and item.status not in {"opened", "saved", "applied"}:
+        # An unusual legacy advanced status with a missing applied timestamp
+        # still needs first-applied evidence, but must not be reset.
+        change = {"applied_at": stamp, "infer_applied_at_from_status": False}
+
+    apply_job_track_changes(
+        session,
+        user_id=user_id,
+        item=item,
+        source="browser_memory",
+        operation_id=operation_id or str(uuid4()),
+        now=stamp,
+        **change,
+    )
+    session.flush()
+    return BrowserApplicationResult(
+        account_id=user_id, application_id=item.id, created=created,
+        already_applied=False, applied_at=item.applied_at,
+    )
