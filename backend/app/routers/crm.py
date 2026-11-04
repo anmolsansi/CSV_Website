@@ -23,9 +23,13 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from ..schemas import ApplyPilotResultIn, BulkFromRowsIn, BulkUpdateIn, JobTrackUpdateIn, SavedViewIn, SessionIn, SessionUpdateIn
 from ..services.capture import transfer_capture_notes
 from ..services.job_identity import (
+    APPLICATION_MATCH_LIMIT,
+    APPLICATION_MATCH_SCAN_LIMIT,
     JobIdentityError,
+    _company_alias_group,
     apply_persisted_job_identity,
     canonicalize_job_url,
+    find_applied_matches,
     normalize_company_alias_key,
 )
 from ..services.lifecycle import (
@@ -1823,60 +1827,6 @@ def merge_duplicates(primary_id: int, duplicate_ids: list[int], db: Session = De
 
 # ─── Application identity matching ───────────────────────────────────
 
-APPLICATION_MATCH_LIMIT = 20
-APPLICATION_MATCH_SCAN_LIMIT = 100
-APPLICATION_ALIAS_LIMIT = 100
-
-
-def _normalized_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = " ".join(value.strip().casefold().split())
-    return normalized or None
-
-
-def _company_alias_group(
-    db: Session,
-    *,
-    user_id: int,
-    company: str | None,
-) -> tuple[str | None, list[str], set[str]]:
-    company_key = _normalized_text(company)
-    if company_key is None:
-        return None, [], set()
-
-    try:
-        alias_key = normalize_company_alias_key(company)
-    except JobIdentityError:
-        return company_key, [company.strip()], {company_key}
-
-    anchor = (
-        db.query(CompanyAlias)
-        .filter(
-            CompanyAlias.user_id == user_id,
-            CompanyAlias.alias_key == alias_key,
-        )
-        .first()
-    )
-    if anchor is None:
-        return alias_key, [company.strip()], {alias_key}
-
-    aliases = (
-        db.query(CompanyAlias)
-        .filter(
-            CompanyAlias.user_id == user_id,
-            CompanyAlias.company_key == anchor.company_key,
-        )
-        .order_by(CompanyAlias.alias_key.asc())
-        .limit(APPLICATION_ALIAS_LIMIT)
-        .all()
-    )
-    names = list(dict.fromkeys([company.strip()] + [alias.display_name for alias in aliases]))
-    keys = {alias.alias_key for alias in aliases}
-    keys.add(alias_key)
-    return alias_key, names, keys
-
-
 def _find_application_matches(
     db: Session,
     *,
@@ -1885,8 +1835,11 @@ def _find_application_matches(
     company: str | None,
     title: str | None,
 ) -> dict:
+    """Compatibility adapter: preserve the old CRM response and 422 envelope."""
     try:
-        identity = canonicalize_job_url(url)
+        return find_applied_matches(
+            db, user_id=user_id, url=url, company=company, title=title,
+        )
     except JobIdentityError as exc:
         raise HTTPException(
             422,
@@ -1895,110 +1848,6 @@ def _find_application_matches(
                 "fields": [{"field": "url", "message": str(exc)}],
             },
         ) from exc
-
-    candidate_company_key, company_names, company_alias_keys = _company_alias_group(
-        db,
-        user_id=user_id,
-        company=company,
-    )
-    company_sql_keys = sorted(
-        {name.strip().lower() for name in company_names if name and name.strip()}
-    )
-
-    candidate_filters = [
-        JobTrack.url == url,
-        JobTrack.canonical_url_hash == identity.canonical_url_hash,
-    ]
-    if company_sql_keys:
-        candidate_filters.append(
-            func.lower(func.trim(JobTrack.company)).in_(company_sql_keys)
-        )
-
-    candidates = (
-        db.query(JobTrack)
-        .filter(
-            JobTrack.user_id == user_id,
-            JobTrack.applied_at.isnot(None),
-            or_(*candidate_filters),
-        )
-        .order_by(JobTrack.applied_at.desc(), JobTrack.id.desc())
-        .limit(APPLICATION_MATCH_SCAN_LIMIT)
-        .all()
-    )
-
-    candidate_title = _normalized_text(title)
-    matches = []
-    rank = {"exact": 0, "canonical": 1, "possible": 2}
-    for item in candidates:
-        confidence = None
-        reason = None
-        if item.url == url:
-            confidence = "exact"
-            reason = "same_original_url"
-        elif (
-            item.canonical_url_hash
-            and item.canonical_url_hash == identity.canonical_url_hash
-        ):
-            confidence = "canonical"
-            reason = "same_canonical_url"
-        else:
-            existing_company_key = _normalized_text(item.company)
-            existing_title = _normalized_text(item.title)
-            same_company = (
-                candidate_company_key is not None
-                and existing_company_key is not None
-                and (
-                    existing_company_key == candidate_company_key
-                    or existing_company_key in company_alias_keys
-                )
-            )
-            if same_company and candidate_title is not None and candidate_title == existing_title:
-                confidence = "possible"
-                reason = (
-                    "company_title_only"
-                    if existing_company_key == candidate_company_key
-                    else "company_alias_title"
-                )
-
-        if confidence is None:
-            continue
-        matches.append(
-            {
-                "track_id": item.id,
-                "confidence": confidence,
-                "reason": reason,
-                "company": item.company,
-                "title": item.title,
-                "status": item.status,
-                "applied_at": item.applied_at,
-            }
-        )
-
-    matches.sort(
-        key=lambda item: (
-            rank[item["confidence"]],
-            -(item["applied_at"].timestamp() if item["applied_at"] else 0),
-            -item["track_id"],
-        )
-    )
-
-    history_count = 0
-    if company_sql_keys:
-        history_count = (
-            db.query(func.count(JobTrack.id))
-            .filter(
-                JobTrack.user_id == user_id,
-                JobTrack.applied_at.isnot(None),
-                func.lower(func.trim(JobTrack.company)).in_(company_sql_keys),
-            )
-            .scalar()
-            or 0
-        )
-
-    return {
-        "matches": matches[:APPLICATION_MATCH_LIMIT],
-        "company_history_count": int(history_count),
-    }
 
 
 @router.get("/application-matches")
