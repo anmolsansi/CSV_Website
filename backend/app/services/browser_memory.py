@@ -6,7 +6,9 @@ fetches a supplied URL and never creates a CSV row or application.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from uuid import uuid4
 
 from sqlalchemy import and_, or_
@@ -14,8 +16,10 @@ from sqlalchemy import and_, or_
 from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
-from ..browser_memory_schemas import parse_browser_memory_payload
-from ..models import CsvRow, JobTrack, JobVisit, User
+from ..browser_memory_schemas import (
+    parse_browser_memory_payload, validate_apply_idempotency_key,
+)
+from ..models import BrowserApplyReceipt, CsvRow, JobTrack, JobVisit, User
 from .job_identity import (
     apply_persisted_job_identity,
     canonicalize_job_url,
@@ -24,6 +28,27 @@ from .job_identity import (
 from .lifecycle import apply_job_track_changes
 
 MAX_BROWSER_VISITS_PER_OWNER = 10_000
+MAX_BROWSER_APPLY_RECEIPTS_PER_OWNER = 10_000
+BROWSER_APPLY_RECEIPT_RETENTION_DAYS = 30
+
+
+def _apply_payload_hash(request) -> str:
+    """Stable digest of the validated apply intent, including confirmation.
+
+    Trim only free-text fields that the service itself persists trimmed.
+    Keep the original URL, including its query, so a changed request key
+    cannot silently target another URL or hide a changed payload.
+    """
+    payload = {
+        "url": request.url,
+        "company": request.company.strip(),
+        "title": request.title.strip(),
+        "confirmed": request.confirmed,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
 
 
 class BrowserVisitConflict(ValueError):
