@@ -150,3 +150,83 @@ def test_revision_019_upgrade_and_disposable_downgrade_preserve_legacy_data(tmp_
             assert connection.execute(text("SELECT COUNT(*) FROM legacy_job")).scalar_one() == 1
     finally:
         engine.dispose()
+
+
+
+# EXT-07: this is pure validation, no network access or write endpoint.
+from pydantic import ValidationError
+from app.browser_memory_schemas import (
+    BrowserApplyIn,
+    BrowserCheckIn,
+    BrowserMemoryValidationError,
+    BrowserVisitIn,
+    parse_browser_memory_payload,
+    validate_apply_idempotency_key,
+)
+
+
+def test_ext_07_public_url_acceptance_and_private_url_rejection(monkeypatch):
+    def no_dns(*args, **kwargs):
+        raise AssertionError("URL validation must never resolve or fetch input")
+    monkeypatch.setattr("socket.getaddrinfo", no_dns)
+
+    assert BrowserCheckIn(url="https://jobs.example.test/roles/3").url.endswith("/3")
+    for rejected in (
+        "chrome://settings", "file:///etc/passwd", "javascript:alert(1)",
+        "https://name:password@jobs.example.test/3",
+        "http://localhost:8000/jobs/3",
+        "http://127.0.0.1/jobs/3", "https://10.1.2.3/jobs/3",
+        "https://192.168.1.20/jobs/3", "https://[::1]/jobs/3",
+        "https://jobs.local/jobs/3", "http://0.0.0.0/jobs/3",
+        "https://jobs.example.test/jobs/3?ToKeN=secret",
+        "https://jobs.example.test/jobs/3?ACCESS_%74OKEN=secret",
+    ):
+        with pytest.raises(ValidationError):
+            BrowserVisitIn(url=rejected)
+
+
+def test_ext_07_url_and_text_boundaries_are_exact():
+    prefix = "https://jobs.example.test/"
+    maximum = prefix + "x" * (2048 - len(prefix))
+    assert len(BrowserVisitIn(url=maximum).url) == 2048
+    with pytest.raises(ValidationError):
+        BrowserVisitIn(url=maximum + "x")
+
+    assert BrowserCheckIn(url=prefix, company=None, title=None).company is None
+    assert BrowserCheckIn(url=prefix, company="C" * 320, title="T" * 500)
+    assert BrowserApplyIn(url=prefix, company="C" * 320, title="T" * 500, confirmed=True)
+    for values in (
+        {"company": "C" * 321, "title": "a", "confirmed": True},
+        {"company": "a", "title": "T" * 501, "confirmed": True},
+        {"company": " ", "title": "a", "confirmed": True},
+        {"company": "a", "title": "\t", "confirmed": True},
+        {"company": "a", "confirmed": True},
+        {"title": "a", "confirmed": True},
+    ):
+        with pytest.raises(ValidationError):
+            BrowserApplyIn(url=prefix, **values)
+
+
+def test_ext_07_strict_confirmation_unknown_fields_and_uuid_contract():
+    url = "https://jobs.example.test/123"
+    for confirmed in (1, "true", "True", False, None, 0):
+        with pytest.raises(ValidationError):
+            BrowserApplyIn(url=url, company="A", title="Engineer", confirmed=confirmed)
+    for payload in (
+        {"url": url, "user_id": 500},
+        {"url": url, "owner_id": 500},
+        {"url": url, "unexpected": None},
+        {"url": url, "company": 22},
+    ):
+        with pytest.raises(BrowserMemoryValidationError) as error:
+            parse_browser_memory_payload("check", payload)
+        assert error.value.status_code == 422
+        assert error.value.as_detail()["code"] == "invalid_browser_memory_payload"
+        assert "url" not in error.value.as_detail().get("message", "")
+
+    key = str(uuid4())
+    assert validate_apply_idempotency_key(key) == key
+    for invalid in (None, 1, "not-a-uuid", "0" * 32):
+        with pytest.raises(BrowserMemoryValidationError) as error:
+            validate_apply_idempotency_key(invalid)
+        assert error.value.as_detail()["field"] == "Idempotency-Key"
