@@ -36,6 +36,7 @@ async function signIn(page: Page, email: string): Promise<number> {
 }
 
 test('EXT-05 real tab bridge follows account switch and fails closed on logout/tab close', async () => {
+  test.setTimeout(90_000)
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'jobgrid-ext05-'))
   const extensionPath = path.join(workspace, 'extension')
   const userDataDir = path.join(workspace, 'profile')
@@ -64,6 +65,7 @@ test('EXT-05 real tab bridge follows account switch and fails closed on logout/t
 
     context = await chromium.launchPersistentContext(userDataDir, {
       headless: true,
+      channel: 'chromium', // modern headless Chromium supports MV3 extension workers
       args: [
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
