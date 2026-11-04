@@ -182,7 +182,7 @@ const commandPacket = (type, fields = {}) => ({
   type, version: 1, request_id: UUID, ...fields,
 })
 
-function workerSetup({ accountId = 101, granted = true } = {}) {
+function workerSetup({ accountId = 101, granted = true, reply = null, timers = null } = {}) {
   const messages = []
   const injections = []
   const writes = []
@@ -208,6 +208,7 @@ function workerSetup({ accountId = 101, granted = true } = {}) {
       query: async () => [...tabs.values()],
       sendMessage: async (tabId, packet) => {
         messages.push({ tabId, packet })
+        if (reply) return reply(tabId, packet, activeAccount)
         return {
           version: 1, request_id: packet.request_id, ok: true,
           data: packet.kind === 'session'
@@ -226,7 +227,9 @@ function workerSetup({ accountId = 101, granted = true } = {}) {
     } },
   }
   vm.runInNewContext(workerSource, { chrome, URL, TextEncoder, crypto: globalThis.crypto,
-    setTimeout, clearTimeout }, { filename: 'background.js', timeout: 1000 })
+    setTimeout: timers?.setTimeout ?? setTimeout,
+    clearTimeout: timers?.clearTimeout ?? clearTimeout },
+  { filename: 'background.js', timeout: 1000 })
   async function send(packet, sender = POPUP) {
     assert.equal(typeof receive, 'function')
     return await new Promise(resolve => {
@@ -262,8 +265,9 @@ test('worker requires an explicitly chosen exact-origin tab and keeps commands o
     kind: 'check', payload: { url: 'https://jobs.lever.co/acme/role', title: null },
   }))
   assert.equal(result.ok, true)
-  assert.equal(worker.messages.length, 2)
+  assert.equal(worker.messages.length, 3, 'check plus final account recheck')
   assert.equal(worker.messages[1].tabId, 20)
+  assert.equal(worker.messages[2].packet.kind, 'session')
   assert.equal(worker.messages[1].packet.kind, 'check')
   assert.equal(worker.messages[1].packet.account_id, 101)
 })
@@ -314,4 +318,84 @@ test('job-page scripts cannot invoke private apply/forget commands or see respon
   assert.equal(forget.ok, true)
   assert.equal(worker.messages.at(-1).packet.kind, 'forget_visits')
   assert.deepEqual(Object.keys(worker.messages.at(-1).packet.payload), [])
+})
+
+
+// ext_27_case_01
+test('late account-A result is discarded after account B becomes active', async () => {
+  let release
+  const worker = workerSetup({ reply: (_tabId, packet, account) => {
+    if (packet.kind === 'check') return new Promise(resolve => {
+      release = () => resolve({ version: 1, request_id: packet.request_id, ok: true,
+        data: { protocol_version: 1, account_id: 101, matches: [{ track_id: 77 }] } })
+    })
+    return { version: 1, request_id: packet.request_id, ok: true,
+      data: session(account) }
+  } })
+  assert.equal((await worker.send(commandPacket('ext26:connect', { tab_id: 10 }))).ok, true)
+  const pending = worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/one' },
+  }))
+  for (let n = 0; n < 5 && !release; n++) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(typeof release, 'function')
+  worker.setAccount(202)
+  release()
+  const result = await pending
+  assert.equal(result.ok, false)
+  assert.equal(result.error.code, 'account_changed')
+  assert.equal(result.data, undefined)
+  assert.equal((await worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/two' },
+  }))).error.code, 'not_connected')
+})
+
+// ext_27_case_02
+test('navigation/removal invalidate selected tab and discard pending private results', async () => {
+  let release
+  const worker = workerSetup({ reply: (_tab, packet, account) => {
+    if (packet.kind === 'check') return new Promise(resolve => { release = () => resolve({
+      version: 1, request_id: packet.request_id, ok: true,
+      data: { protocol_version: 1, account_id: account, matches: [{ track_id: 99 }] },
+    }) })
+    return { version: 1, request_id: packet.request_id, ok: true, data: session(account) }
+  } })
+  assert.equal((await worker.send(commandPacket('ext26:connect', { tab_id: 10 }))).ok, true)
+  const pending = worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/one' },
+  }))
+  for (let n = 0; n < 5 && !release; n++) await new Promise(resolve => setImmediate(resolve))
+  worker.update(10, APP_ORIGIN + '/different')
+  release()
+  const result = await pending
+  assert.equal(result.ok, false)
+  assert.equal(result.data, undefined)
+  const reconnected = await worker.send(commandPacket('ext26:connect', { tab_id: 20 }))
+  assert.equal(reconnected.ok, true)
+  worker.remove(20)
+  const gone = await worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/one' },
+  }))
+  assert.equal(gone.ok, false)
+  assert.equal(gone.data, undefined)
+})
+
+// ext_27_case_03
+test('an unanswered check times out at eight seconds with no retry or write', async () => {
+  const timers = {
+    setTimeout: (callback, ms) => { if (ms === 8000) queueMicrotask(callback); return 1 },
+    clearTimeout: () => {},
+  }
+  const worker = workerSetup({ timers, reply: (_tab, packet, account) => {
+    if (packet.kind === 'check') return new Promise(() => {})
+    return { version: 1, request_id: packet.request_id, ok: true, data: session(account) }
+  } })
+  assert.equal((await worker.send(commandPacket('ext26:connect', { tab_id: 10 }))).ok, true)
+  const outcome = await worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/one' },
+  }))
+  assert.equal(outcome.ok, false)
+  assert.equal(outcome.error.code, 'timeout')
+  assert.equal(worker.messages.length, 2)
+  assert.equal(worker.messages[1].packet.kind, 'check')
+  assert.equal(worker.messages.some(m => m.packet.kind === 'visit' || m.packet.kind === 'apply'), false)
 })
