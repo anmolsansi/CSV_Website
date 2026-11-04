@@ -404,3 +404,53 @@ def test_ext_23_public_json_export_and_restore_use_visit_wrapper(client, db_sess
     assert recovered.status_code == 200, recovered.text
     assert recovered.json()["counts"]["job_visits"]["created"] == 1
     assert len(_read_visits(db_session, target)) == 1
+
+
+
+# EXT-25: an old user-selected v2 backup may repopulate explicitly forgotten visits.
+def test_ext_25_restore_forgotten_visits_then_purge_owner_without_foreign_effect(db_session):
+    from sqlalchemy import text
+    from app.models import BrowserApplyReceipt, JobVisit
+    from app.services.browser_memory import forget_browser_visits
+
+    owner = User(email=f"ext25-owner-{uuid4()}@example.test")
+    other = User(email=f"ext25-foreign-{uuid4()}@example.test")
+    db_session.add_all([owner, other])
+    db_session.commit()
+    owner_id, other_id = owner.id, other.id
+    url = "https://jobs.example.test/25/restore"
+    other_url = "https://jobs.example.test/25/foreign"
+    _add_visit(db_session, owner_id, url, datetime(2026, 10, 20, 12))
+    _add_visit(db_session, other_id, other_url, datetime(2026, 10, 21, 12))
+    db_session.add_all([
+        BrowserApplyReceipt(user_id=owner_id, request_key=str(uuid4()),
+                            payload_hash="a" * 64, response_json={"ok": True}),
+        BrowserApplyReceipt(user_id=other_id, request_key=str(uuid4()),
+                            payload_hash="b" * 64, response_json={"ok": True}),
+    ])
+    db_session.commit()
+
+    old_backup = _visit_backup(db_session, owner_id)
+    assert len(old_backup["job_visits_v1"]["visits"]) == 1
+    assert forget_browser_visits(db_session, user_id=owner_id)["deleted"] == 1
+    db_session.commit()
+    assert _read_visits(db_session, owner_id) == []
+    assert len(_read_visits(db_session, other_id)) == 1
+
+    preview = _visit_restore(db_session, owner_id, old_backup, "verify_only")
+    assert preview["counts"]["job_visits"]["created"] == 1
+    assert _read_visits(db_session, owner_id) == []
+    result = _visit_restore(db_session, owner_id, old_backup, "merge_missing")
+    assert result["counts"]["job_visits"] == {"created": 1, "existing": 0}
+    assert _read_visits(db_session, owner_id) == [(url, datetime(2026, 10, 20, 12))]
+    assert len(_read_visits(db_session, other_id)) == 1
+
+    # This is a disposable fixture. Database-enforced owner purge removes
+    # receipt and visit rows without deleting a second account's memories.
+    db_session.execute(text("DELETE FROM users WHERE id = :owner"), {"owner": owner_id})
+    db_session.commit()
+    db_session.expire_all()
+    assert db_session.query(JobVisit).filter_by(user_id=owner_id).count() == 0
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner_id).count() == 0
+    assert db_session.query(JobVisit).filter_by(user_id=other_id).count() == 1
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=other_id).count() == 1
