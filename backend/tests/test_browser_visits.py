@@ -318,3 +318,97 @@ def test_ext_08_hash_collision_and_rollback_do_not_merge(db_session):
         user_id=owner.id,
         canonical_url_hash=sha256(rollback_url.encode("utf-8")).hexdigest(),
     ).count() == 0
+
+
+
+# EXT-09: an external visit only changes existing matching owned row click facts.
+from datetime import datetime, timedelta
+from app.models import CsvRow, JobLifecycleEvent, JobTrack
+from app.services.job_identity import apply_persisted_job_identity
+
+
+def _csv_row(owner_id: int, url: str, *, clicked=False, clicked_at=None):
+    row = CsvRow(
+        user_id=owner_id, upload_batch_id=str(uuid4()), url=url,
+        clicked=clicked, clicked_at=clicked_at,
+    )
+    assert apply_persisted_job_identity(row)
+    return row
+
+
+def test_ext_09_marks_owned_matching_rows_and_preserves_first_click(db_session):
+    owner, foreign = _user(db_session), _user(db_session)
+    db_session.flush()
+    url = "https://jobs.example.test/job/22"
+    prior = datetime(2025, 4, 1, 12, 10)
+    exact = _csv_row(owner.id, url)
+    canonical = _csv_row(owner.id, url + "?utm_campaign=testing")
+    already = _csv_row(owner.id, url, clicked=True, clicked_at=prior)
+    other_job = _csv_row(owner.id, "https://jobs.example.test/job/23")
+    foreign_row = _csv_row(foreign.id, url)
+    db_session.add_all([exact, canonical, already, other_job, foreign_row])
+    db_session.commit()
+    baseline_events = db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count()
+
+    result = save_browser_visit(db_session, user_id=owner.id, url=url)
+    assert result.created is True
+    assert result.matching_rows_marked == 2
+    db_session.commit()
+    db_session.expire_all()
+
+    assert exact.clicked is True and exact.clicked_at is not None
+    assert canonical.clicked is True and canonical.clicked_at is not None
+    assert already.clicked_at == prior
+    assert other_job.clicked is False and other_job.clicked_at is None
+    assert foreign_row.clicked is False and foreign_row.clicked_at is None
+    assert db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count() == baseline_events
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 0
+
+    again = save_browser_visit(
+        db_session, user_id=owner.id, url=url + "?utm_source=repeat"
+    )
+    assert again.created is False
+    assert again.matching_rows_marked == 0
+    db_session.commit()
+    assert exact.clicked_at == canonical.clicked_at or (
+        exact.clicked_at is not None and canonical.clicked_at is not None
+    )
+
+
+def test_ext_09_external_only_url_does_not_create_rows_or_applications(db_session):
+    owner = _user(db_session)
+    db_session.commit()
+    initial_rows = db_session.query(CsvRow).filter_by(user_id=owner.id).count()
+    initial_tracks = db_session.query(JobTrack).filter_by(user_id=owner.id).count()
+    initial_events = db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count()
+
+    result = save_browser_visit(
+        db_session, user_id=owner.id, url="https://jobs.example.test/jobs/no-csv"
+    )
+    db_session.commit()
+    assert result.created is True and result.matching_rows_marked == 0
+    assert db_session.query(CsvRow).filter_by(user_id=owner.id).count() == initial_rows
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == initial_tracks
+    assert db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count() == initial_events
+
+
+def test_ext_09_failed_row_update_rolls_back_new_visit(monkeypatch, db_session):
+    owner = _user(db_session)
+    db_session.commit()
+    url = "https://jobs.example.test/jobs/atomic"
+    row = _csv_row(owner.id, url)
+    db_session.add(row)
+    db_session.commit()
+
+    def fail_row_update(*args, **kwargs):
+        raise RuntimeError("synthetic row failure")
+
+    monkeypatch.setattr(
+        "app.services.browser_memory._mark_matching_existing_rows", fail_row_update
+    )
+    with pytest.raises(RuntimeError, match="synthetic row failure"):
+        save_browser_visit(db_session, user_id=owner.id, url=url)
+    db_session.rollback()
+    db_session.expire_all()
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 0
+    assert row.clicked is False and row.clicked_at is None
