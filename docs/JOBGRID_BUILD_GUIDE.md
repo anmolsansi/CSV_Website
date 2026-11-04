@@ -3799,10 +3799,13 @@ of the business transaction. Limits are respectively 60/min, 20/min and
 5/hour. Rejected authenticated attempts still count. Exceeding a window
 returns `429 browser_memory_rate_limited` with `Retry-After`; counter
 storage failure fails closed with `503 browser_memory_unavailable`.
-The separate read-only check retains its original contract pending EXT-21
-rate-window integration and adversarial cross-process acceptance.
-Never regard the absence of those gates as authorization to ship the
-extension. Do not log raw job URLs, page title/company, tokens or cookie values.
+The read-only check is also metered at 120 authenticated attempts/minute,
+including rejected/malformed requests, in its own per-account shared window.
+The database-backed limiter survives independent request sessions; errors
+fail closed with 503. Cross-process behavior must still be verified in CI.
+Only aggregate path/method/status/latency diagnostics are retained by the
+existing metrics middleware. Never log raw job URLs, page title/company,
+tokens or cookie values.
 
 **Verification.** The regression suite covers original statuses, distinct
 roles, receipts, changed-payload conflicts, deletion, expiry, quotas,
@@ -3822,5 +3825,92 @@ PostgreSQL verification requires the separately disposable
 The write routes can be disabled or the extension left disconnected for
 rollback without deleting user history. These tickets introduce no schema
 migration, dependency, browser permission, hosting charge or live deployment.
-EXT-02–06 real Chrome/OAuth gates, EXT-21 adversarial controls, EXT-22–24
-portable visit backup and subsequent extension release tickets remain open.
+EXT-02–06 real Chrome/OAuth gates and later extension release tickets
+remain separate. Automated tests are not proof of a live Chrome pilot.
+
+
+### Browser-memory security and portable visits, EXT-21–24
+
+**Rate and trust boundary.** The signed-in cookie chooses the server-owned
+account. New write requests must provide exactly one Origin matching the
+configured frontend origin, exactly one `X-JobGrid-Browser: 1`, and exactly
+one numeric `X-JobGrid-Account-ID` matching the cookie account. Duplicate
+trust headers fail closed, as do host suffixes, alternate ports, and stale
+account selections. Expect 403 `origin_not_allowed`, 422
+`invalid_browser_memory_payload`, or 409 `account_changed`. A malformed
+authenticated request still uses a quota attempt. The persisted
+`request_window_counters` windows are **check 120/min**, **visit 60/min**,
+**apply 20/min**, and **forget 5/hour** per account/action. After exceeding a
+window, the API returns 429 `browser_memory_rate_limited` with `Retry-After`.
+Limiter errors return safe 503 `browser_memory_unavailable` without URL or
+payload disclosure. No session token, new service, or paid dependency is used.
+
+**Portable export.** `GET /crm/backup/export?version=2.0` and
+`GET /crm/backup/export/bundle` use
+`services/browser_memory_backup.py::export_backup_v2_with_browser_visits`.
+The existing F8/F9/F10 private/contact/mapping/audit sections remain
+unchanged. When the account has visits, an optional checksummed top-level
+`job_visits_v1` member is emitted in both JSON metadata and the ZIP
+`backup.json`, inside the same account snapshot. Its signed envelope is:
+
+```json
+{
+  "schema_revision": 1,
+  "visits": [{
+    "backup_ref": "fa30c79c-9331-47c3-aa03-98b8e9fbd989",
+    "canonical_url": "https://jobs.example.test/roles/123",
+    "canonical_url_hash": "<64-character lowercase SHA-256>",
+    "first_visited_at": "2026-11-03T11:30:00Z"
+  }],
+  "checksum_sha256": "<64-character lowercase SHA-256>"
+}
+```
+
+Each SHA-256 signs the canonical sorted-key compact UTF-8 JSON, with the
+checksum property excluded and non-finite numbers rejected. The visit URL
+and its digest are validated against the existing conservative job identity
+rule. A portable ref is a backup-local UUID, not a source database ID or
+authorization credential. The extension never contains account IDs,
+cookies, browser settings, rate windows or apply receipts. Records are
+ordered deterministically and require the existing 20,000 total-record
+limit, 20 MiB JSON metadata limit and separate 10,000-visit account cap.
+An account with no visits leaves the extension absent, preserving older
+v2 metadata. The older default `GET /crm/backup/export` v1 format does
+**not** include visits and is **not** a complete browser-memory backup.
+Use v2 JSON or the complete ZIP for portable recovery.
+
+**Reader compatibility and restore.** Strict earlier v2 readers reject
+unknown top-level extensions. They must **not** silently claim a complete
+restore of a visit-bearing backup. Use the updated reader for
+`job_visits_v1`, or an intentionally selected old-format export that
+explicitly omits visit history. `POST /crm/backup/import?mode=verify_only`
+and `POST /crm/backup/import/bundle?mode=verify_only` validate the whole
+metadata and visit checksum/UUID/hash/UTC-Z identity and quota before
+persisting anything. Unknown extension keys/version, duplicate identities
+or conflicting hashes fail with a structured `BackupContractError`.
+The authenticated **destination** account owns restored visits. Merge
+restores missing canonical hashes, preserves the **earliest** first-visit
+timestamp on replay, and rejects a union above 10,000 without partial
+core/contact/import/document writes. The restore runs inside the existing
+`backup_sessions.restore_session` caller-owned transaction, and does not
+replay application lifecycle events, synthesize CSV clicks, or restore
+operational receipts. A missing extension in an older backup fabricates
+no visit history.
+
+**Verification and rollback.** Run on disposable test databases:
+
+```sh
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_security.py tests/test_backup_contract.py tests/test_complete_backup.py tests/test_backup_export.py tests/test_backup_restore.py -q
+python -m compileall -q app
+```
+
+For PostgreSQL results, use the isolated `TEST_DATABASE_URL` fixture in
+the existing CI workflow. Exercise bad checksums, duplicate IDs, foreign
+owners, quota unions, late rollback, repeat restores and real ZIP metadata,
+then confirm JSON/ZIP record parity (backup-local UUIDs differ across
+separate exports). No Alembic change is needed beyond revision 019.
+Rollback disables the extension's calls/uses an older app build while
+**retaining** the additive tables and previously recorded visits. Do not
+run a destructive downgrade or purge recovered visits automatically.
+Real Chrome/OAuth, staging and store-release acceptance are separate.
