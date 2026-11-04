@@ -212,3 +212,125 @@ def test_ext_17_possible_company_match_never_merges_distinct_role(db_session):
     assert db_session.query(JobLifecycleEvent).filter_by(
         user_id=owner.id, job_track_id=newer.application_id, kind="first_applied",
     ).count() == 1
+
+
+def test_ext_18_lost_response_replay_keeps_frozen_result_and_one_event(db_session):
+    owner = _owner(db_session)
+    db_session.commit()
+    key = str(uuid4())
+    url = "https://jobs.example.test/18/retry?role=4"
+    kwargs = dict(
+        user_id=owner.id, url=url, company="Acme Corp",
+        title="Backend Engineer", confirmed=True, request_key=key,
+    )
+    first = browser_memory.apply_browser_application_once(
+        db_session, now=datetime(2026, 10, 1, 8), **kwargs,
+    )
+    db_session.commit()
+    replay = browser_memory.apply_browser_application_once(
+        db_session, now=datetime(2026, 10, 2, 9), **kwargs,
+    )
+    db_session.commit()
+    assert replay == first
+    assert first["created"] is True and first["already_applied"] is False
+    assert first["applied_at"] == "2026-10-01T08:00:00Z"
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner.id).count() == 1
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=owner.id, kind="first_applied",
+    ).count() == 1
+
+
+def test_ext_18_changed_payload_conflicts_but_key_is_owner_scoped(db_session):
+    owner, other = _owner(db_session), _owner(db_session)
+    db_session.commit()
+    key = str(uuid4())
+    original = dict(
+        url="https://jobs.example.test/18/a", company="Acme Corp",
+        title="Backend Engineer", confirmed=True, request_key=key,
+    )
+    saved = browser_memory.apply_browser_application_once(
+        db_session, user_id=owner.id, **original,
+    )
+    db_session.commit()
+    for change in ({"url": "https://jobs.example.test/18/b"}, {"title": "Designer"}):
+        with pytest.raises(browser_memory.BrowserVisitConflict) as caught:
+            browser_memory.apply_browser_application_once(
+                db_session, user_id=owner.id, **{**original, **change},
+            )
+        assert caught.value.code == "idempotency_conflict"
+        db_session.rollback()
+    foreign = browser_memory.apply_browser_application_once(
+        db_session, user_id=other.id, **original,
+    )
+    db_session.commit()
+    assert foreign["account_id"] == other.id
+    assert foreign["application_id"] != saved["application_id"]
+    assert db_session.query(BrowserApplyReceipt).filter_by(request_key=key).count() == 2
+
+
+def test_ext_18_deleted_target_and_rollback_have_no_false_receipt(db_session, monkeypatch):
+    owner = _owner(db_session)
+    db_session.commit()
+    url = "https://jobs.example.test/18/failure"
+    key = str(uuid4())
+    original = browser_memory.apply_job_track_changes
+
+    def late_failure(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("late failure after event")
+
+    monkeypatch.setattr(browser_memory, "apply_job_track_changes", late_failure)
+    with pytest.raises(RuntimeError, match="late failure"):
+        browser_memory.apply_browser_application_once(
+            db_session, user_id=owner.id, url=url, company="Acme Corp",
+            title="Backend Engineer", confirmed=True, request_key=key,
+        )
+    db_session.rollback()
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner.id).count() == 0
+    assert db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count() == 0
+    monkeypatch.setattr(browser_memory, "apply_job_track_changes", original)
+    saved = browser_memory.apply_browser_application_once(
+        db_session, user_id=owner.id, url=url, company="Acme Corp",
+        title="Backend Engineer", confirmed=True, request_key=key,
+    )
+    db_session.commit()
+    db_session.query(JobTrack).filter_by(id=saved["application_id"], user_id=owner.id).delete()
+    db_session.commit()
+    with pytest.raises(browser_memory.BrowserVisitConflict) as caught:
+        browser_memory.apply_browser_application_once(
+            db_session, user_id=owner.id, url=url, company="Acme Corp",
+            title="Backend Engineer", confirmed=True, request_key=key,
+        )
+    assert caught.value.code == "application_deleted"
+    db_session.rollback()
+
+
+def test_ext_18_receipt_expiry_and_capacity_preserve_application(db_session, monkeypatch):
+    owner = _owner(db_session)
+    db_session.commit()
+    request = dict(
+        user_id=owner.id, url="https://jobs.example.test/18/cap",
+        company="Acme Corp", title="Backend Engineer", confirmed=True,
+    )
+    key = str(uuid4())
+    first = browser_memory.apply_browser_application_once(
+        db_session, request_key=key, now=datetime(2026, 1, 1, 10), **request,
+    )
+    db_session.commit()
+    monkeypatch.setattr(browser_memory, "MAX_BROWSER_APPLY_RECEIPTS_PER_OWNER", 1)
+    other_key = str(uuid4())
+    with pytest.raises(browser_memory.BrowserVisitConflict) as caught:
+        browser_memory.apply_browser_application_once(
+            db_session, request_key=other_key, now=datetime(2026, 1, 2, 10), **request,
+        )
+    assert caught.value.code == "receipt_limit_reached"
+    db_session.rollback()
+    after_expiry = browser_memory.apply_browser_application_once(
+        db_session, request_key=other_key, now=datetime(2026, 3, 1, 10), **request,
+    )
+    db_session.commit()
+    assert after_expiry["application_id"] == first["application_id"]
+    assert after_expiry["already_applied"] is True
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner.id).count() == 1
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
