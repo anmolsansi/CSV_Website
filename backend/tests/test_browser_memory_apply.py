@@ -154,3 +154,61 @@ def test_ext_16_canonical_applied_is_reused_without_status_reset(db_session):
     assert old.status == "interview" and old.notes == "Already had an interview"
     assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
     assert db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count() == 0
+
+
+def test_ext_17_replay_preserves_advanced_applied_status_and_original_time(db_session):
+    owner = _owner(db_session)
+    prior = JobTrack(
+        user_id=owner.id,
+        url="https://jobs.example.test/17/rejected?role=123&utm_campaign=old",
+        company="Curated Employer", title="Curated Role", notes="Keep review notes",
+        status="rejected", applied_at=datetime(2026, 1, 2, 9, 30),
+    )
+    apply_persisted_job_identity(prior)
+    db_session.add(prior)
+    db_session.commit()
+
+    retry = _apply(
+        db_session, owner.id,
+        "https://jobs.example.test/17/rejected?role=123&gclid=new",
+        now=datetime(2026, 10, 5, 10),
+    )
+    assert retry.as_response() == {
+        "protocol_version": 1, "account_id": owner.id,
+        "application_id": prior.id, "created": False, "already_applied": True,
+        "applied_at": "2026-01-02T09:30:00Z",
+    }
+    db_session.commit()
+    db_session.refresh(prior)
+    assert (prior.status, prior.notes, prior.company, prior.title) == (
+        "rejected", "Keep review notes", "Curated Employer", "Curated Role",
+    )
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=owner.id, job_track_id=prior.id, kind="first_applied",
+    ).count() == 0
+
+
+def test_ext_17_possible_company_match_never_merges_distinct_role(db_session):
+    owner = _owner(db_session)
+    earlier = JobTrack(
+        user_id=owner.id, url="https://jobs.example.test/17/role-A",
+        company="Acme Corp", title="Backend Engineer", status="archived",
+        applied_at=datetime(2026, 1, 2, 11),
+    )
+    apply_persisted_job_identity(earlier)
+    db_session.add(earlier)
+    db_session.commit()
+    newer = _apply(
+        db_session, owner.id, "https://jobs.example.test/17/role-B",
+        now=datetime(2026, 10, 6, 11),
+    )
+    assert newer.created is True and newer.already_applied is False
+    assert newer.application_id != earlier.id
+    db_session.commit()
+    db_session.refresh(earlier)
+    assert earlier.status == "archived"
+    assert earlier.applied_at == datetime(2026, 1, 2, 11)
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 2
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=owner.id, job_track_id=newer.application_id, kind="first_applied",
+    ).count() == 1
