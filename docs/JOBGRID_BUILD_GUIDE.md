@@ -3432,7 +3432,7 @@ The production Vercel `/api/:path*` rewrite maps `/api/crm/browser-memory/sessio
 
 `extension/background.js` implements only a **popup-originated read-only session probe**. It refuses external senders, refuses absent or multiple matching app tabs, requires the exact optional frontend host grant and injects the already isolated `jobgrid-bridge.js` only into the matching top-frame JobGrid tab. It never stores the response, polls, registers navigation monitoring or issues a visit/apply request. This temporary diagnostic worker is registered only in `extension/manifest.dev.json`. The release `manifest.json` intentionally has no worker until later tickets build the full account-connection lifecycle.
 
-`frontend/tests/extension.spec.ts` creates a disposable Chromium persistent profile, copies the actual extension source, substitutes the dev manifest **only in the temporary copy**, overlays three public origin constants to `http://localhost:5173` without editing the release source, and uses a real click to request the exact localhost host permission. Vite's `JOBGRID_LOCAL_API_PROXY=1` test-only proxy forwards same-origin `/api/*` to `http://localhost:8000/*`. The test signs in with two disposable `/auth/dev-login` accounts, probes account A then B, logs out, closes the app tab and verifies errors cannot expose a stale private identity. A mock fetch or static manifest test does **not** satisfy the browser acceptance gate.
+`frontend/tests/extension.spec.ts` creates a disposable Chromium persistent profile, copies the actual extension source, substitutes the dev manifest **only in the temporary copy**, overlays three public origin constants to `http://localhost:5173` without editing the release source, and pregrants the exact localhost host **only in the temporary test manifest**. Headless Chromium cannot approve the browser-owned optional host-permission prompt, so that UX still requires manual Chrome acceptance. Vite's `JOBGRID_LOCAL_API_PROXY=1` test-only proxy forwards same-origin `/api/*` to `http://localhost:8000/*`. The test signs in with two disposable `/auth/dev-login` accounts, probes account A then B, logs out, closes the app tab and verifies errors cannot expose a stale private identity. A mock fetch or static manifest test does **not** satisfy the browser acceptance gate.
 
 From a disposable local backend with `TEST_AUTH=true`, `ENVIRONMENT=test` and no production database:
 
@@ -3443,7 +3443,7 @@ cd ../frontend
 npx playwright test tests/extension.spec.ts --project=chromium
 ```
 
-Playwright launches the Vite server with the local API proxy enabled. The FastAPI server must be running separately at `localhost:8000`. The browser runner may reject extension loading or optional host grants in managed environments. Report those as pending **real-browser** acceptance instead of substituting mocks or broadening permissions. Deployed OAuth proxy acceptance also remains unverified.
+Playwright launches the Vite server with the local API proxy enabled. The FastAPI server must be running separately at `localhost:8000`. Headless CI uses a temporary, exact localhost-only host pregrant, not a test of the actual optional permission approval flow. An unrestricted Chrome profile must separately verify that flow. The browser runner may still reject extension loading in managed environments. Report those as pending **real-browser** acceptance instead of substituting mocks or broadening permissions. Deployed OAuth proxy acceptance also remains unverified.
 
 ### Additive visit and receipt storage, EXT-06
 
