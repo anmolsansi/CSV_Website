@@ -404,12 +404,23 @@ def test_ext_20_sqlite_concurrent_canonical_apply_uses_one_first_event(sqlite_ac
 
 @pytest.mark.postgresql
 def test_ext_20_postgres_concurrent_canonical_apply_uses_one_first_event(postgres_test_url):
-    eng = create_jobgrid_engine(postgres_test_url, pool_pre_ping=True)
+    # TEST_DATABASE_URL is validated by conftest as distinct/disposable.
+    # Unlike the schema-parity module this test runs earlier alphabetically:
+    # create its isolated database explicitly instead of assuming it exists.
+    from test_schema_parity import (
+        _drop_postgres_database, _recreate_postgres_database,
+    )
+
+    _recreate_postgres_database(postgres_test_url)
     try:
-        Base.metadata.create_all(bind=eng)
-        _ext_20_two_connection_apply(eng)
+        eng = create_jobgrid_engine(postgres_test_url, pool_pre_ping=True)
+        try:
+            Base.metadata.create_all(bind=eng)
+            _ext_20_two_connection_apply(eng)
+        finally:
+            eng.dispose()
     finally:
-        eng.dispose()
+        _drop_postgres_database(postgres_test_url)
 
 
 def test_ext_20_public_api_failure_rolls_back_and_retry_succeeds(client, db_session, monkeypatch):
