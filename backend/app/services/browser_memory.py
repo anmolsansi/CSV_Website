@@ -167,3 +167,23 @@ def save_browser_visit(session: Session, *, user_id: int, url: str) -> BrowserVi
         first_visited_at=visit.first_visited_at,
         matching_rows_marked=marked,
     )
+
+
+
+def forget_browser_visits(session: Session, *, user_id: int) -> dict:
+    """Forget only this account's external visit memory.
+
+    Caller supplies the authenticated cookie owner's ID and owns the transaction.
+    Existing CSV click facts, imported URL history and applications are not
+    inferred from visits, so they are deliberately left untouched.
+    """
+    owner = session.query(User).filter(User.id == user_id).with_for_update().one_or_none()
+    if owner is None:
+        raise BrowserVisitConflict("browser_memory_unavailable", "Account unavailable.")
+
+    deleted = (
+        session.query(JobVisit)
+        .filter(JobVisit.user_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    return {"protocol_version": 1, "account_id": user_id, "deleted": deleted}
