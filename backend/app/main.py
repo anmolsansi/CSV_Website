@@ -23,9 +23,9 @@ from .jobs import cleanup_clicked_rows
 from .services.document_storage import document_storage_readiness
 from .services.reminders import run_reminder_worker_once
 from .services.today_f8 import build_today_queue_with_interviews, snooze_action_with_interviews
-from .services.import_backups import (
-    export_backup_v2_with_import_mappings,
-    restore_backup_payload_with_import_mappings,
+from .services.browser_memory_backup import (
+    export_backup_v2_with_browser_visits,
+    restore_backup_payload_with_browser_visits,
 )
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
@@ -37,10 +37,10 @@ from .sentry_init import init_sentry
 today.build_today_queue = build_today_queue_with_interviews
 today.snooze_action = snooze_action_with_interviews
 
-# F9 extends the already-versioned portable v2 backup without changing the
-# legacy v1 route or transient-preview storage contract.
-backup.export_backup_v2_with_contacts = export_backup_v2_with_import_mappings
-backup.restore_backup_payload_with_contacts = restore_backup_payload_with_import_mappings
+# Compose F8/F9/F10 and optional checksummed job_visits_v1 through the
+# established JSON routes. The legacy v1 export remains intentionally limited.
+backup.export_backup_v2_with_contacts = export_backup_v2_with_browser_visits
+backup.restore_backup_payload_with_contacts = restore_backup_payload_with_browser_visits
 
 if "sqlite" not in settings.DATABASE_URL:
     alembic_cfg = AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
