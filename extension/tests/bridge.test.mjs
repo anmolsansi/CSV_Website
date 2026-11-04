@@ -400,3 +400,23 @@ test('an unanswered check times out at eight seconds with no retry or write', as
   assert.equal(worker.messages[1].packet.kind, 'check')
   assert.equal(worker.messages.some(m => m.packet.kind === 'visit' || m.packet.kind === 'apply'), false)
 })
+
+
+// EXT-05 compatibility regression: test browser opens the packaged popup
+// as a top-level extension tab. Tab presence alone does not make it untrusted.
+test('packaged popup in a browser tab can run the legacy read-only probe', async () => {
+  const worker = workerSetup()
+  const result = await worker.send({ type: 'ext05:session-probe' }, {
+    ...POPUP, tab: { id: 400 }, frameId: 0,
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.data.account_id, 101)
+  assert.equal(worker.messages.length, 1)
+  assert.equal(worker.messages[0].packet.kind, 'session')
+
+  const iframe = await worker.send({ type: 'ext05:session-probe' }, {
+    ...POPUP, tab: { id: 400 }, frameId: 2,
+  })
+  assert.equal(iframe.ok, false)
+  assert.equal(worker.messages.length, 1)
+})
