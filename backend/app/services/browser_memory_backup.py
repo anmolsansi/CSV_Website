@@ -6,7 +6,6 @@ cookie state, extension settings, or rate counters are exported.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid5
@@ -81,15 +80,16 @@ def restore_backup_payload_with_browser_visits(
     payload = parse_backup_json(raw)
     if not isinstance(payload, dict):
         raise BackupContractError("invalid_backup", 400, "Backup must be a JSON object.")
+    has_visits = VISIT_BACKUP_KEY in payload
     extension = payload.pop(VISIT_BACKUP_KEY, None)
-    if extension is not None and payload.get("version") != "2.0":
+    if has_visits and payload.get("version") != "2.0":
         raise BackupContractError(
             "unsupported_visit_backup_version", 400,
             "Browser visits require the portable v2 backup reader.",
             section=VISIT_BACKUP_KEY,
         )
-    records = validate_visit_extension(extension) if extension is not None else []
-    _check_record_limit({**payload, **({VISIT_BACKUP_KEY: extension} if extension is not None else {})})
+    records = validate_visit_extension(extension) if has_visits else []
+    _check_record_limit({**payload, **({VISIT_BACKUP_KEY: extension} if has_visits else {})})
 
     # The @atomic_restore wrapper holds the destination owner lock, so the
     # existing/added union is calculated inside the shared restore transaction.
@@ -120,7 +120,7 @@ def restore_backup_payload_with_browser_visits(
     )
 
     # Missing optional extension does not create fictional historical visits.
-    if extension is None:
+    if not has_visits:
         return result
     result["counts"]["job_visits"] = {
         "created": new_count,
