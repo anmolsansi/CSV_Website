@@ -3463,6 +3463,69 @@ DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py te
 
 PostgreSQL schema and existing application acceptance require a separately disposable test database and the normal CI suite. Revision 019 is an additive upgrade. Old code can continue using its existing tables after rollback. A `downgrade` drops visit/receipt tables and is **only safe for empty/disposable databases**. Never run it against live user visit data without an export-first recovery plan.
 
+### Browser visit validation and durable row memory, EXT-07–09
+
+The server-only foundation now has strict request validation in
+`backend/app/browser_memory_schemas.py` and owner-scoped visit persistence in
+`backend/app/services/browser_memory.py`. **Neither is exposed as a new write
+route or enabled by the release Chrome extension yet.** EXT-19 owns the
+authenticated write adapter and origin/account/rate checks. EXT-22–24 still own
+portable backup of `job_visits`. This is not a released history tracker.
+
+**Validation.** `BrowserCheckIn` accepts a public HTTP(S) URL and optional
+nullable company (up to 320 characters) and title (up to 500). `BrowserVisitIn`
+accepts only `url`. `BrowserApplyIn` requires nonblank company/title,
+the literal JSON boolean `confirmed: true`, and a separately validated
+canonical hyphenated UUID `Idempotency-Key` header. The Pydantic models
+forbid unknown fields, including `user_id`. URLs may have at most 2,048
+characters. Extension-only URL checks reject userinfo, localhost/private or
+loopback literal IPs, local names, malformed hosts, and case-insensitive
+credential-like query keys. Validation makes **no DNS or HTTP requests**.
+Existing import/capture URL rules and stored original URLs are unchanged.
+A future router must map `BrowserMemoryValidationError.as_detail()` to the
+frozen 422 `invalid_browser_memory_payload` error envelope.
+
+**Persistence.** After cookie authentication and write-header validation in
+the future route, call
+`save_browser_visit(db, user_id=server_owned_id, url=request.url)` inside
+the caller-owned transaction. It reuses `ccr-identity-1` canonicalization,
+locks the owner on PostgreSQL, and uses a unique-index-protected conditional
+insert on PostgreSQL/SQLite to prevent concurrent duplicates and cap distinct
+owner visits at **10,000**. A replay returns `created=false` and preserves
+the first server timestamp. A hash collision with another canonical URL
+fails with `409 identity_conflict`. A new identity at capacity fails with
+`409 visit_limit_reached`; an existing identity can still be replayed.
+
+**Existing CSV rows.** The same service transaction marks previously
+unclicked rows for the authenticated owner only when the original URL matches
+or stored canonical URL **and** hash match. Existing clicked timestamps
+remain unchanged. Foreign rows and other job IDs are not touched. The service
+does not create CsvRows, JobTracks, application state, search sessions or
+lifecycle events. The original `POST /rows/{row_id}/click` stays on its
+existing `record_visit` + `row_opened` lifecycle path and keeps its
+response/event behavior. No synthetic opened-event or session-count inflation
+is introduced by extension visits. The result's `as_response()` exposes
+only `protocol_version`, `account_id`, `created` and UTC
+`first_visited_at`. `matching_rows_marked` is service-internal metadata.
+
+**Recovery and verification.** The service never calls `commit()`: callers
+commit the owner visit and row flags together or roll back both after an
+error. No row state is changed on validation, capacity or identity conflict.
+The additive migration 019 must already be applied. Use an isolated test DB:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_visits.py tests/test_rows.py -q
+```
+
+Those tests exercise valid/invalid payloads, replay, limits, ownership,
+existing-row updates, application non-mutation and rollback. Verify PostgreSQL
+and the existing row-click regression suite separately before release.
+No deployed OAuth, real Chrome permission approval, rate-limit route or
+JSON/ZIP visit backup acceptance is claimed. To roll back the disconnected
+feature, leave the future extension write route disabled. Do not downgrade
+019 on populated production tables without an export-first migration plan.
+
 ### Verification and outstanding acceptance
 
 The tests above are the executable verification targets; per-run CI and browser results belong in issue #184 and the PR. Passing backend unit tests cannot replace a real Chrome account-switch check. Once Chrome acceptance passes, the next write/API tickets still need authorization, input validation, backup compatibility and rate-limit work before any history-tracking pilot can be called complete.
