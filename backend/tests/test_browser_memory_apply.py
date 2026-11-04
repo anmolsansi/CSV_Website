@@ -334,3 +334,125 @@ def test_ext_18_receipt_expiry_and_capacity_preserve_application(db_session, mon
     assert after_expiry["already_applied"] is True
     assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner.id).count() == 1
     assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
+
+
+# EXT-20: actual parallel independent connections, not two sequential sessions.
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+from sqlalchemy.exc import SQLAlchemyError
+from app.database import Base, create_jobgrid_engine
+from app.config import settings
+
+
+def _ext_20_two_connection_apply(engine):
+    Factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with Factory() as setup:
+        owner = _owner(setup)
+        setup.commit()
+        owner_id = owner.id
+    start = Barrier(2, timeout=15)
+    variants = [
+        "https://jobs.example.test/20/same?req=919&utm_source=first",
+        "https://jobs.example.test/20/same?req=919&gclid=second",
+    ]
+    keys = [str(uuid4()), str(uuid4())]
+
+    def attempt(index):
+        with Factory() as session:
+            start.wait()
+            result = browser_memory.apply_browser_application_once(
+                session, user_id=owner_id, url=variants[index],
+                company="Acme Corp", title="Backend Engineer",
+                confirmed=True, request_key=keys[index],
+            )
+            session.commit()
+            return result
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = [workers.submit(attempt, i) for i in range(2)]
+        responses = [future.result(timeout=30) for future in futures]
+
+    assert {r["application_id"] for r in responses} == {
+        responses[0]["application_id"],
+    }
+    assert sorted(r["created"] for r in responses) == [False, True]
+    assert sorted(r["already_applied"] for r in responses) == [False, True]
+    with Factory() as verification:
+        assert verification.query(JobTrack).filter_by(user_id=owner_id).count() == 1
+        assert verification.query(JobLifecycleEvent).filter_by(
+            user_id=owner_id, kind="first_applied",
+        ).count() == 1
+        assert verification.query(BrowserApplyReceipt).filter_by(user_id=owner_id).count() == 2
+        assert verification.query(JobVisit).filter_by(user_id=owner_id).count() == 0
+        saved = verification.query(JobTrack).filter_by(user_id=owner_id).one()
+        assert saved.applied_at is not None
+        for response in responses:
+            assert response["applied_at"] == browser_memory.utc_z(saved.applied_at)
+        same_key = browser_memory.apply_browser_application_once(
+            verification, user_id=owner_id, url=variants[0],
+            company="Acme Corp", title="Backend Engineer",
+            confirmed=True, request_key=keys[0],
+        )
+        assert same_key == responses[0]
+        verification.commit()
+
+
+def test_ext_20_sqlite_concurrent_canonical_apply_uses_one_first_event(sqlite_acceptance_engine):
+    _ext_20_two_connection_apply(sqlite_acceptance_engine)
+
+
+@pytest.mark.postgresql
+def test_ext_20_postgres_concurrent_canonical_apply_uses_one_first_event(postgres_test_url):
+    eng = create_jobgrid_engine(postgres_test_url, pool_pre_ping=True)
+    try:
+        Base.metadata.create_all(bind=eng)
+        _ext_20_two_connection_apply(eng)
+    finally:
+        eng.dispose()
+
+
+def test_ext_20_public_api_failure_rolls_back_and_retry_succeeds(client, db_session, monkeypatch):
+    owner = client.post(
+        "/auth/dev-login",
+        json={"email": f"ext20-api-{uuid4().hex}@example.test"},
+    ).json()["id"]
+    headers = {
+        "Origin": settings.FRONTEND_URL.rstrip("/"),
+        "X-JobGrid-Browser": "1",
+        "X-JobGrid-Account-ID": str(owner),
+        "Idempotency-Key": str(uuid4()),
+    }
+    request = {
+        "url": "https://jobs.example.test/20/rollback", "company": "Acme",
+        "title": "Engineer", "confirmed": True,
+    }
+    original = browser_memory.apply_job_track_changes
+
+    def fail_after_event(*args, **kwargs):
+        original(*args, **kwargs)
+        raise SQLAlchemyError("injected after first-applied event")
+
+    monkeypatch.setattr(browser_memory, "apply_job_track_changes", fail_after_event)
+    failed = client.post(
+        "/crm/browser-memory/apply", json=request, headers=headers,
+    )
+    assert failed.status_code == 503, failed.text
+    assert failed.json()["detail"]["code"] == "browser_memory_unavailable"
+    assert db_session.query(JobLifecycleEvent).filter_by(user_id=owner).count() == 0
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner).count() == 0
+    monkeypatch.setattr(browser_memory, "apply_job_track_changes", original)
+
+    first = client.post(
+        "/crm/browser-memory/apply", json=request, headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    lost_response_retry = client.post(
+        "/crm/browser-memory/apply", json=request, headers=headers,
+    )
+    assert lost_response_retry.status_code == 200
+    assert lost_response_retry.json() == first.json()
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=owner, kind="first_applied",
+    ).count() == 1
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner).count() == 1
