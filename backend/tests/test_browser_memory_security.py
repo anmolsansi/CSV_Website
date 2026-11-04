@@ -117,3 +117,46 @@ def test_ext_21_limiter_storage_failure_fails_closed(client, monkeypatch, path, 
     assert response.json()["detail"]["code"] == "browser_memory_unavailable"
     assert response.headers["cache-control"] == "no-store"
     assert "test limiter" not in response.text
+
+
+def test_ext_21_rate_counter_is_shared_across_processes(sqlite_acceptance_engine):
+    """A second interpreter must see the same persisted owner/window counter."""
+    import os
+    import subprocess
+    import sys
+    from app.models import RequestWindowCounter, User
+
+    stamp = datetime(2026, 11, 4, 11, 0, tzinfo=timezone.utc)
+    with Session(sqlite_acceptance_engine) as db:
+        owner = User(email=f"ext21-process-{uuid4().hex}@example.test")
+        db.add(owner)
+        db.commit()
+        account = owner.id
+        assert browser_memory.count_browser_memory_attempt(
+            db, user_id=account, action="check", now=stamp,
+        ) == 0
+
+    script = (
+        "import os; from datetime import datetime,timezone; "
+        "from sqlalchemy.orm import Session; "
+        "from app.database import create_jobgrid_engine; "
+        "from app.services.browser_memory import count_browser_memory_attempt; "
+        "engine=create_jobgrid_engine(os.environ['EXT21_SQLITE_URL'],"
+        "connect_args={'check_same_thread':False}); "
+        "db=Session(engine); "
+        "value=count_browser_memory_attempt(db,user_id=int(os.environ['EXT21_ACCOUNT']),"
+        "action='check',now=datetime(2026,11,4,11,0,tzinfo=timezone.utc)); "
+        "print(value); db.close(); engine.dispose()"
+    )
+    env = {**os.environ, "EXT21_SQLITE_URL": str(sqlite_acceptance_engine.url),
+           "EXT21_ACCOUNT": str(account)}
+    child = subprocess.run(
+        [sys.executable, "-c", script], env=env,
+        capture_output=True, text=True, timeout=15, check=True,
+    )
+    assert child.stdout.strip() == "0", child.stderr
+    with Session(sqlite_acceptance_engine) as db:
+        row = db.query(RequestWindowCounter).filter_by(
+            user_id=account, scope="browser_memory_check",
+        ).one()
+        assert row.count == 2
