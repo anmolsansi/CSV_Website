@@ -3707,12 +3707,14 @@ evidence and any genuine status transition in the caller's transaction.
 It does **not** capture a CSV row, write a visit, count a synthetic page open,
 create a search session or commit by itself.
 
-The internal apply service is **not retry-safe under concurrent requests
-until EXT-18/20** add durable receipts and concurrency coverage. EXT-17
-still owns dedicated previously-applied replay acceptance. EXT-19 owns the
-mutating HTTP transport and its Origin/account checks; EXT-21 owns persistent
-rate limits. Do not connect the extension to the write service or claim a
-production/pilot release until those tickets and real Chrome/OAuth gates pass.
+The direct EXT-16 service remains caller-transactional. EXT-17 adds
+regression evidence that canonical previously-applied applications and
+rejected/archived statuses do not regress. EXT-18 adds a separate receipt
+wrapper, and EXT-19 exposes the authenticated write adapters described
+below. EXT-20 adds database concurrency regressions. EXT-21 still owns
+adversarial and cross-process rate-limit verification. Do not connect the
+extension or claim a production/pilot release until that and the real
+Chrome/OAuth acceptance gates pass.
 
 Run focused regression checks against an **isolated disposable** database:
 
@@ -3729,3 +3731,96 @@ disabling the new read adapter and future browser caller, not destroying
 user visits or application history. The service change requires no
 new migration, paid service, browser permission, data backfill or live
 deployment.
+
+
+### Browser-memory write API and receipts, EXT-17–20
+
+The new write transport in `backend/app/routers/browser_memory.py` relies on
+the existing JobGrid HttpOnly cookie. It never creates a second extension
+identity or exports a token. Requests must originate from the exact
+`FRONTEND_URL` origin and carry `X-JobGrid-Browser: 1` and
+`X-JobGrid-Account-ID: <selected numeric account>`. The expected account ID
+comes from the preceding authenticated `GET /crm/browser-memory/session`
+handshake, but is **not** permission to access another user's records.
+An account mismatch returns `409 account_changed` **before** any receipt or
+private-history lookup. Missing/incorrect Origin or browser header returns
+`403 origin_not_allowed`. An absent/malformed account header returns
+`422 invalid_browser_memory_payload`. Missing authentication preserves the
+existing cookie-auth 401 response. Error details never echo URLs, page
+metadata or credentials.
+
+`POST /crm/browser-memory/visit` accepts only `{"url":"https://…"}`.
+The first owned visit responds with
+`{protocol_version:1,account_id,created:true,first_visited_at:"…Z"}`.
+Later visits to the same canonical identity return `created:false` and
+the same first timestamp, even when tracking parameters differ. The
+service can set the first clicked flag on a matching **existing** owned
+CSV row, but never creates a new CSV row, imported URL, application,
+synthetic page-open event or search session. The 10,000-visit cap and
+identity collision protection remain enforced by existing constraints.
+
+`POST /crm/browser-memory/apply` accepts an exact JSON object with public
+`url`, nonblank `company`, nonblank `title`, and literal
+`confirmed:true`, plus a hyphenated UUID `Idempotency-Key` header.
+All write JSON is restricted to 8 KiB with unknown fields rejected.
+The response is the frozen
+`{protocol_version:1,account_id,application_id,created,already_applied,applied_at}`
+shape. The service first checks exact/canonical *applied* history and
+returns its original ID/time without resetting later status or notes.
+Same-employer, other-role and possible matches never get silently merged.
+An exact never-applied track may be advanced via the common lifecycle writer,
+while a new URL produces a standalone JobTrack without inventing a visit.
+
+`backend/app/services/browser_memory.py::apply_browser_application_once`
+validates and hashes the confirmed payload, then holds an owner-scoped write
+lock while reading or allocating a `BrowserApplyReceipt`. Its
+`(user_id,request_key)` uniqueness is database-enforced. A same-key,
+same-payload retry returns the **stored original response** with no new
+application or event. A changed payload produces `409 idempotency_conflict`.
+A replay whose application was deleted produces `409 application_deleted`
+without returning deleted private metadata. Receipts older than 30 days
+are pruned on subsequent writes. At 10,000 active receipts the service
+returns `409 receipt_limit_reached`, but deleting or expiring a receipt
+does not delete applied history. The receipt, JobTrack and first-applied
+lifecycle event share **one caller-owned commit**. SQLite upgrades to a
+reserved write lock before identity lookup; PostgreSQL serializes owner
+writers with `SELECT FOR UPDATE`. Neither approach calls the network.
+
+`DELETE /crm/browser-memory/visits` has **no request body** and removes
+only the signed-in owner's `job_visits`. It returns
+`{protocol_version:1,account_id,deleted}`, where repeat deletion returns
+zero. Existing `CsvRow.clicked`, `JobTrack`, `UrlHistory` and application
+receipts are unchanged. The popup must request explicit confirmation, as
+the backend cannot infer the user's intent from a header alone.
+
+Every authenticated `visit`, `apply` and `forget` attempt is counted
+using the existing persistent `request_window_counters` table, independently
+of the business transaction. Limits are respectively 60/min, 20/min and
+5/hour. Rejected authenticated attempts still count. Exceeding a window
+returns `429 browser_memory_rate_limited` with `Retry-After`; counter
+storage failure fails closed with `503 browser_memory_unavailable`.
+The separate read-only check retains its original contract pending EXT-21
+rate-window integration and adversarial cross-process acceptance.
+Never regard the absence of those gates as authorization to ship the
+extension. Do not log raw job URLs, page title/company, tokens or cookie values.
+
+**Verification.** The regression suite covers original statuses, distinct
+roles, receipts, changed-payload conflicts, deletion, expiry, quotas,
+failed transactions and guarded API behavior. EXT-20 additionally uses
+two independent connections and a synchronization barrier against SQLite
+and an isolated PostgreSQL test database, with fresh-session assertions for
+a single first-applied event and two independent receipts. Run:
+
+```sh
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_apply.py tests/test_browser_memory_api.py tests/test_browser_visits.py tests/test_application_memory.py -q
+python -m compileall -q app
+```
+
+PostgreSQL verification requires the separately disposable
+`TEST_DATABASE_URL` fixture and a CI run showing a non-skipped result.
+The write routes can be disabled or the extension left disconnected for
+rollback without deleting user history. These tickets introduce no schema
+migration, dependency, browser permission, hosting charge or live deployment.
+EXT-02–06 real Chrome/OAuth gates, EXT-21 adversarial controls, EXT-22–24
+portable visit backup and subsequent extension release tickets remain open.
