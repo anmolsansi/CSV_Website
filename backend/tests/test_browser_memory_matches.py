@@ -227,3 +227,99 @@ def test_ext_13_company_history_counts_other_roles_but_not_shared_ats_host(db_se
     assert unknown["company_known"] is False
     assert unknown["company_history_count"] == 0
     assert unknown["matches"] == []
+
+
+# EXT-15: identity rules are deliberately conservative, and reads never merge.
+def test_ext_15_tracking_variants_resolve_as_canonical_with_old_status(db_session):
+    owner = _owner(db_session)
+    url = "https://jobs.example.test/Jobs/42?req=abc&utm_source=board"
+    item = _applied(db_session, owner, url, status="archived",
+                    when=datetime(2024, 9, 4, 6, 0, 0))
+    db_session.commit()
+    baseline = (item.url, item.status, item.applied_at, item.updated_at)
+    for suffix in (
+        "utm_medium=email",
+        "gclid=123",
+        "fbclid=456",
+        "utm_source=new&gclid=789&fbclid=xyz",
+    ):
+        candidate = f"https://jobs.example.test/Jobs/42?req=abc&{suffix}"
+        result = find_browser_applied_matches(
+            db_session, user_id=owner.id, url=candidate,
+            company=None, title=None,
+        )
+        assert len(result["matches"]) == 1
+        assert result["matches"][0]["track_id"] == item.id
+        assert result["matches"][0]["confidence"] == "canonical"
+        assert result["matches"][0]["reason"] == "same_canonical_url"
+        assert result["matches"][0]["status"] == "archived"
+    db_session.refresh(item)
+    assert (item.url, item.status, item.applied_at, item.updated_at) == baseline
+
+
+def test_ext_15_requisition_path_and_unknown_parameters_do_not_merge(db_session):
+    owner = _owner(db_session)
+    original = "https://jobs.example.test/Jobs/42/?req=abc&step=1"
+    item = _applied(db_session, owner, original)
+    db_session.commit()
+    alternatives = (
+        "https://jobs.example.test/Jobs/42/?req=def&step=1",
+        "https://jobs.example.test/jobs/42/?req=abc&step=1",
+        "https://jobs.example.test/Jobs/42?req=abc&step=1",
+        "https://jobs.example.test/Jobs/42/?req=abc&step=2",
+        "https://jobs.example.test/Jobs/42/?step=1&req=abc",
+        "https://jobs.example.test/Jobs/43/?req=abc&step=1",
+    )
+    for candidate in alternatives:
+        result = find_browser_applied_matches(
+            db_session, user_id=owner.id, url=candidate,
+            company=None, title=None,
+        )
+        assert result == {
+            "matches": [], "company_history_count": 0, "lookup_complete": True,
+        }
+    assert db_session.query(JobTrack).filter(JobTrack.id == item.id).one().url == original
+
+
+def test_ext_15_alias_title_is_possible_only_and_shared_ats_host_is_not_company(db_session):
+    owner = _owner(db_session)
+    family = str(uuid4())
+    for name in ("Acme Corp", "Acme Incorporated"):
+        db_session.add(CompanyAlias(
+            user_id=owner.id,
+            alias_key=normalize_company_alias_key(name),
+            display_name=name,
+            company_key=family,
+        ))
+    old = _applied(
+        db_session, owner, "https://boards.example.test/other/old?job=9",
+        company="Acme Incorporated", title="Backend Engineer",
+        status="rejected",
+    )
+    same_company_other_role = _applied(
+        db_session, owner, "https://boards.example.test/other/other-role?job=10",
+        company="Acme Corp", title="Site Engineer",
+    )
+    db_session.commit()
+    before = (old.url, old.status, old.applied_at, same_company_other_role.url)
+
+    possible = find_browser_applied_matches(
+        db_session, user_id=owner.id,
+        url="https://boards.example.test/other/new?job=11",
+        company="Acme Corp", title="Backend Engineer",
+    )
+    assert possible["company_history_count"] == 2
+    assert len(possible["matches"]) == 1
+    assert possible["matches"][0]["track_id"] == old.id
+    assert possible["matches"][0]["confidence"] == "possible"
+    assert possible["matches"][0]["reason"] == "company_alias_title"
+
+    unrelated = find_browser_applied_matches(
+        db_session, user_id=owner.id,
+        url="https://boards.example.test/other/new?job=11",
+        company="Unrelated Employer", title="Backend Engineer",
+    )
+    assert unrelated["matches"] == []
+    assert unrelated["company_history_count"] == 0
+    db_session.refresh(old)
+    assert (old.url, old.status, old.applied_at, same_company_other_role.url) == before
