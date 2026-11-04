@@ -230,3 +230,91 @@ def test_ext_07_strict_confirmation_unknown_fields_and_uuid_contract():
         with pytest.raises(BrowserMemoryValidationError) as error:
             validate_apply_idempotency_key(invalid)
         assert error.value.as_detail()["field"] == "Idempotency-Key"
+
+
+
+# EXT-08: service tests use the existing disposable database fixtures.
+from hashlib import sha256
+from app.services.browser_memory import (
+    MAX_BROWSER_VISITS_PER_OWNER,
+    BrowserVisitConflict,
+    save_browser_visit,
+)
+
+
+def test_ext_08_first_visit_and_replay_preserve_timestamp_and_owner(db_session):
+    first_user, second_user = _user(db_session), _user(db_session)
+    db_session.commit()
+    url = "https://jobs.example.test/job/first?utm_source=fixture"
+    first = save_browser_visit(db_session, user_id=first_user.id, url=url)
+    assert first.created is True
+    assert first.as_response()["protocol_version"] == 1
+    assert first.as_response()["account_id"] == first_user.id
+    assert first.as_response()["first_visited_at"].endswith("Z")
+    db_session.commit()
+
+    replay = save_browser_visit(
+        db_session, user_id=first_user.id, url="https://jobs.example.test/job/first"
+    )
+    assert replay.created is False
+    assert replay.first_visited_at == first.first_visited_at
+    db_session.commit()
+    assert db_session.query(JobVisit).filter_by(user_id=first_user.id).count() == 1
+
+    other = save_browser_visit(db_session, user_id=second_user.id, url=url)
+    assert other.created is True
+    db_session.commit()
+    assert db_session.query(JobVisit).filter_by(user_id=second_user.id).count() == 1
+
+
+def test_ext_08_limit_per_owner_allows_existing_retry(db_session):
+    owner = _user(db_session)
+    db_session.commit()
+    original = "https://jobs.example.test/job/original"
+    saved = save_browser_visit(db_session, user_id=owner.id, url=original)
+    db_session.commit()
+
+    # Fast synthetic bulk fixture exercises the actual 10,000-row limit.
+    rows = []
+    for number in range(MAX_BROWSER_VISITS_PER_OWNER - 1):
+        canonical = f"https://jobs.example.test/role/{number}"
+        rows.append({
+            "user_id": owner.id, "canonical_url": canonical,
+            "canonical_url_hash": sha256(canonical.encode("utf-8")).hexdigest(),
+        })
+    db_session.execute(JobVisit.__table__.insert(), rows)
+    db_session.commit()
+    before = db_session.query(JobVisit).filter_by(user_id=owner.id).count()
+    assert before == 10000
+    replay = save_browser_visit(db_session, user_id=owner.id, url=original)
+    assert replay.created is False
+    assert replay.first_visited_at == saved.first_visited_at
+
+    with pytest.raises(BrowserVisitConflict) as error:
+        save_browser_visit(
+            db_session, user_id=owner.id, url="https://jobs.example.test/role/new"
+        )
+    assert error.value.status_code == 409
+    assert error.value.code == "visit_limit_reached"
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == before
+
+
+def test_ext_08_hash_collision_and_rollback_do_not_merge(db_session):
+    owner = _user(db_session)
+    db_session.commit()
+    requested = "https://jobs.example.test/job/desired"
+    digest = sha256(requested.encode("utf-8")).hexdigest()
+    db_session.add(_visit(owner.id, url="https://jobs.example.test/job/other", digest=digest))
+    db_session.commit()
+    with pytest.raises(BrowserVisitConflict) as error:
+        save_browser_visit(db_session, user_id=owner.id, url=requested)
+    assert error.value.code == "identity_conflict"
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 1
+
+    rollback_url = "https://jobs.example.test/job/rollback"
+    save_browser_visit(db_session, user_id=owner.id, url=rollback_url)
+    db_session.rollback()
+    assert db_session.query(JobVisit).filter_by(
+        user_id=owner.id,
+        canonical_url_hash=sha256(rollback_url.encode("utf-8")).hexdigest(),
+    ).count() == 0
