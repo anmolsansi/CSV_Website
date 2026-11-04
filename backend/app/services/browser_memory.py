@@ -21,10 +21,9 @@ MAX_BROWSER_VISITS_PER_OWNER = 10_000
 
 
 class BrowserVisitConflict(ValueError):
-    status_code = 409
-
     def __init__(self, code: str, message: str):
         super().__init__(message)
+        self.status_code = 503 if code == "browser_memory_unavailable" else 409
         self.code = code
         self.message = message
 
