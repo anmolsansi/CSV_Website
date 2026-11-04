@@ -13,7 +13,7 @@ from uuid import UUID, uuid5
 
 from sqlalchemy.orm import Session
 
-from ..backup_schemas import BackupContractError, canonical_json_bytes, parse_backup_json
+from ..backup_schemas import BackupContractError, MAX_BACKUP_JSON_BYTES, canonical_json_bytes, parse_backup_json
 from ..browser_memory_backup_schemas import (
     VISIT_BACKUP_KEY, MAX_PORTABLE_VISITS, build_visit_extension,
     validate_visit_extension,
@@ -60,6 +60,11 @@ def export_backup_v2_with_browser_visits(db: Session, user_id: int) -> dict[str,
             for visit in visits
         ])
     _check_record_limit(payload)
+    if len(canonical_json_bytes(payload)) > MAX_BACKUP_JSON_BYTES:
+        raise BackupContractError(
+            "backup_too_large", 413,
+            "Portable metadata exceeds the 20 MiB JSON limit.",
+        )
     return payload
 
 
