@@ -3592,6 +3592,53 @@ cd backend
 DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_application_memory.py tests/test_application_matches.py -q
 ```
 
+### Browser lookup completeness and bounded possible matches, EXT-12
+
+`backend/app/services/job_identity.py::find_browser_applied_matches` is the
+internal read-only lookup for the later browser-memory check route. It accepts
+only a server-owned account ID and a URL with optional company/title and
+returns `matches`, `company_history_count`, and `lookup_complete`.
+**No browser-memory check route is registered yet** (EXT-14 owns it).
+
+The matcher first runs two separate owner-scoped, applied-only database
+lookups for the original URL (`exact`) and stored canonical hash **plus**
+canonical URL (`canonical`). Neither is restricted by the company scan
+window. The canonical identity preserves meaningful query parameters,
+path case and trailing slash and removes only the established tracking keys.
+This prevents old exact/canonical applications from disappearing when hundreds
+of newer roles at the same company are present.
+
+Only potential company-and-title matches use the newest-first
+**500-candidate** scan. Reached cap means `lookup_complete=false` because
+older possible matches might be missed. Without a usable company and title,
+there is no possible-match scan. Up to **20** results are ordered by exact,
+canonical, possible, then descending applied timestamp and track ID.
+No result is automatically treated as a duplicate application. The
+`company_history_count` comes from a separate owner-scoped SQL aggregate
+over **all** applied tracks in the matching alias group, including older
+rejected/withdrawn applications. It does not count saved-only tracks or
+foreign accounts. The caller must not label an incomplete result as
+definitive "No recorded application."
+
+The old GET/POST `/crm/application-matches` adapters deliberately keep their
+existing 100-candidate scan, two-field response and validation/error format.
+This new internal mode is not exposed by those public endpoints, so existing
+UI behavior is unchanged. No migration, write, or external call is added.
+To roll back, avoid wiring the new internal function into EXT-14.
+
+Disposable regression commands:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_matches.py tests/test_application_matches.py tests/test_application_memory.py -q
+```
+
+Tests seed over 500 newer same-company applications, assert an older exact and
+tracking-variant canonical result is still first, verify unknown requisition
+query parameters do not collapse identities, and cover alias counts, distinct
+owner access and bounded results. PostgreSQL and release-browser checks remain
+separate evidence gates.
+
 ### Verification and outstanding acceptance
 
 The tests above are the executable verification targets; per-run CI and browser results belong in issue #184 and the PR. Passing backend unit tests cannot replace a real Chrome account-switch check. Once Chrome acceptance passes, the next write/API tickets still need authorization, input validation, backup compatibility and rate-limit work before any history-tracking pilot can be called complete.
