@@ -20,6 +20,13 @@
   if (typeof chrome === 'undefined' || !chrome.runtime?.id ||
       !chrome.runtime.onMessage?.addListener || location.origin !== TRUSTED_ORIGIN) return
 
+  // This script is injected on demand by the read-only worker. A repeated
+  // session probe must not accumulate message listeners in the same document.
+  // An isolated-world global resets naturally when the tab navigates.
+  const BRIDGE_MARKER = '__jobgridBridgeVersion1Installed'
+  if (globalThis[BRIDGE_MARKER] === true) return
+  Object.defineProperty(globalThis, BRIDGE_MARKER, { value: true })
+
   const isObject = (value) => value !== null && typeof value === 'object' &&
     !Array.isArray(value) && Object.prototype.toString.call(value) === '[object Object]'
   const hasOnly = (value, keys) => Object.keys(value).every((key) => keys.includes(key))
