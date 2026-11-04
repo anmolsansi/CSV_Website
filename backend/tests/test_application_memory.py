@@ -136,3 +136,62 @@ def test_company_names_with_slashes(memory_user):
     response = client.get('/crm/companies/Acme%20%2F%20Labs')
     assert response.status_code == 200
     assert response.json()['applied'] == 1
+
+
+
+# EXT-11: frozen public CRM response and error shape despite service extraction.
+from datetime import datetime
+from fastapi.encoders import jsonable_encoder
+from app.services.job_identity import apply_persisted_job_identity, find_applied_matches
+
+
+def test_ext_11_http_adapter_parity_with_owner_scoped_service(memory_user):
+    client, db, owner = memory_user
+    row = add_rows(db, owner, 1)[0]
+    application = JobTrack(
+        user_id=owner.id, url=row.url, title=row.title, company="Acme",
+        status="rejected", applied_at=datetime(2026, 10, 3, 9, 15, 0),
+    )
+    saved_only = JobTrack(
+        user_id=owner.id, url="https://jobs.example.test/saved-only",
+        company="Acme", title=row.title, status="opened", applied_at=None,
+    )
+    outsider = User(email=f"ext11-foreign-{uuid.uuid4()}@example.test")
+    db.add(outsider)
+    db.flush()
+    foreign = JobTrack(
+        user_id=outsider.id, url=row.url, company="Acme", title=row.title,
+        status="applied", applied_at=datetime(2026, 10, 4, 9, 15, 0),
+    )
+    for item in (application, saved_only, foreign):
+        apply_persisted_job_identity(item)
+    db.add_all([application, saved_only, foreign])
+    db.commit()
+
+    expected = find_applied_matches(
+        db, user_id=owner.id, url=row.url, company=row.company_guess, title=row.title,
+    )
+    get_result = client.get("/crm/application-matches", params={"row_id": row.id})
+    post_result = client.post(
+        "/crm/application-matches",
+        json={"url": row.url, "company": row.company_guess, "title": row.title},
+    )
+    assert get_result.status_code == post_result.status_code == 200
+    assert get_result.json() == post_result.json() == jsonable_encoder(expected)
+    assert get_result.json()["company_history_count"] == 1
+    assert [(item["track_id"], item["confidence"], item["status"]) for item in
+            get_result.json()["matches"]] == [(application.id, "exact", "rejected")]
+
+
+def test_ext_11_invalid_url_envelope_unchanged(memory_user):
+    client, db, user = memory_user
+    result = client.post(
+        "/crm/application-matches", json={"url": "javascript:alert(1)", "company": "Acme"},
+    )
+    assert result.status_code == 422
+    assert result.json() == {
+        "detail": {
+            "code": "invalid_job_url",
+            "fields": [{"field": "url", "message": "Job URL must use http or https."}],
+        }
+    }
