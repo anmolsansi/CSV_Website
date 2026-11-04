@@ -12,6 +12,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 let connection = null
 let generation = 0
+const SESSION_DEBOUNCE_MS = 5000
 
 const plain = value => value !== null && typeof value === 'object' &&
   !Array.isArray(value) && Object.prototype.toString.call(value) === '[object Object]'
@@ -103,7 +104,7 @@ async function checkedTab(tabId) {
 }
 
 async function injectBridge(tabId) {
-  await chrome.scripting.executeScript({
+  return chrome.scripting.executeScript({
     target: { tabId, allFrames: false }, files: ['jobgrid-bridge.js'], world: 'ISOLATED',
   })
 }
@@ -113,11 +114,14 @@ async function connect(tabId) {
   connection = null
   const tab = await checkedTab(tabId)
   if (!tab) return unavailable()
-  await injectBridge(tabId)
+  const injected = await injectBridge(tabId)
+  const documentId = typeof injected?.[0]?.documentId === 'string' ? injected[0].documentId : null
   const result = await bridge(tabId, 'session')
   if (!result.ok) return result
-  if (epoch !== generation || !(await checkedTab(tabId))) return unavailable()
-  connection = { tabId, accountId: result.data.account_id, generation: epoch }
+  const current = await checkedTab(tabId)
+  if (epoch !== generation || !current || current.url !== tab.url) return unavailable()
+  connection = { tabId, accountId: result.data.account_id, generation: epoch,
+    tabUrl: tab.url, documentId, lastSessionCheckAt: Date.now() }
   await chrome.storage.session.set({
     jobgridConnection: { tabId, accountId: result.data.account_id },
   })
@@ -130,9 +134,17 @@ async function connect(tabId) {
 async function dispatch(kind, payload) {
   const selected = connection
   if (!selected) return error('not_connected', 'Open JobGrid to connect')
-  if (!(await checkedTab(selected.tabId))) {
+  const firstTab = await checkedTab(selected.tabId)
+  if (!firstTab || firstTab.url !== selected.tabUrl) {
     await clearConnection()
     return unavailable()
+  }
+  if (kind === 'session') {
+    const now = Date.now()
+    if (now - selected.lastSessionCheckAt < SESSION_DEBOUNCE_MS) {
+      return error('session_debounced', 'Retry account check shortly')
+    }
+    selected.lastSessionCheckAt = now
   }
   const body = kind === 'forget_visits' ? {} : payload
   const result = await bridge(selected.tabId, kind, body,
@@ -151,6 +163,11 @@ async function dispatch(kind, payload) {
 
 chrome.tabs.onRemoved?.addListener(tabId => {
   if (connection?.tabId === tabId) void clearConnection()
+})
+chrome.tabs.onUpdated?.addListener((tabId, changes) => {
+  if (connection?.tabId === tabId && (changes.url || changes.status === 'loading')) {
+    void clearConnection()
+  }
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
