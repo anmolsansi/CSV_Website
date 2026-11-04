@@ -316,8 +316,9 @@ test('job-page scripts cannot invoke private apply/forget commands or see respon
     kind: 'forget_visits', payload: { confirmed: true },
   }))
   assert.equal(forget.ok, true)
-  assert.equal(worker.messages.at(-1).packet.kind, 'forget_visits')
-  assert.deepEqual(Object.keys(worker.messages.at(-1).packet.payload), [])
+  const forgetPacket = worker.messages.findLast(m => m.packet.kind === 'forget_visits').packet
+  assert.deepEqual(Object.keys(forgetPacket.payload), [])
+  assert.equal(worker.messages.at(-1).packet.kind, 'session', 'final account recheck must follow forget')
 })
 
 
@@ -382,8 +383,8 @@ test('navigation/removal invalidate selected tab and discard pending private res
 // ext_27_case_03
 test('an unanswered check times out at eight seconds with no retry or write', async () => {
   const timers = {
-    setTimeout: (callback, ms) => { if (ms === 8000) queueMicrotask(callback); return 1 },
-    clearTimeout: () => {},
+    setTimeout: (callback, ms) => { assert.equal(ms, 8000); return setImmediate(callback) },
+    clearTimeout: handle => clearImmediate(handle),
   }
   const worker = workerSetup({ timers, reply: (_tab, packet, account) => {
     if (packet.kind === 'check') return new Promise(() => {})
