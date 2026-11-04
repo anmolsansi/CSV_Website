@@ -1,0 +1,19 @@
+name: EXT-25–28 isolated Node verification
+on:
+  push:
+    branches:
+      - feat/ext-25-28-memory-dispatch-routing
+  pull_request:
+    paths:
+      - 'extension/**'
+      - '.github/workflows/ext-contract-validation.yml'
+jobs:
+  extension-node:
+    name: Extension Node contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test extension/tests/*.test.mjs
