@@ -204,7 +204,12 @@ def _read_visits(db, owner):
     from app.models import JobVisit
     with Session(db.get_bind()) as fresh:
         return [
-            (visit.canonical_url, visit.first_visited_at)
+            (
+                visit.canonical_url,
+                visit.first_visited_at.replace(tzinfo=None)
+                if visit.first_visited_at.tzinfo is None
+                else visit.first_visited_at.astimezone(__import__("datetime").timezone.utc).replace(tzinfo=None),
+            )
             for visit in fresh.query(JobVisit).filter(JobVisit.user_id == owner).all()
         ]
 
