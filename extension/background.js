@@ -8,6 +8,7 @@ const CONNECT = 'ext26:connect'
 const COMMAND = 'ext26:command'
 const DISCONNECT = 'ext26:disconnect'
 const MAX_BYTES = 8192
+const TIMEOUT_MS = 8000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 let connection = null
@@ -79,19 +80,40 @@ async function clearConnection() {
   await chrome.storage.session.remove('jobgridConnection')
 }
 
-async function bridge(tabId, kind, payload = {}, accountId) {
+async function bridge(tabId, kind, payload = {}, accountId, documentId = null) {
   const requestId = crypto.randomUUID()
   const packet = { version: VERSION, request_id: requestId, kind, payload }
   if (accountId !== undefined) packet.account_id = accountId
-  const result = await chrome.tabs.sendMessage(tabId, packet)
+  const expired = Symbol('request-expired')
+  let timer
+  let result
+  try {
+    const sent = documentId
+      ? chrome.tabs.sendMessage(tabId, packet, { documentId })
+      : chrome.tabs.sendMessage(tabId, packet)
+    result = await Promise.race([
+      sent,
+      new Promise(resolve => { timer = setTimeout(() => resolve(expired), TIMEOUT_MS) }),
+    ])
+  } catch {
+    return unavailable()
+  } finally {
+    clearTimeout(timer)
+  }
+  if (result === expired) {
+    return error('timeout', kind === 'apply'
+      ? 'Save status unknown · Retry' : 'Couldn’t check · Retry')
+  }
   if (!plain(result) || result.version !== VERSION ||
       result.request_id !== requestId || typeof result.ok !== 'boolean') {
-    return unavailable()
+    return error('protocol_error', 'Unsupported response')
   }
   if (result.ok && (!plain(result.data) || !validId(result.data.account_id) ||
-      result.data.protocol_version !== VERSION)) return unavailable()
+      result.data.protocol_version !== VERSION)) {
+    return error('protocol_error', 'Unsupported response')
+  }
   if (!result.ok && (!plain(result.error) || typeof result.error.code !== 'string')) {
-    return unavailable()
+    return error('protocol_error', 'Unsupported response')
   }
   return result
 }
@@ -148,15 +170,32 @@ async function dispatch(kind, payload) {
   }
   const body = kind === 'forget_visits' ? {} : payload
   const result = await bridge(selected.tabId, kind, body,
-    kind === 'session' ? undefined : selected.accountId)
+    kind === 'session' ? undefined : selected.accountId, selected.documentId)
   if (!connection || connection !== selected) return unavailable()
-  if (!result.ok && result.error.code === 'account_changed') {
-    await clearConnection()
+  if (!result.ok) {
+    if (['account_changed', 'protocol_error'].includes(result.error.code)) {
+      await clearConnection()
+    }
     return result
   }
-  if (result.ok && result.data.account_id !== selected.accountId) {
+  if (result.data.account_id !== selected.accountId) {
     await clearConnection()
     return error('account_changed', 'Reconnect your JobGrid account')
+  }
+  // The bridge also rechecks on each write. This final worker check prevents
+  // private results reaching the popup after an account switch or tab reload.
+  if (kind !== 'session') {
+    const fresh = await bridge(selected.tabId, 'session', {}, undefined, selected.documentId)
+    if (!fresh.ok || fresh.data.account_id !== selected.accountId) {
+      await clearConnection()
+      return error('account_changed', 'Reconnect your JobGrid account')
+    }
+  }
+  const finalTab = await checkedTab(selected.tabId)
+  if (!connection || connection !== selected || !finalTab ||
+      finalTab.url !== selected.tabUrl) {
+    await clearConnection()
+    return unavailable()
   }
   return result
 }
