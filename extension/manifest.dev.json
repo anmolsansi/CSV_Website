@@ -7,6 +7,7 @@
     "default_title": "JobGrid memory (local test, not connected)",
     "default_popup": "popup.html"
   },
+  "background": { "service_worker": "background.js" },
   "permissions": ["storage", "activeTab", "scripting"],
   "optional_host_permissions": [
     "https://boards.greenhouse.io/*",

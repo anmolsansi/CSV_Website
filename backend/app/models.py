@@ -172,6 +172,60 @@ class User(Base):
     job_check_requests = relationship(
         "JobCheckRequest", back_populates="user", cascade="all, delete-orphan"
     )
+    job_visits = relationship(
+        "JobVisit", back_populates="user", cascade="all, delete-orphan"
+    )
+    browser_apply_receipts = relationship(
+        "BrowserApplyReceipt", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class JobVisit(Base):
+    """External job page visited by this account, independent of imported rows."""
+
+    __tablename__ = "job_visits"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    canonical_url = Column(Text, nullable=False)
+    canonical_url_hash = Column(String(64), nullable=False)
+    first_visited_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    user = relationship("User", back_populates="job_visits")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "canonical_url_hash", name="uq_job_visits_user_hash"),
+        Index("ix_job_visits_user_first_visited", "user_id", "first_visited_at"),
+    )
+
+
+class BrowserApplyReceipt(Base):
+    """Private idempotency result for one explicit browser apply confirmation."""
+
+    __tablename__ = "browser_apply_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    response_json = Column(JSON, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    user = relationship("User", back_populates="browser_apply_receipts")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "request_key", name="uq_browser_apply_receipts_user_key"),
+        Index("ix_browser_apply_receipts_user_created", "user_id", "created_at"),
+    )
+
 
 
 class OAuthIdentity(Base):

@@ -2777,6 +2777,8 @@ The in-app owner-scoped ZIP is a portable user backup. It does not replace an op
 **Stopping rule:** finish this scope when these checks are satisfied. New feature ideas do not automatically extend the project.
 
 <a id="chrome-extension-plan"></a>
+
+> **EXT-04–06 implementation checkpoint (2026-11-04):** Draft [PR #186](https://github.com/anmolsansi/CSV_Website/pull/186) contains the authenticated read-only session endpoint, dev-manifest-only extension session probe/persistent-browser test, and additive Alembic 019 visit/receipt schema. These are scoped code implementations, **not** accepted live Chrome/OAuth, portable visit backup, deployed pilot, or store-release proof. CI, manual Chrome permission/session evidence, and backup work in EXT-22–24 remain separately tracked. The release extension still does not track browsing. Parent issue [#184](https://github.com/anmolsansi/CSV_Website/issues/184) remains open.
 ## 9. Chrome extension — job and company memory
 
 **Chrome extension foundation update (2026-11-04):** EXT-01–03 are implemented in a task branch with 12 local Node tests passing (issue #184). The three acceptance checkboxes remain open pending an actual unpacked Chrome smoke test and later live authenticated integration, which cannot be inferred from a static shell or fixtures. EXT-04–50 are not implemented by this work. See `extension/README.md` and the current build guide for the precise boundary.
@@ -3562,7 +3564,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-04 — Expose the authenticated extension session endpoint
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** LOCAL IMPLEMENTED / session tests committed; CI and external Chrome acceptance pending.\
 **Priority:** P0\
 **Type:** API\
 **Execution position:** 4/50; band 1/10 — Connection proof; group step 4/5.
@@ -3717,7 +3719,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-05 — Prove the Chrome login bridge with two accounts
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** INTEGRATION FIXTURE IMPLEMENTED / real persistent Chromium, permission, account switch and deployed OAuth acceptance pending.\
 **Priority:** P0\
 **Type:** Integration spike\
 **Execution position:** 5/50; band 1/10 — Connection proof; group step 5/5.
@@ -3880,7 +3882,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-06 — Add durable visit and apply-receipt tables
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** LOCAL IMPLEMENTED / additive schema and tests committed; migration CI pending; portable backup export deferred to EXT-22–24.\
 **Priority:** P0\
 **Type:** Database migration\
 **Execution position:** 6/50; band 2/10 — Durable visits; group step 1/5.

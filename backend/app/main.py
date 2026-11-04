@@ -30,7 +30,7 @@ from .services.import_backups import (
 from .middleware import MetricsMiddleware
 from .models import User, CsvRow, CSV_COLUMNS
 from . import contact_models, import_models
-from .routers import auth_router, availability, backup, bulk_actions, capture, company_aliases, contacts, crm, documents, email, evidence, imports, reminders, rows, today, upload
+from .routers import auth_router, availability, backup, browser_memory, bulk_actions, capture, company_aliases, contacts, crm, documents, email, evidence, imports, reminders, rows, today, upload
 from .sentry_init import init_sentry
 
 # F8 extends the established Today route without replacing its request contract.
@@ -199,6 +199,7 @@ crm.router.routes[:] = [
 ]
 
 app.include_router(auth_router.router)
+app.include_router(browser_memory.router)
 app.include_router(upload.router)
 app.include_router(availability.router)
 app.include_router(rows.router)

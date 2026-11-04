@@ -58,6 +58,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
+    env: { JOBGRID_LOCAL_API_PROXY: '1' },
     url: 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

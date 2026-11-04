@@ -639,6 +639,24 @@ MODEL_FIELD_INVENTORY: dict[str, dict[str, FieldInventoryEntry]] = {
             "Account timezone and retention policy are portable user preferences; authentication identity remains excluded.",
         ),
     },
+    "JobVisit": {
+        **_entries(
+            ["id", "user_id"],
+            "reconstructed",
+            "Portable visit identities and ownership must be remapped to the authenticated destination account.",
+        ),
+        **_entries(
+            ["canonical_url", "canonical_url_hash", "first_visited_at"],
+            "exported",
+            "Recoverable product data: EXT-22–24 must add portable JSON/ZIP export and restore. "
+            "The current v2 backup does not yet contain this section; do not claim backup coverage.",
+        ),
+    },
+    "BrowserApplyReceipt": _entries(
+        ["id", "user_id", "request_key", "payload_hash", "response_json", "created_at"],
+        "excluded",
+        "Browser apply idempotency receipts are bounded operational replay state and must not be portable.",
+    ),
     "OAuthIdentity": _entries(
         ["id", "user_id", "provider", "provider_id", "created_at"],
         "excluded",
