@@ -170,3 +170,148 @@ test('repeated session-probe injection registers one bridge listener per documen
   vm.runInContext(source, context, { filename: 'jobgrid-bridge.js', timeout: 1000 })
   assert.equal(listeners.length, 1, 'same document must not register duplicate message listeners')
 })
+
+
+// EXT-26: worker-only explicit connection and command authority.
+const workerSource = readFileSync(new URL('../background.js', import.meta.url), 'utf8')
+const POPUP = {
+  id: 'test-extension', origin: 'chrome-extension://test-extension',
+  url: 'chrome-extension://test-extension/popup.html', frameId: 0,
+}
+const commandPacket = (type, fields = {}) => ({
+  type, version: 1, request_id: UUID, ...fields,
+})
+
+function workerSetup({ accountId = 101, granted = true } = {}) {
+  const messages = []
+  const injections = []
+  const writes = []
+  const tabs = new Map([
+    [10, { id: 10, url: APP_ORIGIN + '/dashboard', documentId: 'doc-a' }],
+    [20, { id: 20, url: APP_ORIGIN + '/jobs', documentId: 'doc-b' }],
+  ])
+  let receive
+  let removed
+  let updated
+  let activeAccount = accountId
+  const chrome = {
+    runtime: {
+      id: 'test-extension', getURL: path => 'chrome-extension://test-extension/' + path,
+      onMessage: { addListener: fn => { receive = fn } },
+    },
+    permissions: { contains: async () => granted },
+    tabs: {
+      get: async id => {
+        if (!tabs.has(id)) throw new Error('no tab')
+        return tabs.get(id)
+      },
+      query: async () => [...tabs.values()],
+      sendMessage: async (tabId, packet) => {
+        messages.push({ tabId, packet })
+        return {
+          version: 1, request_id: packet.request_id, ok: true,
+          data: packet.kind === 'session'
+            ? session(activeAccount)
+            : { protocol_version: 1, account_id: activeAccount,
+                checked_at: '2026-11-04T00:00:00Z' },
+        }
+      },
+      onRemoved: { addListener: fn => { removed = fn } },
+      onUpdated: { addListener: fn => { updated = fn } },
+    },
+    scripting: { executeScript: async opts => injections.push(opts) },
+    storage: { session: {
+      set: async value => writes.push({ set: value }),
+      remove: async key => writes.push({ remove: key }),
+    } },
+  }
+  vm.runInNewContext(workerSource, { chrome, URL, TextEncoder, crypto: globalThis.crypto,
+    setTimeout, clearTimeout }, { filename: 'background.js', timeout: 1000 })
+  async function send(packet, sender = POPUP) {
+    assert.equal(typeof receive, 'function')
+    return await new Promise(resolve => {
+      const keep = receive(packet, sender, resolve)
+      if (!keep) setImmediate(() => {})
+    })
+  }
+  return {
+    send, messages, injections, tabs, writes,
+    setAccount: id => { activeAccount = id },
+    remove: id => { tabs.delete(id); removed?.(id) },
+    update: (id, url) => { const item = tabs.get(id); tabs.set(id, { ...item, url }); updated?.(id, { url }, tabs.get(id)) },
+  }
+}
+
+// ext_26_case_01
+test('worker requires an explicitly chosen exact-origin tab and keeps commands on it', async () => {
+  const worker = workerSetup()
+  const denied = await worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/role' },
+  }))
+  assert.equal(denied.ok, false)
+  assert.equal(worker.messages.length, 0)
+  const connection = await worker.send(commandPacket('ext26:connect', { tab_id: 20 }))
+  assert.equal(connection.ok, true)
+  assert.equal(connection.data.account_id, 101)
+  assert.equal(worker.messages.length, 1)
+  assert.equal(worker.messages[0].tabId, 20)
+  assert.equal(worker.injections[0].target.allFrames, false)
+  assert.deepEqual(Array.from(worker.injections[0].files), ['jobgrid-bridge.js'])
+
+  const result = await worker.send(commandPacket('ext26:command', {
+    kind: 'check', payload: { url: 'https://jobs.lever.co/acme/role', title: null },
+  }))
+  assert.equal(result.ok, true)
+  assert.equal(worker.messages.length, 2)
+  assert.equal(worker.messages[1].tabId, 20)
+  assert.equal(worker.messages[1].packet.kind, 'check')
+  assert.equal(worker.messages[1].packet.account_id, 101)
+})
+
+// ext_26_case_02
+test('worker rejects forged sender, subframe, oversized and arbitrary commands before API call', async () => {
+  const worker = workerSetup()
+  for (const [packet, sender] of [
+    [commandPacket('ext26:connect', { tab_id: 10 }), { ...POPUP, url: 'https://jobs.lever.co/acme/role' }],
+    [commandPacket('ext26:connect', { tab_id: 10 }), { ...POPUP, id: 'evil-extension' }],
+    [commandPacket('ext26:connect', { tab_id: 10 }), { ...POPUP, frameId: 1 }],
+    [commandPacket('ext26:command', { kind: 'visit', payload: { url: 'https://jobs.lever.co/acme/role' } }), POPUP],
+    [commandPacket('ext26:command', { kind: 'apply', payload: { url: 'https://jobs.lever.co/acme/role' } }), POPUP],
+    [commandPacket('ext26:command', { kind: 'session', payload: {}, route: '/other' }), POPUP],
+    [commandPacket('ext26:connect', { tab_id: 10, headers: { Authorization: 'nope' } }), POPUP],
+    [commandPacket('ext26:command', { kind: 'check', payload: { url: 'A'.repeat(8300) } }), POPUP],
+  ]) {
+    const reply = await worker.send(packet, sender)
+    assert.equal(reply.ok, false)
+  }
+  assert.equal(worker.messages.length, 0)
+  assert.equal(worker.injections.length, 0)
+})
+
+// ext_26_case_03
+test('job-page scripts cannot invoke private apply/forget commands or see responses', async () => {
+  const worker = workerSetup()
+  assert.equal((await worker.send(commandPacket('ext26:connect', { tab_id: 10 }))).ok, true)
+  const baseline = worker.messages.length
+  for (const kind of ['apply', 'forget_visits']) {
+    const result = await worker.send(commandPacket('ext26:command', {
+      kind, payload: kind === 'forget_visits' ? { confirmed: true } : {
+        url: 'https://jobs.lever.co/acme/role', company: 'Acme', title: 'Engineer',
+        confirmed: true, idempotency_key: UUID,
+      },
+    }), { ...POPUP, tab: { id: 11 }, url: 'https://jobs.lever.co/acme/role' })
+    assert.equal(result.ok, false)
+  }
+  assert.equal(worker.messages.length, baseline)
+  const apply = await worker.send(commandPacket('ext26:command', {
+    kind: 'apply', payload: { url: 'https://jobs.lever.co/acme/role',
+      company: 'Acme', title: 'Engineer', confirmed: true, idempotency_key: UUID },
+  }))
+  assert.equal(apply.ok, true)
+  const forget = await worker.send(commandPacket('ext26:command', {
+    kind: 'forget_visits', payload: { confirmed: true },
+  }))
+  assert.equal(forget.ok, true)
+  assert.equal(worker.messages.at(-1).packet.kind, 'forget_visits')
+  assert.deepEqual(Object.keys(worker.messages.at(-1).packet.payload), [])
+})
