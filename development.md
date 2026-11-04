@@ -4045,7 +4045,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-07 — Validate browser-memory input and private URL boundaries
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** IMPLEMENTED LOCALLY in PR #187; CI verification pending. Chrome/OAuth, API activation and release gates remain open.\
 **Priority:** P0\
 **Type:** Schema and validation\
 **Execution position:** 7/50; band 2/10 — Durable visits; group step 2/5.
@@ -4202,7 +4202,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-08 — Persist one first visit per owner and canonical job
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** IMPLEMENTED LOCALLY in PR #187; CI verification pending. Chrome/OAuth, API activation and release gates remain open.\
 **Priority:** P0\
 **Type:** Service\
 **Execution position:** 8/50; band 2/10 — Durable visits; group step 3/5.
@@ -4364,7 +4364,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-09 — Share row-visit mutation without inventing applications
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** IMPLEMENTED LOCALLY in PR #187; CI verification pending. Chrome/OAuth, API activation and release gates remain open.\
 **Priority:** P0\
 **Type:** Service extraction\
 **Execution position:** 9/50; band 2/10 — Durable visits; group step 4/5.
