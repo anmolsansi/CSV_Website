@@ -412,3 +412,33 @@ def test_ext_09_failed_row_update_rolls_back_new_visit(monkeypatch, db_session):
     db_session.expire_all()
     assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 0
     assert row.clicked is False and row.clicked_at is None
+
+
+
+def test_ext_08_concurrent_same_url_replays_once_on_disposable_sqlite(sqlite_acceptance_engine):
+    """Two independent transactions race; only one creates the durable visit."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from sqlalchemy.orm import sessionmaker
+
+    sessions = sessionmaker(bind=sqlite_acceptance_engine)
+    with sessions() as setup:
+        account = _user(setup)
+        setup.commit()
+        owner_id = account.id
+    barrier = Barrier(2)
+    url = "https://jobs.example.test/roles/concurrent?utm_source=one"
+
+    def worker(_):
+        with sessions() as session:
+            barrier.wait(timeout=10)
+            result = save_browser_visit(session, user_id=owner_id, url=url)
+            session.commit()
+            return result
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(worker, range(2)))
+    assert sorted(result.created for result in outcomes) == [False, True]
+    assert outcomes[0].first_visited_at == outcomes[1].first_visited_at
+    with sessions() as verify:
+        assert verify.query(JobVisit).filter_by(user_id=owner_id).count() == 1
