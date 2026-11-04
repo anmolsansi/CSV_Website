@@ -3430,7 +3430,7 @@ The production Vercel `/api/:path*` rewrite maps `/api/crm/browser-memory/sessio
 
 ### Disposable real-browser bridge probe, EXT-05
 
-`extension/background.js` implements only a **popup-originated read-only session probe**. It refuses external senders, refuses absent or multiple matching app tabs, requires the exact optional frontend host grant and injects the already isolated `jobgrid-bridge.js` only into the matching top-frame JobGrid tab. It never stores the response, polls, registers navigation monitoring or issues a visit/apply request. This temporary diagnostic worker is registered only in `extension/manifest.dev.json`. The release `manifest.json` intentionally has no worker until later tickets build the full account-connection lifecycle.
+`extension/background.js` originally implemented a **popup-originated read-only session probe**. EXT-26–27 add a separate explicit connection/command path to the same dev-only worker. It refuses external senders, refuses absent or multiple matching app tabs, requires the exact optional frontend host grant and injects the already isolated `jobgrid-bridge.js` only into the matching top-frame JobGrid tab. It never stores the response, polls, registers navigation monitoring or issues a visit/apply request. This temporary diagnostic worker is registered only in `extension/manifest.dev.json`. The release `manifest.json` intentionally has no worker until later tickets build the full account-connection lifecycle.
 
 `frontend/tests/extension.spec.ts` creates a disposable Chromium persistent profile, copies the actual extension source, substitutes the dev manifest **only in the temporary copy**, overlays three public origin constants to `http://localhost:5173` without editing the release source, and pregrants the exact localhost host **only in the temporary test manifest**. Headless Chromium cannot approve the browser-owned optional host-permission prompt, so that UX still requires manual Chrome acceptance. Vite's `JOBGRID_LOCAL_API_PROXY=1` test-only proxy forwards same-origin `/api/*` to `http://localhost:8000/*`. The test signs in with two disposable `/auth/dev-login` accounts, probes account A then B, logs out, closes the app tab and verifies errors cannot expose a stale private identity. A mock fetch or static manifest test does **not** satisfy the browser acceptance gate.
 
@@ -3936,3 +3936,70 @@ an all-history erase. These boundaries are regression-tested in
 backend/tests/test_browser_visits.py and backend/tests/test_complete_backup.py.
 No production records were deleted for this verification.
 
+
+### Extension connection, command isolation and ATS detail eligibility, EXT-26–28
+
+**Pilot boundary.** The release manifest and popup are still inert. The
+service worker in extension/background.js is registered only by the
+development manifest. It performs no automatic job-page monitoring, permission
+prompts, polling, apply submission or visit writes. Later EXT-29–40 tasks
+own public metadata extraction, page opt-in, observation, badges and popup UX.
+Live unpacked Chrome, real permission grants and deployed OAuth acceptance
+remain unverified separately from Node contract checks.
+
+**Explicit connection.** A trusted packaged popup may send internal protocol
+v1 ext26:connect with a UUID and the positive integer tab_id explicitly chosen
+by the user. The worker checks the exact trusted HTTPS JobGrid origin and
+previously granted optional host permission, injects jobgrid-bridge.js into
+the selected top frame only, and asks the cookie-authenticated /session
+route for account_id and limited label. It never picks an arbitrary matching
+tab when several are open. A worker restart leaves the in-memory connection
+unset, requiring deliberate reconnection. A bounded selected tab/account
+record is held only in trusted storage.session; it is not a token and cannot
+authorize automatic reconnect. No extension-private history is written to
+storage.local, storage.sync or the job page.
+
+**Command boundary.** ext26:command accepts only session, check, apply or
+forget_visits from that exact packaged popup sender. Each request has
+version 1 and a UUID, contains at most 8192 UTF-8 bytes, and uses a fixed
+payload shape. Apply requires explicit confirmed=true, company, title, URL
+and a UUID idempotency_key; forget requires explicit confirmed=true.
+The worker strips the forget confirmation flag before calling the bridge.
+No job-site frame or forged external sender can request any command or read
+private matches. A page candidate cannot issue visit, apply or forget.
+Automatic visit will be an internal worker action only after EXT-32's
+opted-in successful detail-page check. Neither worker nor bridge accepts
+arbitrary API routes, methods or caller-supplied headers. The isolated bridge
+uses same-origin /api/crm/browser-memory and cookie authentication, with
+expected-account/browser headers for writes, and checks the authenticated
+account around each operation.
+
+**Stale-result and timeout safety.** Dispatch captures the selected account,
+tab URL, optional injected document ID and connection generation. Tab removal,
+top-level load, or URL navigation invalidates that state. A delayed response
+is discarded after account/tab/generation changes, and the worker rechecks
+/session again before displaying a completed command. A bridge message has
+an 8-second worker deadline, plus its existing 8-second fetch AbortController.
+Timeouts do not retry or create a write queue. An ambiguous apply timeout
+returns Save status unknown, not Saved. Caller-initiated /session probes are
+debounced to one per 5 seconds per selected tab; security rechecks remain
+mandatory. Errors never imply No recorded application.
+
+**ATS route classifier.** extension/site-rules.js is a pure, offline parser.
+It accepts only these HTTPS detail paths: boards.greenhouse.io/{board}/jobs/{id},
+job-boards.greenhouse.io/{board}/jobs/{id}, and
+jobs.lever.co/{board}/{posting_id}. Host suffixes, listing pages, apply
+forms, credentials, private schemes, control characters, token-like query
+keys and encoded path segments are manual-only. Accepted results contain
+only provider, detail ID and original URL for later server validation, with
+no company inferred from an ATS board slug. It does not fetch the URL or
+read any form content.
+
+**Tests.** From the repository root run:
+`node --test extension/tests/*.test.mjs`.
+The bridge tests exercise sender/route/body rules, exact tab selection,
+account changes, navigation/removal and synthetic delayed replies.
+site-rules.test.mjs covers positive and hostile URLs. These are synthetic
+contract tests, not evidence of live OAuth or Chrome optional permissions.
+To roll back, disable the dev extension/worker. No backend tables or history
+need to be removed for these extension-only changes.
