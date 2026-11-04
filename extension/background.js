@@ -25,7 +25,7 @@ const error = (code, message = 'JobGrid account unavailable') => ({
 })
 const answer = (requestId, result) => ({ version: VERSION, request_id: requestId, ...result })
 const unavailable = () => error('unavailable')
-const popupSender = sender => sender?.id === chrome.runtime.id &&
+const popupSender = sender => sender?.id === chrome.runtime.id && !sender.tab &&
   sender.url === chrome.runtime.getURL('popup.html') &&
   (!sender.origin || sender.origin === 'chrome-extension://' + chrome.runtime.id) &&
   (sender.frameId === undefined || sender.frameId === 0)
@@ -173,7 +173,7 @@ async function dispatch(kind, payload) {
     kind === 'session' ? undefined : selected.accountId, selected.documentId)
   if (!connection || connection !== selected) return unavailable()
   if (!result.ok) {
-    if (['account_changed', 'protocol_error'].includes(result.error.code)) {
+    if (['account_changed', 'protocol_error', 'not_authenticated'].includes(result.error.code)) {
       await clearConnection()
     }
     return result
