@@ -526,3 +526,82 @@ def test_ext_10_missing_owner_does_not_delete_visits(db_session):
         forget_browser_visits(db_session, user_id=owner.id + 100000)
     assert error.value.code == "browser_memory_unavailable"
     assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 1
+
+
+
+# EXT-25: deleting an import row is not deletion of durable browser/app history.
+def test_ext_25_source_archive_and_delete_keep_external_visit_and_applied_track(db_session):
+    from app.routers.rows import _legacy_delete_rows
+
+    owner, foreign = _user(db_session), _user(db_session)
+    db_session.flush()
+    url = "https://jobs.example.test/25/source?utm_source=csv"
+    timestamp = datetime(2026, 10, 30, 8, 45)
+    row = _csv_row(owner.id, url)
+    foreign_row = _csv_row(foreign.id, url)
+    db_session.add_all([row, foreign_row])
+    db_session.flush()
+    track = JobTrack(
+        user_id=owner.id, csv_row_id=row.id, url=url,
+        company="Recovery Co", title="Engineer", status="rejected",
+        applied_at=timestamp,
+    )
+    db_session.add(track)
+    db_session.commit()
+    row_id, track_id, foreign_row_id = row.id, track.id, foreign_row.id
+
+    save_browser_visit(db_session, user_id=owner.id, url=url)
+    save_browser_visit(db_session, user_id=foreign.id, url=url)
+    db_session.commit()
+    assert db_session.get(CsvRow, row_id).clicked is True
+
+    row.archived = True
+    row.archived_at = datetime(2026, 11, 1, 9)
+    db_session.commit()
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 1
+    assert db_session.get(JobTrack, track_id).applied_at == timestamp
+
+    removed = _legacy_delete_rows(db_session, user_id=owner.id, row_ids=[row_id])
+    assert removed == {"deleted": 1, "archived": 0}
+    db_session.commit()
+    db_session.expire_all()
+
+    assert db_session.get(CsvRow, row_id) is None
+    recovered_track = db_session.get(JobTrack, track_id)
+    assert recovered_track is not None
+    assert recovered_track.csv_row_id is None
+    assert recovered_track.status == "rejected"
+    assert recovered_track.applied_at == timestamp
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 1
+    assert db_session.query(JobVisit).filter_by(user_id=foreign.id).count() == 1
+    assert db_session.get(CsvRow, foreign_row_id) is not None
+
+
+def test_ext_25_forget_keeps_row_click_applied_track_receipt_and_foreign_owner(db_session):
+    owner, foreign = _user(db_session), _user(db_session)
+    db_session.flush()
+    url = "https://jobs.example.test/25/privacy"
+    timestamp = datetime(2026, 9, 20, 7)
+    row = _csv_row(owner.id, url, clicked=True, clicked_at=timestamp)
+    track = JobTrack(
+        user_id=owner.id, url=url, company="Privacy Co", title="Engineer",
+        status="withdrawn", applied_at=timestamp,
+    )
+    receipt = _receipt(owner.id, str(uuid4()))
+    db_session.add_all([row, track, receipt])
+    db_session.commit()
+    row_id, track_id, receipt_id = row.id, track.id, receipt.id
+    save_browser_visit(db_session, user_id=owner.id, url=url)
+    save_browser_visit(db_session, user_id=foreign.id, url=url)
+    db_session.commit()
+
+    assert forget_browser_visits(db_session, user_id=owner.id)["deleted"] == 1
+    db_session.commit()
+    db_session.expire_all()
+    assert db_session.query(JobVisit).filter_by(user_id=owner.id).count() == 0
+    assert db_session.query(JobVisit).filter_by(user_id=foreign.id).count() == 1
+    assert db_session.get(CsvRow, row_id).clicked_at == timestamp
+    assert db_session.get(JobTrack, track_id).applied_at == timestamp
+    assert db_session.get(JobTrack, track_id).status == "withdrawn"
+    assert db_session.get(BrowserApplyReceipt, receipt_id) is not None
+    assert forget_browser_visits(db_session, user_id=owner.id)["deleted"] == 0
