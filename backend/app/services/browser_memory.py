@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ..browser_memory_schemas import (
     parse_browser_memory_payload, validate_apply_idempotency_key,
 )
-from ..models import BrowserApplyReceipt, CsvRow, JobTrack, JobVisit, User
+from ..models import BrowserApplyReceipt, CsvRow, JobTrack, JobVisit, RequestWindowCounter, User
 from .job_identity import (
     apply_persisted_job_identity,
     canonicalize_job_url,
@@ -539,3 +539,81 @@ def apply_browser_application_once(
     ))
     session.flush()
     return response
+
+
+# EXT-19: shared, persistent counters; authenticate before calling this function.
+_BROWSER_WINDOW_RULES = {
+    "check": (120, 60),
+    "visit": (60, 60),
+    "apply": (20, 60),
+    "forget": (5, 3600),
+}
+
+
+def count_browser_memory_attempt(
+    db: Session,
+    *,
+    user_id: int,
+    action: str,
+    now: datetime | None = None,
+) -> int:
+    """Record an authenticated attempt outside the business transaction.
+
+    Returns Retry-After seconds on success only as a diagnostic; raises a
+    typed, fail-closed error on overflow or unavailable limiter storage.
+    Separate committed storage ensures even rejected authenticated attempts
+    count and multiple application workers share the same quota.
+    """
+    if action not in _BROWSER_WINDOW_RULES:
+        raise ValueError("Unknown browser-memory rate scope.")
+    limit, seconds = _BROWSER_WINDOW_RULES[action]
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    stamp_seconds = int(moment.replace(tzinfo=timezone.utc).timestamp())
+    start = datetime.fromtimestamp(
+        (stamp_seconds // seconds) * seconds, tz=timezone.utc
+    ).replace(tzinfo=None)
+    retry_after = max(1, int(
+        (start + timedelta(seconds=seconds) - moment).total_seconds() + 0.999
+    ))
+    bind = db.get_bind()
+    engine = getattr(bind, "engine", bind)
+    limiter = Session(bind=engine, autoflush=False, expire_on_commit=False)
+    try:
+        with limiter.begin():
+            owner = limiter.query(User).filter_by(id=user_id).with_for_update().one_or_none()
+            if owner is None:
+                raise BrowserVisitConflict(
+                    "browser_memory_unavailable", "Account unavailable."
+                )
+            row = limiter.query(RequestWindowCounter).filter_by(
+                user_id=user_id, scope="browser_memory_" + action,
+                window_start=start,
+            ).one_or_none()
+            if row is None:
+                row = RequestWindowCounter(
+                    user_id=user_id, scope="browser_memory_" + action,
+                    window_start=start, count=1,
+                )
+                limiter.add(row)
+                limiter.flush()
+            else:
+                row.count += 1
+            attempts = row.count
+            limiter.query(RequestWindowCounter).filter(
+                RequestWindowCounter.user_id == user_id,
+                RequestWindowCounter.scope.like("browser_memory_%"),
+                RequestWindowCounter.window_start < moment - timedelta(hours=48),
+            ).delete(synchronize_session=False)
+        if attempts > limit:
+            return retry_after
+        return 0
+    except BrowserVisitConflict:
+        raise
+    except Exception as exc:
+        raise BrowserVisitConflict(
+            "browser_memory_unavailable", "Browser memory is temporarily unavailable."
+        ) from exc
+    finally:
+        limiter.close()
