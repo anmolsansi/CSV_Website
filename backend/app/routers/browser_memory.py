@@ -88,6 +88,9 @@ async def check_browser_memory(
     """Read the authenticated owner's independent memory facts, never write."""
     response.headers["Cache-Control"] = "no-store"
     try:
+        # The shared, committed counter includes malformed authenticated checks.
+        # It must not be rolled back with the read-only request transaction.
+        _count_or_reject(db, user_id=user.id, action="check")
         raw = await request.body()
         # The extension protocol has an 8 KiB transport envelope.
         if len(raw) > 8192:
@@ -105,7 +108,11 @@ async def check_browser_memory(
             title=parsed.title,
         )
     except BrowserMemoryValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
+        raise _safe_error(exc.status_code, exc.code, exc.message, field=exc.field) from exc
+    except BrowserVisitConflict as exc:
+        raise _safe_error(exc.status_code, exc.code, exc.message) from exc
+    except HTTPException:
+        raise
     except SQLAlchemyError as exc:
         # Never include SQL parameter values or private URL metadata in logs.
         raise HTTPException(
@@ -123,8 +130,8 @@ async def check_browser_memory(
     )
 
 
-# EXT-19: writes are enabled only through the existing authenticated proxy.
-# The pending EXT-21 adversarial/cross-process acceptance remains a release gate.
+# Browser-memory writes are guarded by exact frontend origin, fixed protocol
+# header and the cookie-owner account expectation. Session cookies stay server-only.
 def _safe_error(status: int, code: str, message: str, *, field: str | None = None,
                 retry_after: int | None = None) -> HTTPException:
     detail = {"code": code, "message": message}
