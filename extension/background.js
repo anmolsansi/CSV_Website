@@ -14,7 +14,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== PROBE) return false
   const ownExtension = sender?.id === chrome.runtime.id &&
     (!sender.origin || sender.origin === `chrome-extension://${chrome.runtime.id}`)
-  const ownPopup = !sender?.tab && sender?.url === chrome.runtime.getURL('popup.html')
+  // In Playwright the packaged popup.html is opened in a disposable browser
+  // tab, so MessageSender.tab may exist. Trust the exact packaged popup URL,
+  // not the presence or absence of a browser Tab object.
+  const ownPopup = sender?.url === chrome.runtime.getURL('popup.html')
   if (!ownExtension || !ownPopup) {
     // Respond safely instead of silently dropping an internal probe; this
     // distinguishes sender rejection from a missing/unstarted worker in CI.
