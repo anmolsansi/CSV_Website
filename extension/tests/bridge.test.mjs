@@ -153,3 +153,20 @@ test('release origin matches config and the public manifest', () => {
   assert.ok(manifest.optional_host_permissions.includes(`${APP_ORIGIN}/*`))
   assert.doesNotMatch(source, /document\.cookie|window\.postMessage|eval\s*\(|<all_urls>/)
 })
+
+test('repeated session-probe injection registers one bridge listener per document', () => {
+  const listeners = []
+  const context = {
+    chrome: { runtime: {
+      id: 'test-extension',
+      onMessage: { addListener: (fn) => listeners.push(fn) },
+    } },
+    location: { origin: APP_ORIGIN },
+    URL, TextEncoder, AbortController, setTimeout, clearTimeout,
+    fetch: async () => json(session()),
+  }
+  vm.createContext(context)
+  vm.runInContext(source, context, { filename: 'jobgrid-bridge.js', timeout: 1000 })
+  vm.runInContext(source, context, { filename: 'jobgrid-bridge.js', timeout: 1000 })
+  assert.equal(listeners.length, 1, 'same document must not register duplicate message listeners')
+})
