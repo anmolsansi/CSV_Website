@@ -479,6 +479,14 @@ def apply_browser_application_once(
     )
     key = validate_apply_idempotency_key(request_key)
     digest = _apply_payload_hash(request)
+    if session.get_bind().dialect.name == "sqlite":
+        # SELECT (including cookie auth) does not take a SQLite write lock.
+        # Upgrade to a reserved writer lock before checking the URL or receipt,
+        # so distinct canonical variants cannot both observe "no application".
+        # If the caller already wrote in this transaction it owns the lock.
+        connection = session.connection()
+        if not connection.connection.driver_connection.in_transaction:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
     stamp = now or datetime.now(timezone.utc)
     if stamp.tzinfo is not None:
         stamp = stamp.astimezone(timezone.utc).replace(tzinfo=None)
