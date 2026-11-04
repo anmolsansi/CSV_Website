@@ -115,12 +115,9 @@ async def check_browser_memory(
         raise
     except SQLAlchemyError as exc:
         # Never include SQL parameter values or private URL metadata in logs.
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "browser_memory_unavailable",
-                "message": "Browser memory is temporarily unavailable.",
-            },
+        raise _safe_error(
+            503, "browser_memory_unavailable",
+            "Browser memory is temporarily unavailable.",
         ) from exc
     return BrowserMemoryCheckOut(
         protocol_version=1,
@@ -147,12 +144,17 @@ def _browser_write_guard(request: Request, *, account_id: int) -> None:
     """Never trust a page-supplied account as authority or accept an arbitrary Origin."""
     expected = urlsplit(settings.FRONTEND_URL)
     allowed_origin = f"{expected.scheme}://{expected.netloc}"
+    # Duplicate trust headers must never be interpreted differently by a
+    # reverse proxy and the application. Reject them instead of picking one.
+    origins = request.headers.getlist("origin")
+    browser_headers = request.headers.getlist("x-jobgrid-browser")
     if (
-        request.headers.get("origin") != allowed_origin
-        or request.headers.get("x-jobgrid-browser") != "1"
+        len(origins) != 1 or origins[0] != allowed_origin
+        or len(browser_headers) != 1 or browser_headers[0] != "1"
     ):
         raise _safe_error(403, "origin_not_allowed", "Browser write origin not allowed.")
-    asserted = request.headers.get("x-jobgrid-account-id")
+    account_headers = request.headers.getlist("x-jobgrid-account-id")
+    asserted = account_headers[0] if len(account_headers) == 1 else None
     if asserted is None or not asserted.isascii() or not asserted.isdecimal():
         raise _safe_error(
             422, "invalid_browser_memory_payload",
