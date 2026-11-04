@@ -2,7 +2,7 @@ import io
 import json
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -208,7 +208,7 @@ def _read_visits(db, owner):
                 visit.canonical_url,
                 visit.first_visited_at.replace(tzinfo=None)
                 if visit.first_visited_at.tzinfo is None
-                else visit.first_visited_at.astimezone(__import__("datetime").timezone.utc).replace(tzinfo=None),
+                else visit.first_visited_at.astimezone(timezone.utc).replace(tzinfo=None),
             )
             for visit in fresh.query(JobVisit).filter(JobVisit.user_id == owner).all()
         ]
