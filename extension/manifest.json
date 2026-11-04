@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "JobGrid Job Memory (Pilot)",
+  "version": "0.1.0",
+  "description": "Opt-in JobGrid job-history companion. Tracking is disabled until connected.",
+  "action": {
+    "default_title": "JobGrid memory (not connected)",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "optional_host_permissions": [
+    "https://boards.greenhouse.io/*",
+    "https://job-boards.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://csv-website-steel.vercel.app/*"
+  ]
+}
