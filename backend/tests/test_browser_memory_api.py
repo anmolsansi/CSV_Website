@@ -173,3 +173,144 @@ def test_ext_14_check_is_repeatable_and_never_writes_or_exposes_other_owner(clie
         assert checked.json()["matches"] == []
         assert checked.json()["company_history_count"] == 0
     assert (_memory_counts(db_session, first), _memory_counts(db_session, second)) == snapshot
+
+
+# EXT-19: guarded write routes and durable attempt limits.
+from app.config import settings
+from app.services import browser_memory
+
+
+def _browser_headers(user_id, **overrides):
+    headers = {
+        "Origin": settings.FRONTEND_URL.rstrip("/"),
+        "X-JobGrid-Browser": "1",
+        "X-JobGrid-Account-ID": str(user_id),
+        "Idempotency-Key": str(uuid4()),
+    }
+    headers.update(overrides)
+    return headers
+
+
+def test_ext_19_visit_replay_and_forget_are_account_scoped(client, db_session):
+    first = _login(client, "visit")
+    url = "https://jobs.example.test/ext-19/visit?req=1"
+    headers = _browser_headers(first)
+    initial = client.post(
+        "/crm/browser-memory/visit", json={"url": url}, headers=headers,
+    )
+    assert initial.status_code == 200, initial.text
+    assert initial.headers["cache-control"] == "no-store"
+    data = initial.json()
+    assert set(data) == {
+        "protocol_version", "account_id", "created", "first_visited_at",
+    }
+    assert data["protocol_version"] == 1 and data["account_id"] == first
+    assert data["created"] is True and data["first_visited_at"].endswith("Z")
+    repeated = client.post(
+        "/crm/browser-memory/visit", json={"url": url}, headers=headers,
+    )
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json() == {**data, "created": False}
+    second = _login(client, "visit-second")
+    deletion = client.request(
+        "DELETE", "/crm/browser-memory/visits",
+        headers=_browser_headers(second),
+    )
+    assert deletion.status_code == 200 and deletion.json()["deleted"] == 0
+    assert db_session.query(JobVisit).filter_by(user_id=first).count() == 1
+    _login(client, "visit")  # new account; original owner is not selected
+    assert db_session.query(JobVisit).filter_by(user_id=first).count() == 1
+
+
+def test_ext_19_apply_replay_and_forget_counts_are_truthful(client, db_session):
+    owner = _login(client, "apply")
+    headers = _browser_headers(owner)
+    body = {
+        "url": "https://jobs.example.test/ext-19/role?req=2",
+        "company": "Acme", "title": "Engineer", "confirmed": True,
+    }
+    first = client.post("/crm/browser-memory/apply", json=body, headers=headers)
+    assert first.status_code == 200, first.text
+    assert first.json()["created"] is True
+    assert first.json()["already_applied"] is False
+    replay = client.post("/crm/browser-memory/apply", json=body, headers=headers)
+    assert replay.status_code == 200 and replay.json() == first.json()
+    conflict = client.post(
+        "/crm/browser-memory/apply",
+        json={**body, "title": "Other title"}, headers=headers,
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+    visit = client.post(
+        "/crm/browser-memory/visit", json={"url": body["url"]}, headers=headers,
+    )
+    assert visit.status_code == 200
+    forget = client.request("DELETE", "/crm/browser-memory/visits", headers=headers)
+    assert forget.status_code == 200
+    assert forget.json() == {"protocol_version": 1, "account_id": owner, "deleted": 1}
+    repeat = client.request("DELETE", "/crm/browser-memory/visits", headers=headers)
+    assert repeat.status_code == 200 and repeat.json()["deleted"] == 0
+    assert db_session.query(JobTrack).filter_by(user_id=owner).count() == 1
+    assert db_session.query(BrowserApplyReceipt).filter_by(user_id=owner).count() == 1
+    assert db_session.query(JobVisit).filter_by(user_id=owner).count() == 0
+
+
+def test_ext_19_origin_expected_account_and_input_fail_before_mutation(client, db_session):
+    no_auth = client.post(
+        "/crm/browser-memory/apply",
+        json={"url": "https://jobs.example.test/19/a"},
+    )
+    assert no_auth.status_code == 401
+    owner = _login(client, "guards")
+    headers = _browser_headers(owner)
+    body = {
+        "url": "https://jobs.example.test/19/a", "company": "Acme",
+        "title": "Engineer", "confirmed": True,
+    }
+    cases = [
+        (_browser_headers(owner, Origin="https://evil.example.test"), 403, "origin_not_allowed"),
+        (_browser_headers(owner, **{"X-JobGrid-Browser": "0"}), 403, "origin_not_allowed"),
+        (_browser_headers(owner, **{"X-JobGrid-Account-ID": "999999"}), 409, "account_changed"),
+        (_browser_headers(owner, **{"X-JobGrid-Account-ID": "oops"}), 422, "invalid_browser_memory_payload"),
+        (_browser_headers(owner, **{"Idempotency-Key": ""}), 422, "invalid_browser_memory_payload"),
+    ]
+    for h, status, code in cases:
+        result = client.post("/crm/browser-memory/apply", json=body, headers=h)
+        assert result.status_code == status, result.text
+        assert result.json()["detail"]["code"] == code
+    no_confirm = client.post(
+        "/crm/browser-memory/apply", json={**body, "confirmed": 1},
+        headers=headers,
+    )
+    assert no_confirm.status_code == 422
+    malformed = client.post(
+        "/crm/browser-memory/visit", content="{", headers=headers,
+    )
+    assert malformed.status_code == 422
+    invalid_delete = client.request(
+        "DELETE", "/crm/browser-memory/visits",
+        json={"confirmed": True}, headers=headers,
+    )
+    assert invalid_delete.status_code == 422
+    assert _memory_counts(db_session, owner) == (0, 0, 0, 0)
+
+
+def test_ext_19_persisted_attempt_limit_counts_invalid_authenticated_attempts(
+    client, monkeypatch,
+):
+    owner = _login(client, "rate")
+    headers = _browser_headers(owner)
+    monkeypatch.setitem(browser_memory._BROWSER_WINDOW_RULES, "apply", (2, 60))
+    bad = {
+        "url": "https://jobs.example.test/19/rate",
+        "company": "Acme", "title": "Engineer", "confirmed": False,
+    }
+    for _ in range(2):
+        response = client.post(
+            "/crm/browser-memory/apply", json=bad, headers=headers,
+        )
+        assert response.status_code == 422, response.text
+    third = client.post("/crm/browser-memory/apply", json=bad, headers=headers)
+    assert third.status_code == 429
+    assert third.json()["detail"]["code"] == "browser_memory_rate_limited"
+    assert int(third.headers["Retry-After"]) >= 1
