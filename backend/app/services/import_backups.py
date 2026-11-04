@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .backup_sessions import atomic_restore, snapshot_export
 
 from ..backup_schemas import BackupContractError, MAX_TOTAL_RECORDS, parse_backup_json
+from ..browser_memory_backup_schemas import VISIT_BACKUP_KEY
 from ..import_models import ImportMapping
 from ..undo_models import BulkAction
 from .contact_backups import (
@@ -44,7 +45,7 @@ def _check_record_limit(payload: dict[str, Any]) -> None:
     contact_extension = payload.get("f8_private", {})
     contact_sections = contact_extension.get("sections", {}) if isinstance(contact_extension, dict) else {}
     record_count = 0
-    for key, records_key in ((F9_BACKUP_KEY, "mappings"), (F10_BACKUP_KEY, "actions")):
+    for key, records_key in ((F9_BACKUP_KEY, "mappings"), (F10_BACKUP_KEY, "actions"), (VISIT_BACKUP_KEY, "visits")):
         extension = payload.get(key, {})
         records = extension.get(records_key, []) if isinstance(extension, dict) else []
         if isinstance(records, list):
