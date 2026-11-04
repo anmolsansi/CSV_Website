@@ -41,6 +41,34 @@ Current JSON limits are 20 MiB uncompressed and 20,000 portable records across t
 
 `GET /crm/backup/export` still defaults to the historical v1 JSON shape for compatibility. The restore adapter accepts versions `1` and `1.0`, records missing sections/fields instead of inventing historical facts, and reports incomplete legacy coverage. New recovery work should use v2 or the ZIP bundle.
 
+## Browser visit-memory deletion and recovery (EXT-25)
+
+An imported CSV row, a browser visit, and an application are separate facts.
+Removing or archiving the row does **not** forget the external visit or remove
+the application. A previously clicked row retains its click record when the
+user forgets browser visits. Existing application evidence survives a visit
+forget, including applied_at on rejected, withdrawn or archived tracks.
+
+DELETE /crm/browser-memory/visits removes only the authenticated account's
+job_visits records. Repeating it returns zero. It does not remove
+CsvRow.clicked, UrlHistory, JobTrack or operational apply receipts.
+There is no "erase all traces" implication. Account deletion cascades to its
+visit and receipt records without touching other owners.
+
+A user who chooses to restore an **older v2 JSON or ZIP backup** containing
+job_visits_v1 can bring the forgotten visits back. The default legacy v1
+export has no visit extension and cannot recover that history. To test safely,
+work with a disposable account and database: export v2, forget visits, verify
+the visit table is empty while application/click facts persist, run
+verify_only, and then merge_missing. The restore validates checksums,
+ownership and quotas and preserves the earliest first-visit timestamp.
+
+Repository regression coverage is in
+backend/tests/test_browser_visits.py (EXT-25 source deletion and forget)
+and backend/tests/test_complete_backup.py (EXT-25 restore and purge).
+The fixtures use synthetic accounts and disposable databases.
+Hosted PostgreSQL acceptance and real Chrome/OAuth release checks are separate.
+
 ## Portable data coverage
 
 The code-level source of truth for base-model field coverage is `MODEL_FIELD_INVENTORY` in `backend/app/backup_schemas.py`. New persisted fields or models must update that inventory or tests must fail rather than silently losing data.
