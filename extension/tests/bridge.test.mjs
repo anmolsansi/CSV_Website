@@ -406,6 +406,7 @@ test('an unanswered check times out at eight seconds with no retry or write', as
 // as a top-level extension tab. Tab presence alone does not make it untrusted.
 test('packaged popup in a browser tab can run the legacy read-only probe', async () => {
   const worker = workerSetup()
+  worker.remove(20) // EXT-05 refuses ambiguous app tabs
   const result = await worker.send({ type: 'ext05:session-probe' }, {
     ...POPUP, tab: { id: 400 }, frameId: 0,
   })
