@@ -3563,6 +3563,35 @@ The tests cover owner isolation, two-visit deletion, repeated deletion,
 retained CSV/import/application/receipt state, transaction rollback and FK
 cascade. Real Chrome/OAuth remains separately unverified.
 
+### Shared applied-history lookup, EXT-11
+
+`backend/app/services/job_identity.py::find_applied_matches` now owns the
+read-only application-history matcher and owner-scoped company alias grouping.
+It accepts the trusted account ID, original job URL, and optional company/title.
+It looks only at `JobTrack` rows with `applied_at IS NOT NULL`; saved-only,
+opened-only, imported URLs and foreign accounts do not indicate applications.
+It does not write or commit any state.
+
+The old `backend/app/routers/crm.py::_find_application_matches` remains a
+compatibility adapter for GET/POST `/crm/application-matches`, including its
+original 422 `invalid_job_url` response. It retains the exact two-field
+JSON response (`matches`, `company_history_count`), original confidence,
+reason, status, timestamp and ordering, the existing 100-candidate query
+limit and 20-result limit. Alias grouping remains owner-scoped. In particular,
+a rejected/withdrawn record whose `applied_at` is set remains application
+history, whereas a track with `applied_at=None` never qualifies.
+
+This extraction makes the matcher reusable for the future extension without
+changing public API contracts, creating a route, changing migration state, or
+inferring application history from visit/capture evidence. To roll back,
+restore the router's original implementation while retaining its exact output
+shape. Targeted regression:
+
+```bash
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_application_memory.py tests/test_application_matches.py -q
+```
+
 ### Verification and outstanding acceptance
 
 The tests above are the executable verification targets; per-run CI and browser results belong in issue #184 and the PR. Passing backend unit tests cannot replace a real Chrome account-switch check. Once Chrome acceptance passes, the next write/API tickets still need authorization, input validation, backup compatibility and rate-limit work before any history-tracking pilot can be called complete.
