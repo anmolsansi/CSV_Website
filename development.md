@@ -2779,6 +2779,9 @@ The in-app owner-scoped ZIP is a portable user backup. It does not replace an op
 <a id="chrome-extension-plan"></a>
 ## 9. Chrome extension — job and company memory
 
+**Chrome extension foundation update (2026-11-04):** EXT-01–03 are implemented in a task branch with 12 local Node tests passing (issue #184). The three acceptance checkboxes remain open pending an actual unpacked Chrome smoke test and later live authenticated integration, which cannot be inferred from a static shell or fixtures. EXT-04–50 are not implemented by this work. See `extension/README.md` and the current build guide for the precise boundary.
+
+
 **Planning baseline:** 2026-10-16, local `main` and fetched `origin/main` at `48bf33c16c9cc541ec709988d7ca29cf084385de`. **Status: planned; 0/50 implementation microtasks complete.** This section is the authoritative extension plan. Existing C-07/C-09–C-12 release gates remain separate and must be revalidated when a release candidate is selected. No new GitHub issue, Linear task, branch, commit, PR, migration, extension package or deployment is created by this document.
 
 ### 9.1 Staff Engineer Assessment and product definition
@@ -3079,7 +3082,7 @@ Read one selected packet together with `docs/repo_context.md` and its named curr
 
 #### EXT-01 — Freeze pilot environments and account expectations
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** LOCAL IMPLEMENTED / Node config tests passed; environment revalidation and external account binding pending.\\
 **Priority:** P0\
 **Type:** Configuration\
 **Execution position:** 1/50; band 1/10 — Connection proof; group step 1/5.
@@ -3240,7 +3243,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-02 — Create a loadable Manifest V3 extension shell
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** LOCAL IMPLEMENTED / Node manifest tests passed; unpacked Chrome UI check blocked by sandbox extension restrictions.\\
 **Priority:** P0\
 **Type:** Extension foundation\
 **Execution position:** 2/50; band 1/10 — Connection proof; group step 2/5.
@@ -3402,7 +3405,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-03 — Implement the fixed-route JobGrid session bridge
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** LOCAL IMPLEMENTED / Node bridge fixture tests passed; live endpoint and signed-in Chrome transport pending EXT-04/05.\\
 **Priority:** P0\
 **Type:** Extension transport\
 **Execution position:** 3/50; band 1/10 — Connection proof; group step 3/5.
