@@ -39,6 +39,25 @@ def test_browser_session_rejects_missing_and_invalid_cookie(client):
     assert invalid.json() == {"detail": "Invalid token"}
     assert "account_id" not in invalid.text
 
+    # Expired signed cookies must use the same existing auth failure contract.
+    from datetime import datetime, timedelta, timezone
+    import jwt
+    from app.config import settings
+
+    expired_token = jwt.encode(
+        {
+            "sub": "1",
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=2),
+        },
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
+    client.cookies.set("session_token", expired_token)
+    expired = client.get("/crm/browser-memory/session")
+    assert expired.status_code == 401
+    assert expired.json() == {"detail": "Invalid token"}
+    assert "account_id" not in expired.text
+
 
 def test_browser_session_account_switch_is_not_cached(client):
     first = _login(client, "a")
