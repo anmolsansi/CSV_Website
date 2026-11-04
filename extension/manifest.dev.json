@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "JobGrid Job Memory (Local Development)",
+  "version": "0.1.0",
+  "description": "Disposable local test shell only. Do not package for release.",
+  "action": {
+    "default_title": "JobGrid memory (local test, not connected)",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "optional_host_permissions": [
+    "https://boards.greenhouse.io/*",
+    "https://job-boards.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "http://localhost:5173/*"
+  ]
+}
