@@ -3914,3 +3914,25 @@ Rollback disables the extension's calls/uses an older app build while
 **retaining** the additive tables and previously recorded visits. Do not
 run a destructive downgrade or purge recovered visits automatically.
 Real Chrome/OAuth, staging and store-release acceptance are separate.
+
+### Browser-memory lifecycle and restore boundaries, EXT-25
+
+An uploaded CSV row is discovery data, a JobVisit is external page-memory,
+and a JobTrack with non-null applied_at is application history. They are
+independent facts. Archiving or deleting a source row does not erase browser
+visits or applied history. The legacy row deletion path detaches a linked
+track before deleting its row, preserving its status and applied timestamp.
+Forgetting visits through DELETE /crm/browser-memory/visits clears only
+the cookie-resolved owner's job_visits, leaving row clicks, UrlHistory,
+applications and operational apply receipts untouched. A second account
+is not affected. Owner deletion cascades to that owner's visits and receipts.
+
+A previous optional v2 job_visits_v1 JSON/ZIP backup can restore intentionally
+forgotten history. Users must be told this before restoring older backups.
+The v1 default export cannot recover those visits. For a disposable fixture,
+export v2, forget, verify zero visits, run verify_only and then merge_missing,
+and verify the earliest first_visited_at. Never describe deleting a CSV row as
+an all-history erase. These boundaries are regression-tested in
+backend/tests/test_browser_visits.py and backend/tests/test_complete_backup.py.
+No production records were deleted for this verification.
+
