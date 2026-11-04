@@ -562,3 +562,104 @@ def _browser_definite_applied_matches(
                 "applied_at": item.applied_at,
             })
     return definite
+
+
+
+BROWSER_POSSIBLE_MATCH_SCAN_LIMIT = 500
+
+
+def find_browser_applied_matches(
+    db: Session,
+    *,
+    user_id: int,
+    url: str,
+    company: str | None,
+    title: str | None,
+) -> dict:
+    """Read-only browser lookup with complete definite identity checks.
+
+    The existing CRM adapter still uses find_applied_matches and its original
+    response/query limits. Only the new browser caller consumes lookup_complete.
+    """
+    identity = canonicalize_job_url(url)
+    matches = _browser_definite_applied_matches(
+        db,
+        user_id=user_id,
+        url=url,
+        canonical_url=identity.canonical_url,
+        digest=identity.canonical_url_hash,
+    )
+    seen_ids = {item["track_id"] for item in matches}
+    candidate_key, company_names, alias_keys = _company_alias_group(
+        db, user_id=user_id, company=company,
+    )
+    company_sql_keys = sorted({
+        name.strip().lower() for name in company_names if name and name.strip()
+    })
+    candidate_title = _normalized_text(title)
+    lookup_complete = True
+    if company_sql_keys and candidate_title is not None:
+        # Only *possible* matches are bounded. Definite URLs never enter this
+        # candidate pool, so an older exact application cannot be crowded out.
+        candidates = (
+            db.query(JobTrack)
+            .filter(
+                JobTrack.user_id == user_id,
+                JobTrack.applied_at.isnot(None),
+                func.lower(func.trim(JobTrack.company)).in_(company_sql_keys),
+            )
+            .order_by(JobTrack.applied_at.desc(), JobTrack.id.desc())
+            .limit(BROWSER_POSSIBLE_MATCH_SCAN_LIMIT)
+            .all()
+        )
+        # At the boundary, conservatively report incompleteness. Never turn a
+        # truncated scan into a definitive "no application" claim.
+        lookup_complete = len(candidates) < BROWSER_POSSIBLE_MATCH_SCAN_LIMIT
+        for item in candidates:
+            if item.id in seen_ids or _normalized_text(item.title) != candidate_title:
+                continue
+            existing_key = _normalized_text(item.company)
+            if not (
+                candidate_key is not None
+                and existing_key is not None
+                and (existing_key == candidate_key or existing_key in alias_keys)
+            ):
+                continue
+            matches.append({
+                "track_id": item.id,
+                "confidence": "possible",
+                "reason": (
+                    "company_title_only"
+                    if existing_key == candidate_key
+                    else "company_alias_title"
+                ),
+                "company": item.company,
+                "title": item.title,
+                "status": item.status,
+                "applied_at": item.applied_at,
+            })
+            seen_ids.add(item.id)
+
+    rank = {"exact": 0, "canonical": 1, "possible": 2}
+    matches.sort(key=lambda item: (
+        rank[item["confidence"]],
+        -(item["applied_at"].timestamp() if item["applied_at"] else 0),
+        -item["track_id"],
+    ))
+    history_count = 0
+    if company_sql_keys:
+        history_count = (
+            db.query(func.count(JobTrack.id))
+            .filter(
+                JobTrack.user_id == user_id,
+                JobTrack.applied_at.isnot(None),
+                func.lower(func.trim(JobTrack.company)).in_(company_sql_keys),
+            )
+            .scalar()
+            or 0
+        )
+    return {
+        "matches": matches[:APPLICATION_MATCH_LIMIT],
+        "company_history_count": int(history_count),
+        "lookup_complete": lookup_complete,
+    }
