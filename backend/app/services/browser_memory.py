@@ -14,8 +14,8 @@ from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
 from ..browser_memory_schemas import parse_browser_memory_payload
-from ..models import CsvRow, JobVisit, User
-from .job_identity import canonicalize_job_url
+from ..models import CsvRow, JobTrack, JobVisit, User
+from .job_identity import canonicalize_job_url, find_browser_applied_matches
 
 MAX_BROWSER_VISITS_PER_OWNER = 10_000
 
@@ -187,3 +187,105 @@ def forget_browser_visits(session: Session, *, user_id: int) -> dict:
         .delete(synchronize_session=False)
     )
     return {"protocol_version": 1, "account_id": user_id, "deleted": deleted}
+
+
+
+def utc_z(value: datetime | None) -> str | None:
+    """Encode stored naive-UTC and aware instants as RFC3339 UTC-Z."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def read_browser_memory_facts(
+    session: Session,
+    *,
+    user_id: int,
+    url: str,
+    company: str | None = None,
+    title: str | None = None,
+) -> dict:
+    """Compose independent, owner-only visit and application facts (EXT-13).
+
+    This query does not infer an application from a visited, imported or saved
+    job. Only JobTrack.applied_at proves an application. A URL may be visited
+    and applied independently, and no ATS hostname is treated as an employer.
+    """
+    request = parse_browser_memory_payload(
+        "check", {"url": url, "company": company, "title": title}
+    )
+    identity = canonicalize_job_url(request.url)
+    same_identity = or_(
+        CsvRow.url == request.url,
+        and_(
+            CsvRow.canonical_url_hash == identity.canonical_url_hash,
+            CsvRow.canonical_url == identity.canonical_url,
+        ),
+    )
+    visit = (
+        session.query(JobVisit)
+        .filter(
+            JobVisit.user_id == user_id,
+            JobVisit.canonical_url_hash == identity.canonical_url_hash,
+            JobVisit.canonical_url == identity.canonical_url,
+        )
+        .one_or_none()
+    )
+    clicked = (
+        session.query(CsvRow.clicked_at)
+        .filter(
+            CsvRow.user_id == user_id,
+            CsvRow.clicked.is_(True),
+            same_identity,
+        )
+        .all()
+    )
+    opened = (
+        session.query(JobTrack.opened_at)
+        .filter(
+            JobTrack.user_id == user_id,
+            JobTrack.opened_at.isnot(None),
+            or_(
+                JobTrack.url == request.url,
+                and_(
+                    JobTrack.canonical_url_hash == identity.canonical_url_hash,
+                    JobTrack.canonical_url == identity.canonical_url,
+                ),
+            ),
+        )
+        .all()
+    )
+    known_times = (
+        ([visit.first_visited_at] if visit is not None else [])
+        + [row[0] for row in clicked if row[0] is not None]
+        + [row[0] for row in opened if row[0] is not None]
+    )
+    # SQLite may return naive UTC while PostgreSQL returns aware instants.
+    first_visit = min(
+        (dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else
+         dt.astimezone(timezone.utc) for dt in known_times),
+        default=None,
+    )
+    applied = find_browser_applied_matches(
+        session,
+        user_id=user_id,
+        url=request.url,
+        company=request.company if request.company and request.company.strip() else None,
+        title=request.title,
+    )
+    return {
+        "visit": {
+            "visited": visit is not None or bool(clicked) or bool(opened),
+            "first_visited_at": utc_z(first_visit),
+        },
+        "matches": [
+            {**match, "applied_at": utc_z(match["applied_at"])}
+            for match in applied["matches"]
+        ],
+        "company_history_count": applied["company_history_count"],
+        # Untrusted page metadata is either explicitly present or unknown.
+        "company_known": bool(request.company and request.company.strip()),
+        "lookup_complete": applied["lookup_complete"],
+    }
