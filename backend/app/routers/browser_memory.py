@@ -6,6 +6,7 @@ remains the sole authority for the selected JobGrid account.
 import json
 from datetime import datetime, timezone
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,9 +14,17 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..auth import get_current_user
-from ..browser_memory_schemas import BrowserMemoryValidationError, parse_browser_memory_payload
+from ..config import settings
+from ..browser_memory_schemas import (
+    BrowserMemoryValidationError, parse_browser_memory_payload,
+    validate_apply_idempotency_key,
+)
 from ..database import get_db
-from ..services.browser_memory import read_browser_memory_facts, utc_z
+from ..services.browser_memory import (
+    BrowserVisitConflict, apply_browser_application_once,
+    count_browser_memory_attempt, forget_browser_visits,
+    read_browser_memory_facts, save_browser_visit, utc_z,
+)
 from ..models import User
 
 
@@ -112,3 +121,134 @@ async def check_browser_memory(
         account_id=user.id,
         **facts,
     )
+
+
+# EXT-19: writes are enabled only through the existing authenticated proxy.
+# The pending EXT-21 adversarial/cross-process acceptance remains a release gate.
+def _safe_error(status: int, code: str, message: str, *, field: str | None = None,
+                retry_after: int | None = None) -> HTTPException:
+    detail = {"code": code, "message": message}
+    if field is not None:
+        detail["field"] = field
+    headers = {"Cache-Control": "no-store"}
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    return HTTPException(status_code=status, detail=detail, headers=headers)
+
+
+def _browser_write_guard(request: Request, *, account_id: int) -> None:
+    """Never trust a page-supplied account as authority or accept an arbitrary Origin."""
+    expected = urlsplit(settings.FRONTEND_URL)
+    allowed_origin = f"{expected.scheme}://{expected.netloc}"
+    if (
+        request.headers.get("origin") != allowed_origin
+        or request.headers.get("x-jobgrid-browser") != "1"
+    ):
+        raise _safe_error(403, "origin_not_allowed", "Browser write origin not allowed.")
+    asserted = request.headers.get("x-jobgrid-account-id")
+    if asserted is None or not asserted.isascii() or not asserted.isdecimal():
+        raise _safe_error(
+            422, "invalid_browser_memory_payload",
+            "Expected account header is required.", field="X-JobGrid-Account-ID",
+        )
+    if int(asserted) != account_id:
+        raise _safe_error(
+            409, "account_changed", "Selected JobGrid account changed."
+        )
+
+
+async def _read_browser_mutation_json(request: Request, kind: Literal["visit", "apply"]):
+    raw = await request.body()
+    if len(raw) > 8192:
+        raise BrowserMemoryValidationError("Invalid browser-memory input.")
+    try:
+        payload = json.loads(raw)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise BrowserMemoryValidationError("Invalid browser-memory JSON.") from exc
+    return parse_browser_memory_payload(kind, payload)
+
+
+def _count_or_reject(db: Session, *, user_id: int, action: str) -> None:
+    retry_after = count_browser_memory_attempt(db, user_id=user_id, action=action)
+    if retry_after:
+        raise _safe_error(
+            429, "browser_memory_rate_limited",
+            "Browser memory attempt limit reached.", retry_after=retry_after,
+        )
+
+
+def _mutation_error(db: Session, exc: Exception) -> HTTPException:
+    db.rollback()
+    if isinstance(exc, BrowserMemoryValidationError):
+        return _safe_error(exc.status_code, exc.code, exc.message, field=exc.field)
+    if isinstance(exc, BrowserVisitConflict):
+        return _safe_error(exc.status_code, exc.code, exc.message)
+    if isinstance(exc, HTTPException):
+        return exc
+    return _safe_error(
+        503, "browser_memory_unavailable", "Browser memory is temporarily unavailable."
+    )
+
+
+@router.post("/visit")
+async def visit_browser_memory(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        _count_or_reject(db, user_id=user.id, action="visit")
+        _browser_write_guard(request, account_id=user.id)
+        parsed = await _read_browser_mutation_json(request, "visit")
+        result = save_browser_visit(db, user_id=user.id, url=parsed.url)
+        body = result.as_response()
+        db.commit()
+        return body
+    except (BrowserMemoryValidationError, BrowserVisitConflict, HTTPException, SQLAlchemyError) as exc:
+        raise _mutation_error(db, exc) from exc
+
+
+@router.post("/apply")
+async def apply_browser_memory(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        _count_or_reject(db, user_id=user.id, action="apply")
+        _browser_write_guard(request, account_id=user.id)
+        key = validate_apply_idempotency_key(request.headers.get("idempotency-key"))
+        parsed = await _read_browser_mutation_json(request, "apply")
+        result = apply_browser_application_once(
+            db, user_id=user.id, request_key=key, **parsed.model_dump(),
+        )
+        db.commit()
+        return result
+    except (BrowserMemoryValidationError, BrowserVisitConflict, HTTPException, SQLAlchemyError) as exc:
+        raise _mutation_error(db, exc) from exc
+
+
+@router.delete("/visits")
+async def delete_browser_visits(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        _count_or_reject(db, user_id=user.id, action="forget")
+        _browser_write_guard(request, account_id=user.id)
+        if await request.body():
+            raise BrowserMemoryValidationError(
+                "Forget visits must not include a request body."
+            )
+        result = forget_browser_visits(db, user_id=user.id)
+        db.commit()
+        return result
+    except (BrowserMemoryValidationError, BrowserVisitConflict, HTTPException, SQLAlchemyError) as exc:
+        raise _mutation_error(db, exc) from exc
