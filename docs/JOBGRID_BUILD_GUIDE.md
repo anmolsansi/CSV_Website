@@ -3598,7 +3598,8 @@ DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_application_memory.p
 internal read-only lookup for the later browser-memory check route. It accepts
 only a server-owned account ID and a URL with optional company/title and
 returns `matches`, `company_history_count`, and `lookup_complete`.
-**No browser-memory check route is registered yet** (EXT-14 owns it).
+**The read-only browser-memory check route is registered** by EXT-14. The
+visit/apply/delete HTTP write endpoints still belong to EXT-19.
 
 The matcher first runs two separate owner-scoped, applied-only database
 lookups for the original URL (`exact`) and stored canonical hash **plus**
@@ -3642,3 +3643,89 @@ separate evidence gates.
 ### Verification and outstanding acceptance
 
 The tests above are the executable verification targets; per-run CI and browser results belong in issue #184 and the PR. Passing backend unit tests cannot replace a real Chrome account-switch check. Once Chrome acceptance passes, the next write/API tickets still need authorization, input validation, backup compatibility and rate-limit work before any history-tracking pilot can be called complete.
+
+
+
+### Browser-memory check and explicit apply, EXT-13–16
+
+The extension's read-only `POST /crm/browser-memory/check` adapter lives in
+`backend/app/routers/browser_memory.py`. It requires the normal signed-in
+JobGrid cookie and resolves the owner server-side. It accepts a JSON object:
+
+```json
+{"url":"https://jobs.example.test/jobs/123?req=a","company":"Acme Corp","title":"Backend Engineer"}
+```
+
+`company` and `title` may be omitted or null. All extra fields and
+unsafe/private or credential-bearing URLs are rejected with **422**,
+`detail.code=invalid_browser_memory_payload`. Malformed JSON and bodies
+over the existing extension's 8 KiB envelope also return a safe 422.
+The existing unauthenticated **401** contract is preserved. Database lookup
+failure returns **503 browser_memory_unavailable** without disclosing SQL
+parameters or the submitted job URL. Responses use `Cache-Control: no-store`.
+
+A successful result has `protocol_version:1`, UTC-Z `checked_at`, the
+cookie-owned `account_id`, `visit:{visited,first_visited_at}`,
+`matches`, `company_history_count`, `company_known` and
+`lookup_complete`. Missing dates remain null, never a fabricated timestamp.
+Matches contain `track_id`, `confidence` (exact/canonical/possible),
+`reason`, `company`, `title`, `status`, UTC-Z `applied_at`.
+The result is read-only: it does not record a visit, create an import,
+update a job, or declare an application from a saved link.
+
+`backend/app/services/browser_memory.py::read_browser_memory_facts` joins
+three independent owned signals for **visited**: durable `JobVisit`
+identity, preexisting clicked `CsvRow` facts and genuine recorded
+`JobTrack.opened_at`. It chooses the earliest known UTC timestamp, while a
+legacy clicked flag with no date still counts as visited with a null date.
+Only non-null `JobTrack.applied_at` is application evidence. An imported
+`UrlHistory`, unclicked CSV row or saved-only track does not count as
+visited/applied. A company is known only if the caller explicitly provides
+a nonblank name. An ATS hostname does not identify an employer.
+
+The shared EXT-12 matcher preserves exact/canonical priority beyond the
+500-record possible scan, owner-local aliases, 20-result maximum,
+confidence/newest-time/ID ordering and `lookup_complete=false` on a capped
+possible search. The company count includes other applied roles for the same
+owned alias group, including rejected/archived statuses. A shared ATS domain
+alone does not contribute company matches or counts. When the lookup is
+incomplete, the UI must not claim there are no prior applications.
+The existing `/crm/application-matches` contract is unchanged.
+
+EXT-16 adds `record_browser_application` in the same service module. It is
+**not** an HTTP endpoint. A trusted future adapter must verify the cookie,
+exact Origin and expected-account/browser headers and own commit/rollback.
+The service validates explicit `confirmed:true`, a public job URL and
+required nonblank company/title **before** taking the owner mutation lock.
+It reuses an already-applied exact or canonical track without touching the
+status or first-applied date. Otherwise it fills missing company/title fields
+on an exact never-applied track without overwriting curated metadata/notes,
+or creates a standalone applied track without a CSV association. New tracks
+have no `opened_at`/`last_opened_at` and `open_count=0`. It calls the
+shared `apply_job_track_changes` lifecycle writer to persist first-applied
+evidence and any genuine status transition in the caller's transaction.
+It does **not** capture a CSV row, write a visit, count a synthetic page open,
+create a search session or commit by itself.
+
+The internal apply service is **not retry-safe under concurrent requests
+until EXT-18/20** add durable receipts and concurrency coverage. EXT-17
+still owns dedicated previously-applied replay acceptance. EXT-19 owns the
+mutating HTTP transport and its Origin/account checks; EXT-21 owns persistent
+rate limits. Do not connect the extension to the write service or claim a
+production/pilot release until those tickets and real Chrome/OAuth gates pass.
+
+Run focused regression checks against an **isolated disposable** database:
+
+```sh
+cd backend
+DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_matches.py tests/test_browser_memory_api.py tests/test_browser_memory_apply.py tests/test_job_identity.py tests/test_application_matches.py tests/test_lifecycle_mutations.py -q
+python -m compileall -q app
+```
+
+For a PostgreSQL acceptance claim, run the existing CI test matrix with a
+dedicated `TEST_DATABASE_URL`. Keep private URLs, credentials, cookies,
+titles and employer names out of logs and test artifacts. Rollback means
+disabling the new read adapter and future browser caller, not destroying
+user visits or application history. The service change requires no
+new migration, paid service, browser permission, data backfill or live
+deployment.
