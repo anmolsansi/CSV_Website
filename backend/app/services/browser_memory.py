@@ -454,3 +454,88 @@ def record_browser_application(
         account_id=user_id, application_id=item.id, created=created,
         already_applied=False, applied_at=item.applied_at,
     )
+
+
+def apply_browser_application_once(
+    session: Session,
+    *,
+    user_id: int,
+    url: str,
+    company: str,
+    title: str,
+    confirmed: bool,
+    request_key: str,
+    now: datetime | None = None,
+) -> dict:
+    """One owner-locked, caller-transactional apply and receipt (EXT-18).
+
+    The caller commits once after this returns, or rolls back every write.
+    A replay returns the frozen original HTTP body, never synthesizing a new
+    first-applied event or resetting a later advanced application status.
+    """
+    request = parse_browser_memory_payload(
+        "apply",
+        {"url": url, "company": company, "title": title, "confirmed": confirmed},
+    )
+    key = validate_apply_idempotency_key(request_key)
+    digest = _apply_payload_hash(request)
+    stamp = now or datetime.now(timezone.utc)
+    if stamp.tzinfo is not None:
+        stamp = stamp.astimezone(timezone.utc).replace(tzinfo=None)
+
+    owner = session.query(User).filter(User.id == user_id).with_for_update().one_or_none()
+    if owner is None:
+        raise BrowserVisitConflict("browser_memory_unavailable", "Account unavailable.")
+
+    # Expired operational receipts have no power over durable application history.
+    session.query(BrowserApplyReceipt).filter(
+        BrowserApplyReceipt.user_id == user_id,
+        BrowserApplyReceipt.created_at < stamp - timedelta(
+            days=BROWSER_APPLY_RECEIPT_RETENTION_DAYS
+        ),
+    ).delete(synchronize_session=False)
+
+    prior = session.query(BrowserApplyReceipt).filter_by(
+        user_id=user_id, request_key=key,
+    ).one_or_none()
+    if prior is not None:
+        if prior.payload_hash != digest:
+            raise BrowserVisitConflict(
+                "idempotency_conflict", "This request key belongs to a different apply intent."
+            )
+        saved = prior.response_json
+        exists = session.query(JobTrack.id).filter(
+            JobTrack.id == saved["application_id"],
+            JobTrack.user_id == user_id,
+        ).first()
+        if exists is None:
+            raise BrowserVisitConflict(
+                "application_deleted", "The original application no longer exists."
+            )
+        return dict(saved)
+
+    total = session.query(func.count(BrowserApplyReceipt.id)).filter(
+        BrowserApplyReceipt.user_id == user_id,
+    ).scalar()
+    if total >= MAX_BROWSER_APPLY_RECEIPTS_PER_OWNER:
+        raise BrowserVisitConflict(
+            "receipt_limit_reached", "Application confirmation receipt limit reached."
+        )
+
+    result = record_browser_application(
+        session,
+        user_id=user_id,
+        url=request.url,
+        company=request.company,
+        title=request.title,
+        confirmed=request.confirmed,
+        operation_id=key,
+        now=stamp,
+    )
+    response = result.as_response()
+    session.add(BrowserApplyReceipt(
+        user_id=user_id, request_key=key, payload_hash=digest,
+        response_json=response, created_at=stamp,
+    ))
+    session.flush()
+    return response
