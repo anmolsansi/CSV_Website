@@ -518,3 +518,47 @@ def find_applied_matches(
     }
 
 
+
+
+
+def _browser_definite_applied_matches(
+    db: Session, *, user_id: int, url: str, canonical_url: str, digest: str,
+) -> list[dict]:
+    """Look up original and canonical URL matches without any company scan cap.
+
+    Separate bounded queries prevent a thousand new company roles from hiding
+    an older exact record. Validate both the hash and the canonical URL.
+    """
+    base = db.query(JobTrack).filter(
+        JobTrack.user_id == user_id, JobTrack.applied_at.isnot(None),
+    )
+    definite: list[dict] = []
+    for confidence, reason, predicate in (
+        ("exact", "same_original_url", JobTrack.url == url),
+        (
+            "canonical",
+            "same_canonical_url",
+            and_(
+                JobTrack.canonical_url_hash == digest,
+                JobTrack.canonical_url == canonical_url,
+                JobTrack.url != url,
+            ),
+        ),
+    ):
+        rows = (
+            base.filter(predicate)
+            .order_by(JobTrack.applied_at.desc(), JobTrack.id.desc())
+            .limit(APPLICATION_MATCH_LIMIT)
+            .all()
+        )
+        for item in rows:
+            definite.append({
+                "track_id": item.id,
+                "confidence": confidence,
+                "reason": reason,
+                "company": item.company,
+                "title": item.title,
+                "status": item.status,
+                "applied_at": item.applied_at,
+            })
+    return definite
