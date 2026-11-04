@@ -1277,3 +1277,77 @@ def test_document_backup_metadata_marks_byte_coverage_incomplete(db_session):
         .count()
         == 0
     )
+
+
+# EXT-22: independent optional, checksummed portable browser-visit records.
+def _visit_backup_record():
+    from app.services.job_identity import canonicalize_job_url
+    identity = canonicalize_job_url("https://jobs.example.test/22/role?req=1")
+    return {
+        "backup_ref": str(uuid4()),
+        "canonical_url": identity.canonical_url,
+        "canonical_url_hash": identity.canonical_url_hash,
+        "first_visited_at": "2026-11-04T10:00:00Z",
+    }
+
+
+def test_ext_22_visit_extension_contract_and_legacy_no_history():
+    from app.browser_memory_backup_schemas import build_visit_extension, validate_visit_extension
+    record = _visit_backup_record()
+    extension = build_visit_extension([record])
+    assert extension["schema_revision"] == 1
+    assert validate_visit_extension(extension) == [record]
+    # A v2 document without optional visit extension is still a valid historical document.
+    assert validate_backup_v2(_valid_payload()).version == "2.0"
+    # Strict older base readers must reject unknown metadata, not silently drop visits.
+    with pytest.raises(BackupContractError):
+        validate_backup_v2({**_valid_payload(), "job_visits_v1": extension})
+
+
+@pytest.mark.parametrize("change", [
+    "wrong_version", "incorrect_checksum", "wrong_hash", "duplicate_ref",
+    "duplicate_canonical", "bad_timestamp", "non_utc_timestamp",
+    "bad_uuid", "noncanonical_url", "unexpected_field", "too_many",
+])
+def test_ext_22_visit_extension_rejects_invalid_content(change):
+    from app.browser_memory_backup_schemas import (
+        build_visit_extension, validate_visit_extension, visit_extension_checksum,
+    )
+    extension = build_visit_extension([_visit_backup_record()])
+    record = extension["visits"][0]
+    if change == "wrong_version":
+        extension["schema_revision"] = True
+    elif change == "incorrect_checksum":
+        extension["checksum_sha256"] = "0" * 64
+    elif change == "wrong_hash":
+        record["canonical_url_hash"] = "f" * 64
+    elif change == "duplicate_ref":
+        extension["visits"].append(dict(record))
+    elif change == "duplicate_canonical":
+        extension["visits"].append({**record, "backup_ref": str(uuid4())})
+    elif change == "bad_timestamp":
+        record["first_visited_at"] = "2026-02-30T11:00:00Z"
+    elif change == "non_utc_timestamp":
+        record["first_visited_at"] = "2026-11-04T15:30:00+05:30"
+    elif change == "bad_uuid":
+        record["backup_ref"] = "not-a-uuid"
+    elif change == "noncanonical_url":
+        record["canonical_url"] += "&utm_campaign=hidden"
+    elif change == "unexpected_field":
+        record["user_id"] = 1
+    elif change == "too_many":
+        extension["visits"] *= 10_001
+    if change != "incorrect_checksum":
+        unsigned = {key: value for key, value in extension.items() if key != "checksum_sha256"}
+        extension["checksum_sha256"] = visit_extension_checksum(unsigned)
+    with pytest.raises(BackupContractError):
+        validate_visit_extension(extension)
+
+
+def test_ext_22_receipts_are_explicitly_excluded_in_inventory():
+    exported = MODEL_FIELD_INVENTORY["JobVisit"]
+    receipts = MODEL_FIELD_INVENTORY["BrowserApplyReceipt"]
+    assert {key for key, value in exported.items() if value.disposition == "exported"} == {
+        "canonical_url", "canonical_url_hash", "first_visited_at",
+    }
+    assert all(field.disposition == "excluded" for field in receipts.values())

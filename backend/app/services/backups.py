@@ -2351,9 +2351,9 @@ def _sha256_path(path) -> str:
 @snapshot_export
 def export_backup_bundle(db: Session, user_id: int) -> bytes:
     """Return a bounded ZIP containing v2 metadata plus every ready document byte."""
-    from .import_backups import export_backup_v2_with_import_mappings
+    from .browser_memory_backup import export_backup_v2_with_browser_visits
 
-    backup = export_backup_v2_with_import_mappings(db, user_id)
+    backup = export_backup_v2_with_browser_visits(db, user_id)
     backup_bytes = json.dumps(
         backup,
         ensure_ascii=False,
@@ -2501,10 +2501,15 @@ def _validate_bundle_zip(raw: bytes) -> tuple[BackupDocumentV2, dict[str, Staged
                 raise _bundle_error("unsupported_backup_version", "Document bundles require backup v2.")
             from .contact_backups import F8_BACKUP_KEY
             from .import_backups import F9_BACKUP_KEY, F10_BACKUP_KEY
+            from ..browser_memory_backup_schemas import VISIT_BACKUP_KEY, validate_visit_extension
+            # Reject malformed optional visit metadata before extracting or
+            # publishing any uploaded document members.
+            if VISIT_BACKUP_KEY in payload:
+                validate_visit_extension(payload[VISIT_BACKUP_KEY])
 
             document = validate_backup_v2({
                 key: value for key, value in payload.items()
-                if key not in {F8_BACKUP_KEY, F9_BACKUP_KEY, F10_BACKUP_KEY}
+                if key not in {F8_BACKUP_KEY, F9_BACKUP_KEY, F10_BACKUP_KEY, VISIT_BACKUP_KEY}
             })
 
             manifest_raw = archive.read("manifest.json")
@@ -2863,7 +2868,7 @@ def _restore_document_bundle_records(
 
 def restore_backup_bundle(db: Session, user_id: int, raw: bytes, mode: str) -> dict[str, Any]:
     """Restore the complete graph and files under one owned transaction."""
-    from .import_backups import restore_backup_payload_with_import_mappings
+    from .browser_memory_backup import restore_backup_payload_with_browser_visits
 
     if mode not in {RESTORE_MODE_MERGE, RESTORE_MODE_VERIFY}:
         raise _bundle_error("invalid_restore_mode", "Unsupported restore mode.")
@@ -2879,14 +2884,14 @@ def restore_backup_bundle(db: Session, user_id: int, raw: bytes, mode: str) -> d
                                     status_code=409)
             # Validate every extension and replay identity before creating core
             # records or publishing files, while holding the account lock.
-            result = restore_backup_payload_with_import_mappings(
+            result = restore_backup_payload_with_browser_visits(
                 session, user_id, metadata, RESTORE_MODE_VERIFY,
             )
             if mode == RESTORE_MODE_VERIFY:
                 result["counts"].update(preflight)
             else:
                 core = _restore_v2_transaction(session, user_id, document)
-                result = restore_backup_payload_with_import_mappings(
+                result = restore_backup_payload_with_browser_visits(
                     session, user_id, metadata, mode,
                     _base_result={"backup_id": document.backup_id, "mode": mode,
                                   **core, "verified": True},

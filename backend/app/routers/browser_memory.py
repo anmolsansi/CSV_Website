@@ -88,6 +88,9 @@ async def check_browser_memory(
     """Read the authenticated owner's independent memory facts, never write."""
     response.headers["Cache-Control"] = "no-store"
     try:
+        # The shared, committed counter includes malformed authenticated checks.
+        # It must not be rolled back with the read-only request transaction.
+        _count_or_reject(db, user_id=user.id, action="check")
         raw = await request.body()
         # The extension protocol has an 8 KiB transport envelope.
         if len(raw) > 8192:
@@ -105,15 +108,16 @@ async def check_browser_memory(
             title=parsed.title,
         )
     except BrowserMemoryValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
+        raise _safe_error(exc.status_code, exc.code, exc.message, field=exc.field) from exc
+    except BrowserVisitConflict as exc:
+        raise _safe_error(exc.status_code, exc.code, exc.message) from exc
+    except HTTPException:
+        raise
     except SQLAlchemyError as exc:
         # Never include SQL parameter values or private URL metadata in logs.
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "browser_memory_unavailable",
-                "message": "Browser memory is temporarily unavailable.",
-            },
+        raise _safe_error(
+            503, "browser_memory_unavailable",
+            "Browser memory is temporarily unavailable.",
         ) from exc
     return BrowserMemoryCheckOut(
         protocol_version=1,
@@ -123,8 +127,8 @@ async def check_browser_memory(
     )
 
 
-# EXT-19: writes are enabled only through the existing authenticated proxy.
-# The pending EXT-21 adversarial/cross-process acceptance remains a release gate.
+# Browser-memory writes are guarded by exact frontend origin, fixed protocol
+# header and the cookie-owner account expectation. Session cookies stay server-only.
 def _safe_error(status: int, code: str, message: str, *, field: str | None = None,
                 retry_after: int | None = None) -> HTTPException:
     detail = {"code": code, "message": message}
@@ -140,12 +144,17 @@ def _browser_write_guard(request: Request, *, account_id: int) -> None:
     """Never trust a page-supplied account as authority or accept an arbitrary Origin."""
     expected = urlsplit(settings.FRONTEND_URL)
     allowed_origin = f"{expected.scheme}://{expected.netloc}"
+    # Duplicate trust headers must never be interpreted differently by a
+    # reverse proxy and the application. Reject them instead of picking one.
+    origins = request.headers.getlist("origin")
+    browser_headers = request.headers.getlist("x-jobgrid-browser")
     if (
-        request.headers.get("origin") != allowed_origin
-        or request.headers.get("x-jobgrid-browser") != "1"
+        len(origins) != 1 or origins[0] != allowed_origin
+        or len(browser_headers) != 1 or browser_headers[0] != "1"
     ):
         raise _safe_error(403, "origin_not_allowed", "Browser write origin not allowed.")
-    asserted = request.headers.get("x-jobgrid-account-id")
+    account_headers = request.headers.getlist("x-jobgrid-account-id")
+    asserted = account_headers[0] if len(account_headers) == 1 else None
     if asserted is None or not asserted.isascii() or not asserted.isdecimal():
         raise _safe_error(
             422, "invalid_browser_memory_payload",

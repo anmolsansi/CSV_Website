@@ -585,10 +585,11 @@ def count_browser_memory_attempt(
     retry_after = max(1, int(
         (start + timedelta(seconds=seconds) - moment).total_seconds() + 0.999
     ))
-    bind = db.get_bind()
-    engine = getattr(bind, "engine", bind)
-    limiter = Session(bind=engine, autoflush=False, expire_on_commit=False)
+    limiter = None
     try:
+        bind = db.get_bind()
+        engine = getattr(bind, "engine", bind)
+        limiter = Session(bind=engine, autoflush=False, expire_on_commit=False)
         with limiter.begin():
             owner = limiter.query(User).filter_by(id=user_id).with_for_update().one_or_none()
             if owner is None:
@@ -624,4 +625,5 @@ def count_browser_memory_attempt(
             "browser_memory_unavailable", "Browser memory is temporarily unavailable."
         ) from exc
     finally:
-        limiter.close()
+        if limiter is not None:
+            limiter.close()
