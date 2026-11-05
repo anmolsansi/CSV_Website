@@ -446,6 +446,10 @@ def test_ext_45_case_03_http_diagnostics_hide_payload_and_cookie_on_database_fai
         "url": "https://jobs.example.test/ext45-private-path?req=ext45-private-query",
         "company": "EXT45 Private Company", "title": "EXT45 Private Title",
     }
+    # PostgreSQL startup runs Alembic fileConfig, which replaces pytest handlers.
+    import logging
+    logging.getLogger().addHandler(caplog.handler)
+    monkeypatch.setattr(logging.getLogger("httpx"), "disabled", False)
     caplog.clear()
     with caplog.at_level("INFO"):
         success = client.post("/crm/browser-memory/check", json=payload)
