@@ -98,7 +98,7 @@ On a supported, opted-in top-level navigation the development worker waits
 500 ms, validates the URL and selected account, extracts public candidates
 and sends one authenticated /check through the existing isolated JobGrid
 tab bridge. It retains the complete pre-write result before attempting
-/visit. Existing visits are not written again. A failed/ambiguous visit is
+/visit. The idempotent visit endpoint safely replays existing visits without resetting their first timestamp; an earlier CSV click alone does not prove a durable external visit. A failed/ambiguous visit is
 reported as save_unknown, **never** as successfully saved. The original
 visited/applied/company match warning is preserved for future UI rendering.
 Stale tab, revoked permission, disconnected account and failed checks cause
