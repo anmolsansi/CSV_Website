@@ -10576,7 +10576,7 @@ Document ID: `EXT-47`; title: **Package a reproducible unpacked pilot artifact**
 
 #### EXT-48 — Accept deployed Chrome pilot and data-preserving rollback
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** PARTIAL — local PostgreSQL backup/restore and compatible-code rollback passed; deployed OAuth/active pilot/48-hour observation BLOCKED.\
 **Priority:** P0\
 **Type:** External acceptance\
 **Execution position:** 48/50; band 10/10 — Delivery and handover; group step 3/5.
@@ -10730,15 +10730,15 @@ Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for 
 
 Document ID: `EXT-48`; title: **Accept deployed Chrome pilot and data-preserving rollback**; parent: one Chrome job/company memory main issue; band 10: Delivery and handover; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
-Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+**Evidence (2026-11-05):** Branch `feat/ext-48-50-release-acceptance-handoff`, tracking issue #184. Main candidate `569835c`; previous compatible code `0c42e99`. Local PostgreSQL 16/Python 3.12.12 UTC rehearsal used separate previous/current processes and kept six nonempty source table content hashes unchanged at schema 019. A complete ZIP restored and replayed into a second disposable account; original visit/applied times and synthetic PDF SHA-256 matched, with no imported apply receipts. Focused recovery suite: 67 passed. Vercel metadata records READY frontend deployment `dpl_7wVcNEdGQE74XYXDDQQkJB3LsNWu` at source `569835c`; public health/session requests timed out without response, so no deployed OAuth or backend version acceptance is claimed. Current ZIP remains inactive. Isolated deployed target/operator/two controlled OAuth identities, actual cloud recovery and 48h observation are not provided/completed. Exact walkthrough, observation record, hashes, source/CI links and ownership requirements are in the current-system guide. The remaining acceptance criteria and overall roadmap checkbox stay unchecked.
 
-**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION EXECUTED FOR INDEPENDENT LOCAL/DOCUMENTATION SCOPE. External acceptance is BLOCKED by the specific dependencies above; do not mark the task accepted from prepared documents, an inactive package, local dev-login or CI.
 
 <a id="ext-49"></a>
 
 #### EXT-49 — Prepare privacy disclosures and Chrome store submission inputs
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** DRAFT PREPARED — source-grounded privacy, exact permissions and listing packet committed; publisher/store ID/public URLs and active-candidate approval BLOCKED.\
 **Priority:** P1\
 **Type:** Release preparation\
 **Execution position:** 49/50; band 10/10 — Delivery and handover; group step 4/5.
@@ -10890,15 +10890,15 @@ Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for 
 
 Document ID: `EXT-49`; title: **Prepare privacy disclosures and Chrome store submission inputs**; parent: one Chrome job/company memory main issue; band 10: Delivery and handover; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
-Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+**Evidence (2026-11-05):** Branch `feat/ext-48-50-release-acceptance-handoff`, tracking issue #184. Draft `docs/CHROME_EXTENSION_PRIVACY.md` distinguishes inactive release from development behavior, explains public URL/title/company/account handling, exact permissions/origins, quota/session storage, uninstall/forget/backup limitations and missing operator retention/access commitments. `extension/README.md` holds listing/package/install/remove/support review inputs, exact version 0.1.0 and SHA-256 `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1`. Existing Node suite: 70 passed; package rebuilt with two-file allowlist and same checksum. Official Chrome privacy/listing guidance compared. Publisher, stable store ID, approved reachable public privacy/support locations and accepted active artifact are absent; no placeholder identity, store upload or approval is invented. Exact walkthrough, observation record, hashes, source/CI links and ownership requirements are in the current-system guide. The remaining acceptance criteria and overall roadmap checkbox stay unchecked.
 
-**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION EXECUTED FOR INDEPENDENT LOCAL/DOCUMENTATION SCOPE. External acceptance is BLOCKED by the specific dependencies above; do not mark the task accepted from prepared documents, an inactive package, local dev-login or CI.
 
 <a id="ext-50"></a>
 
 #### EXT-50 — Review final feature evidence and hand over the release candidate
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** AUDIT/HANDOFF PREPARED — all 50 source records mapped; final release acceptance BLOCKED by EXT-48/49 and inherited manual gates.\
 **Priority:** P0\
 **Type:** Final review\
 **Execution position:** 50/50; band 10/10 — Delivery and handover; group step 5/5.
@@ -11053,6 +11053,6 @@ Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for 
 
 Document ID: `EXT-50`; title: **Review final feature evidence and hand over the release candidate**; parent: one Chrome job/company memory main issue; band 10: Delivery and handover; priority P0; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
-Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+**Evidence (2026-11-05):** Branch `feat/ext-48-50-release-acceptance-handoff`, tracking issue #184. `docs/JOBGRID_BUILD_GUIDE.md` now maps every EXT-01–50 contract to actual merged PR #185–197/source revision or this continuation, collects local/CI/deployment/rollback evidence and assigns missing operator/distribution responsibilities. `docs/repo_context.md` and extension overview no longer describe implemented development features as future work. Main `569835c` CI/SQLite/timezone workflows were verified successful. This continuation is docs/review/local evidence only; its own head CI is recorded in its PR/#184. Deployed pilot, 48h observation, actual permission/suspension/screen-reader/OAuth and publisher/public-link acceptance remain unresolved; no final no-critical/high-finding or release-ready sign-off is issued. Exact walkthrough, observation record, hashes, source/CI links and ownership requirements are in the current-system guide. The remaining acceptance criteria and overall roadmap checkbox stay unchecked.
 
-**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION EXECUTED FOR INDEPENDENT LOCAL/DOCUMENTATION SCOPE. External acceptance is BLOCKED by the specific dependencies above; do not mark the task accepted from prepared documents, an inactive package, local dev-login or CI.
