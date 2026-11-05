@@ -23,6 +23,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 let connection = null
 let generation = 0
 let paused = false
+const pausedReady = chrome.storage.session.get
+  ? chrome.storage.session.get('jobgridPaused').then(record => {
+    paused = record?.jobgridPaused === true
+  }).catch(() => { paused = true }) : Promise.resolve()
 const SESSION_DEBOUNCE_MS = 5000
 
 const plain = value => value !== null && typeof value === 'object' &&
@@ -104,6 +108,7 @@ function validMessage(message) {
 }
 
 async function lifecycleStatus() {
+  await pausedReady
   return { ok: true, data: {
     protocol_version: VERSION, connected: connection !== null, paused,
     ...(connection ? { account_id: connection.accountId,
@@ -112,6 +117,7 @@ async function lifecycleStatus() {
 }
 
 async function setPaused(next) {
+  await pausedReady
   const selected = connection
   if (!selected) return error('not_connected', 'Connect JobGrid first')
   if (!next) {
@@ -200,6 +206,7 @@ async function injectBridge(tabId) {
 }
 
 async function connect(tabId) {
+  await pausedReady
   const epoch = ++generation
   connection = null
   clearObservationTimers()
