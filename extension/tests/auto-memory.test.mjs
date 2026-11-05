@@ -91,7 +91,9 @@ export function createWorker() {
               ? { protocol_version: 1, account_id: activeAccount, checked_at: '2026-11-04T00:00:00Z',
                 visit: { visited: behavior.alreadyVisited, first_visited_at: behavior.alreadyVisited ? '2026-11-03T00:00:00Z' : null }, matches: [],
                 company_history_count: 0, company_known: false, lookup_complete: true }
-              : { protocol_version: 1, account_id: activeAccount, created: true,
+              : message.kind === 'forget_visits'
+                ? { protocol_version: 1, account_id: activeAccount, deleted: 3 }
+                : { protocol_version: 1, account_id: activeAccount, created: true,
                 first_visited_at: '2026-11-04T00:00:01Z' },
         }
       },
