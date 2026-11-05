@@ -4370,8 +4370,10 @@ change a production service or close a gate without observing it.
 | Documented backend | `https://jobgrid-api.onrender.com`; current deployed source not verified in this acceptance |
 | Isolated deployed database/object store | NOT SELECTED / NOT VERIFIED; do not use the production database for a rehearsal |
 | Operator and two controlled OAuth identities | NOT PROVIDED; do not substitute a personal session or dev login for live OAuth proof |
-| Render access | Workspace identification requires user confirmation; no workspace or provider setting has been changed |
+| Render access | User confirmed Anmol’s workspace on 2026-11-05; read-only inventory found no JobGrid service, and the recorded service ID returned 404. No provider setting changed |
 | Earlier release prerequisites | C-09/C-10 controlled accounts, complete recovery and provider acceptance remain open in their owning records |
+
+**Confirmed Render inspection:** workspace `tea-d7so32sm0tmc73dc3cp0` was explicitly authorized by the user. Listing all services including previews returned no service for `anmolsansi/CSV_Website`. A scoped lookup of historical JobGrid service `srv-dalu7u3l550s73ch5lu0` returned 404. This establishes an access/resource gap in this workspace, not proof that no deployment exists anywhere. The user confirmed that the isolated pilot target and OAuth accounts remain pending. No replacement service, new database, paid resource or production activation was created.
 
 A READY frontend deployment says nothing about backend version, database
 isolation, OAuth success or the contents of the installed extension. Record
