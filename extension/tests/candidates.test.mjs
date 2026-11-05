@@ -33,9 +33,11 @@ function setup(url, nodes = {}, { subframe = false } = {}) {
   return { send, queries, installed: () => !!listener }
 }
 
-const node = (text, { forbidden = false } = {}) => ({
+const node = (text, { forbidden = false, containsForm = false, hidden = false } = {}) => ({
   innerText: text, textContent: text,
   closest: () => forbidden ? {} : null,
+  querySelector: () => containsForm ? {} : null,
+  getClientRects: () => hidden ? [] : [{}],
 })
 
 test('EXT-29 extracts only editable, bounded public Greenhouse and Lever heading candidates', () => {
@@ -93,4 +95,17 @@ test('EXT-29 accepts only the internal four-field extraction envelope', () => {
     assert.equal(page.send(candidate).ok, false)
   }
   assert.equal(page.queries.length, 0)
+})
+
+
+test('EXT-29 ignores visually hidden headings and headings containing private form controls', () => {
+  const page = setup(gh, {
+    '[data-testid="job-title"]': node('Input value', { containsForm: true }),
+    '.app-title': node('Hidden fake title', { hidden: true }),
+    h1: node('Visible public job title'),
+    '[data-testid="company-name"]': node('Private employer', { forbidden: true }),
+  })
+  const result = page.send()
+  assert.equal(result.title, 'Visible public job title')
+  assert.equal(result.company, null)
 })
