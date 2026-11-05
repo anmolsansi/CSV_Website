@@ -21,8 +21,11 @@ const RELEASE_HOSTS = [...ATS_HOSTS.map(host => 'https://' + host + '/*'), APP_O
 const FORBIDDEN = /localhost|127\.0\.0\.1|manifest\.dev\.json|popup\.dev\.html|(?:-----BEGIN [^-]*PRIVATE KEY-----)|(?:gh[pousr]_[A-Za-z0-9]{20,})|(?:sk-[A-Za-z0-9]{20,})|(?:Bearer\s+[A-Za-z0-9._-]{12,})/i
 
 function assertReleaseManifest(manifest) {
+  const version = typeof manifest?.version === 'string' ? manifest.version.split('.') : []
   if (!manifest || manifest.manifest_version !== 3 ||
-      !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(manifest.version || '') ||
+      version.length !== 3 ||
+      !version.every(part => /^(0|[1-9][0-9]*)$/.test(part) && Number(part) <= 65535) ||
+      !version.some(part => Number(part) > 0) ||
       manifest.action?.default_popup !== 'popup.html' ||
       !Array.isArray(manifest.permissions) ||
       JSON.stringify(manifest.permissions) !== JSON.stringify(RELEASE_PERMISSIONS) ||

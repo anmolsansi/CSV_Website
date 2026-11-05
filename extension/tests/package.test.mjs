@@ -106,3 +106,23 @@ test('EXT-47 rejects symlinked runtime members outside its source directory', as
     /regular local file/,
   )
 })
+
+
+test('EXT-47 enforces Chrome version limits before creating output', async t => {
+  const folder = await temp(t)
+  const source = await sourceCopy(folder)
+  const manifestPath = path.join(source, 'manifest.json')
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'))
+  for (const version of ['0.0.0', '01.2.3', '1.02.3', '65536.0.1', '1.2.999999', '1.2.3/unsafe']) {
+    await fs.writeFile(manifestPath, JSON.stringify({ ...manifest, version }))
+    const outputDir = path.join(folder, 'rejected')
+    await assert.rejects(() => buildPilot({ sourceDir: source, outputDir }), /permission contract/)
+    await assert.rejects(fs.access(outputDir), { code: 'ENOENT' })
+  }
+  for (const version of ['0.0.1', '65535.65535.65535']) {
+    await fs.writeFile(manifestPath, JSON.stringify({ ...manifest, version }))
+    const result = await buildPilot({ sourceDir: source, outputDir: path.join(folder, 'valid') })
+    assert.equal(result.version, version)
+    assert.equal(result.name, 'jobgrid-pilot-v' + version + '.zip')
+  }
+})
