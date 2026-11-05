@@ -323,7 +323,7 @@ test('EXT-41 local API: first visit is not previous; explicit apply is durable a
     expect(canonical.matches[0].applied_at).toBe(applied.matches[0].applied_at)
     const rows = await app.evaluate(async () =>
       (await fetch('/api/rows?page_size=100', { credentials: 'same-origin' })).json())
-    const ownedRow = rows.rows.find((row: any) => row.url === url)
+    const ownedRow = rows.rows.find((row: any) => row.data?.url === url)
     expect(ownedRow?.id).toBeGreaterThan(0)
     const deleted = await app.evaluate(async rowId => {
       const response = await fetch('/api/rows', {
