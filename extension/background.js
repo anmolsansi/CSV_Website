@@ -532,6 +532,41 @@ const tabWarnings = new Map()
 let warningWrites = Promise.resolve()
 const MAX_TAB_WARNINGS = 40
 
+// Only trusted session storage holds unsent apply intent. This never queues a
+// write automatically, and reconnect/disconnect discards every prior intent.
+const PENDING_STORAGE_KEY = 'jobgridPendingApply'
+const MAX_PENDING_APPLY = 20
+const PENDING_APPLY_TTL_MS = 15 * 60 * 1000
+const pendingByTab = new Map()
+let pendingWrites = Promise.resolve()
+
+function purgeExpiredPending() {
+  const now = Date.now()
+  for (const [tabId, item] of pendingByTab) {
+    if (item.created_at > now || now - item.created_at > PENDING_APPLY_TTL_MS) {
+      pendingByTab.delete(tabId)
+    }
+  }
+}
+function flushPending() {
+  const write = pendingWrites.then(async () => {
+    await chrome.storage.session.set({
+      [PENDING_STORAGE_KEY]: Object.fromEntries(pendingByTab),
+    })
+  })
+  pendingWrites = write.catch(() => {})
+  return write
+}
+async function clearAllPending() {
+  pendingByTab.clear()
+  await pendingWrites
+  await chrome.storage.session.remove(PENDING_STORAGE_KEY)
+}
+function dropPendingTab(tabId) {
+  if (pendingByTab.delete(tabId)) void flushPending().catch(() => {})
+}
+
+
 function validCheckFacts(data) {
   return plain(data) && plain(data.visit) &&
     typeof data.visit.visited === 'boolean' &&
