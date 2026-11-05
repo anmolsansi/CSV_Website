@@ -327,12 +327,17 @@ def test_ext_15_alias_title_is_possible_only_and_shared_ats_host_is_not_company(
 
 # EXT-45 performance acceptance is an isolated, synthetic database test. It does
 # not time a cold Chrome worker or stand in for live OAuth/permission acceptance.
-def test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits(db_session, caplog):
+def test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits(db_session, client, caplog):
     import math
     import time
     from sqlalchemy import func, inspect, text
 
-    owner, other = _owner(db_session), _owner(db_session)
+    login = client.post("/auth/dev-login", json={
+        "email": f"ext45-{uuid4().hex}@example.test",
+    })
+    assert login.status_code == 200
+    owner = db_session.get(User, login.json()["id"])
+    other = _owner(db_session)
     original = "https://jobs.example.test/openings/ext45-old?req=old&utm_source=first"
     old = _applied(db_session, owner, original, status="withdrawn",
                    when=datetime(2024, 1, 2, 9, 0, 0))
@@ -380,10 +385,14 @@ def test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits(db_session, capl
     assert any("index" in " ".join(map(str, row)).lower() for row in plan)
 
     def check():
-        return read_browser_memory_facts(
-            db_session, user_id=owner.id, url=original,
-            company="Acme Corp", title="Backend Engineer",
-        )
+        response = client.post("/crm/browser-memory/check", json={
+            "url": original, "company": "Acme Corp", "title": "Backend Engineer",
+        })
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        body = response.json()
+        assert body["account_id"] == owner.id
+        return body
 
     with caplog.at_level("INFO"):
         cold_start = time.perf_counter()
@@ -411,7 +420,7 @@ def test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits(db_session, capl
     assert p95_ms <= 2000, f"EXT-45 warm p95 exceeds 2s: {p95_ms:.1f}ms"
     # Only aggregate/sanitized fields: never print URLs, account labels or SQL.
     print(f"EXT-45 benchmark action=check outcome=ok "
-          f"dialect={dialect} visits=10000 samples=30 "
+          f"transport=testclient dialect={dialect} visits=10000 samples=30 "
           f"cold_ms={cold_ms} warm_p95_ms={p95_ms:.1f} "
           f"query_plan=index")
     # Neither the real lookup nor its diagnostics may write private payload

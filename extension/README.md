@@ -280,8 +280,9 @@ ticket's defined stop/architect-decision process before runtime changes.
 The isolated benchmark in backend/tests/test_browser_memory_matches.py seeds
 10,000 synthetic owner-specific visits, 521 applied company rows and a second
 account. It verifies the owner/hash unique index and the disposable database
-query plan, then times 30 warm read-only lookups. The first cold lookup is
-recorded separately. Nearest-rank warm p95 must be no greater than 2,000 ms;
+query plan, then times 30 authenticated HTTP checks through FastAPI TestClient,
+including validation, owner resolution, rate counting and serialization. The first
+HTTP check is recorded separately; it is not a process or database cold start. Nearest-rank warm p95 must be no greater than 2,000 ms;
 matches must be bounded to 20, old definite URLs must survive the dense
 possible-match scan, and foreign visits must stay hidden.
 
