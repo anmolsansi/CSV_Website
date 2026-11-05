@@ -807,10 +807,16 @@ async function stagePendingApply(tabId, company, title) {
   const same = existing && existing.account_id === selected.accountId &&
     existing.url === checked.url && existing.company === normalizedCompany &&
     existing.title === normalizedTitle
+  const unresolved = await readUnresolvedApply()
+  const recover = unresolved && unresolved.account_id === selected.accountId &&
+    unresolved.url === checked.url && unresolved.company === normalizedCompany &&
+    unresolved.title === normalizedTitle
+  if (unresolved && !recover) await clearUnresolvedApply()
   const next = same ? existing : {
     account_id: selected.accountId, tab_id: tabId, url: checked.url,
     company: normalizedCompany, title: normalizedTitle,
-    idempotency_key: crypto.randomUUID(), created_at: Date.now(),
+    idempotency_key: recover ? unresolved.idempotency_key : crypto.randomUUID(),
+    created_at: Date.now(),
   }
   pendingByTab.set(tabId, next)
   await flushPending()
