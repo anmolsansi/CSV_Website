@@ -156,3 +156,35 @@ answers and accurate data-use disclosures. Its [User Data FAQ](https://developer
 includes local processing in data handling and describes collection/use/sharing
 and access/deletion/retention disclosures. These sources guide review; they do
 not approve this draft or establish private operator practices.
+
+## Recorded disclosure review (EXT-49.04)
+
+Review scope: release `manifest.json`/`popup.html`, package allowlist/negative tests,
+public configuration, development bridge/worker/storage contracts and the
+composed backup/forget implementation at main `569835c`.
+
+| Check | Result and limit |
+|---|---|
+| Release functionality versus statements | PASS for draft accuracy: inactive shell explicitly identified; no active check/apply claim |
+| Exact permission/host enumeration | PASS: three named permissions and four exact optional HTTPS origins; localhost remains development-only |
+| Local/session/private data distinction | PASS for source description; operator access, processors and retention still need approval |
+| Forget, uninstall and older-backup behavior | PASS for source description; uninstall is not server erasure and restore may reintroduce visits |
+| No form/cookie/history-import claim | Matches the extension boundaries and tests; existing app-cookie attachment is explicitly distinguished from cookie capture |
+| Public privacy/support link resolution | BLOCKED: approved locations have not been supplied; no dummy endpoints were tested as real |
+| Publisher/stable store identity | BLOCKED: not supplied; unpacked path-derived IDs are not substituted |
+| Minimal functional package/permission necessity | BLOCKED FOR SUBMISSION: current shell does not use its declared required capabilities; active candidate/review required |
+| Remote executable code | None in the release artifact; it contains no script at all. Development executable code is packaged locally, not remotely loaded |
+| Package contents | Explicit two-file allowlist, deterministic checksum and independent ZIP decoder/negative tests; no profile/key/private history inputs |
+| Listing, screenshots and public-policy approval | DRAFT / NOT ACCEPTED; owner must approve the exact functioning candidate and public disclosures |
+
+Chrome's [listing guidance](https://developer.chrome.com/docs/webstore/cws-dashboard-listing)
+identifies a store icon and at least one screenshot among the listing inputs.
+No image of an unshipped active feature is presented as the current artifact.
+Review those assets against the accepted candidate before preparing a store
+upload. No store action was performed during this review.
+
+The operator should not tick data-use certification boxes merely because this
+source audit passed. The selected public policy, actual deployment practices,
+minimal permissions, displayed feature claims and exact uploaded package must
+agree. Missing external proof keeps EXT-49 acceptance open even though its
+review documents have been prepared.
