@@ -14,6 +14,11 @@
     .muted { opacity: .8; }
     button { margin: 4px 4px 4px 0; padding: 7px 10px; min-height: 34px; cursor: pointer; }
     button:disabled { cursor: default; opacity: .5; }
+    [hidden] { display: none !important; }
+    input[type="text"] { width: 100%; box-sizing: border-box; padding: 7px; margin: 3px 0 10px; }
+    label { display: block; margin-top: 8px; }
+    #apply-url { overflow-wrap: anywhere; }
+
     section { border-top: 1px solid currentColor; padding-top: 10px; margin-top: 12px; }
     ul { padding-left: 20px; max-height: 125px; overflow-y: auto; }
     li { overflow-wrap: anywhere; margin: 4px 0; }
@@ -40,6 +45,27 @@
         <p id="result-save" class="muted"></p>
         <p id="result-lookup" class="muted"></p>
         <ul id="matches" aria-label="Matching applications"></ul>
+      </div>
+    </section>
+    <section id="apply-section" aria-labelledby="apply-heading" hidden>
+      <h2 id="apply-heading">Record an application</h2>
+      <p class="muted">Records an application in JobGrid. It never submits a form to the job site.</p>
+      <p id="apply-account"></p>
+      <p id="apply-url"></p>
+      <form id="draft-form">
+        <label for="apply-company">Employer</label>
+        <input id="apply-company" name="company" type="text" maxlength="320" required autocomplete="organization">
+        <label for="apply-title">Job title</label>
+        <input id="apply-title" name="title" type="text" maxlength="500" required autocomplete="off">
+        <p id="draft-error" role="status" aria-live="polite"></p>
+        <button id="stage" type="submit">Review application details</button>
+      </form>
+      <div id="approval" hidden>
+        <label for="confirm-apply">
+          <input type="checkbox" id="confirm-apply">
+          I confirm the JobGrid account, public URL, employer and role shown above.
+        </label>
+        <button id="submit-apply" type="button" disabled>Save application in JobGrid</button>
       </div>
     </section>
   </main>
