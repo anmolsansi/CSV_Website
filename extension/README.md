@@ -292,8 +292,11 @@ Run the benchmark in a disposable backend with project requirements installed:
 
 PostgreSQL is also exercised by CI. Inspect the aggregate EXT-45 benchmark
 line in actual test output for backend dialect, 10,000 visits, 30 samples,
-separate cold time, measured warm p95 and index-plan result. No timing or
-Chrome version is claimed without actual evidence. The extension worker's
+separate cold time, measured warm p95 and index-plan result. Recorded CI evidence on 2026-11-05 (PostgreSQL on Ubuntu, Python 3.12):
+10,000 visits, 30 warm samples, measured warm p95 **14.0 ms**,
+separate cold lookup **21.6 ms**, query plan **index**.
+Source: https://github.com/anmolsansi/CSV_Website/actions/runs/41991907712 .
+No Chrome cold-start timing is inferred from this backend run. The extension worker's
 8-second timeout is separate from backend warm latency. Diagnostics may
 report action, outcome, count and rounded durations, but must never expose
 raw URLs/query strings, cookies, account labels, private company/title
