@@ -9,6 +9,7 @@ const COMMAND = 'ext26:command'
 const DISCONNECT = 'ext26:disconnect'
 const SITE_OPT = 'ext30:site-opt-in'
 const SITE_STATUS = 'ext30:site-status'
+const TAB_STATUS = 'ext32:tab-status'
 const MAX_BYTES = 8192
 const TIMEOUT_MS = 8000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -77,6 +78,8 @@ function validMessage(message) {
     Object.hasOwn(ATS_ORIGINS, message.host) && typeof message.enabled === 'boolean'
   if (message.type === SITE_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'host']) && Object.hasOwn(ATS_ORIGINS, message.host)
+  if (message.type === TAB_STATUS) return keysOnly(message,
+    ['type', 'version', 'request_id', 'tab_id']) && validId(message.tab_id)
   if (message.type === COMMAND) return keysOnly(message,
     ['type', 'version', 'request_id', 'kind', 'payload']) &&
     validCommand(message)
@@ -87,7 +90,8 @@ async function clearConnection() {
   generation++
   connection = null
   clearObservationTimers()
-  await chrome.storage.session.remove('jobgridConnection')
+  await warningWrites
+  await chrome.storage.session.remove(['jobgridConnection', 'jobgridTabChecks'])
 }
 
 async function bridge(tabId, kind, payload = {}, accountId, documentId = null) {
@@ -145,6 +149,8 @@ async function connect(tabId) {
   const epoch = ++generation
   connection = null
   clearObservationTimers()
+  await warningWrites
+  await chrome.storage.session.remove('jobgridTabChecks')
   const tab = await checkedTab(tabId)
   if (!tab) return unavailable()
   const injected = await injectBridge(tabId)
@@ -213,6 +219,7 @@ async function dispatch(kind, payload) {
 
 chrome.tabs.onRemoved?.addListener(tabId => {
   cancelObservation(tabId)
+  void flushWarnings().catch(() => {})
   if (connection?.tabId === tabId) void clearConnection()
 })
 chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
@@ -224,7 +231,7 @@ chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS].includes(message?.type)) return false
+  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS].includes(message?.type)) return false
   const requestId = validUUID(message?.request_id) ? message.request_id : null
   if (!popupSender(sender) || !validMessage(message) && message.type !== PROBE) {
     sendResponse(answer(requestId, error('forbidden_sender', 'Unsupported request')))
@@ -244,6 +251,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === CONNECT) return connect(message.tab_id)
     if (message.type === SITE_OPT) return changeSiteOptIn(message.host, message.enabled)
     if (message.type === SITE_STATUS) return readSiteStatus(message.host)
+    if (message.type === TAB_STATUS) return readTabStatus(message.tab_id)
     if (message.type === DISCONNECT) {
       await clearConnection()
       return { ok: true, data: { protocol_version: VERSION, disconnected: true } }
@@ -383,12 +391,14 @@ function cancelObservation(tabId) {
   observationTimers.delete(tabId)
   observedUrls.delete(tabId)
   checkedPages.delete(tabId)
+  tabWarnings.delete(tabId)
 }
 
 function clearObservationTimers() {
   for (const tabId of observationTimers.keys()) cancelObservation(tabId)
   observedUrls.clear()
   checkedPages.clear()
+  tabWarnings.clear()
 }
 
 async function observationStillAllowed(tabId, url, selected) {
@@ -432,11 +442,26 @@ async function runNavigationCheck(tabId, url, selected) {
   if (!candidates || !await observationStillAllowed(tabId, url, selected)) return
   const result = await dispatch('check', { url, ...candidates })
   if (!result.ok || !connection || connection !== selected ||
-      !await observationStillAllowed(tabId, url, selected)) return
+      !await observationStillAllowed(tabId, url, selected) ||
+      !validCheckFacts(result.data)) return
   // Keep the response before any future visit write. EXT-32 persists and
   // uses this immutable pre-write warning snapshot.
-  checkedPages.set(tabId, { url, accountId: selected.accountId,
-    beforeVisit: result.data })
+  const beforeVisit = result.data
+  checkedPages.set(tabId, { url, accountId: selected.accountId, beforeVisit })
+  // Persist the check evidence before any write. A failed session-storage write
+  // aborts the visit, rather than making the warning impossible to recover.
+  await recordTabWarning(tabId, url, selected, beforeVisit, 'checked')
+  if (!await observationStillAllowed(tabId, url, selected)) return
+  if (beforeVisit.visit.visited === true) {
+    await recordTabWarning(tabId, url, selected, beforeVisit, 'already_visited')
+    return
+  }
+  const visit = await dispatch('visit', { url })
+  // The server uses the selected cookie owner; an unknown response must never
+  // appear as a saved visit. Original check matches are never overwritten.
+  if (!await observationStillAllowed(tabId, url, selected)) return
+  await recordTabWarning(tabId, url, selected, beforeVisit,
+    visit.ok ? 'saved' : 'save_unknown')
 }
 
 function observeTabUpdate(tabId, changes, tab) {
@@ -453,4 +478,62 @@ function observeTabUpdate(tabId, changes, tab) {
     void runNavigationCheck(tabId, url, selected).catch(() => {})
   }, OBSERVE_DELAY_MS)
   observationTimers.set(tabId, timer)
+}
+
+
+// EXT-32: preserve the pre-visit warning and mark writes as confirmed only
+// after the authenticated visit response and final tab/account check.
+const tabWarnings = new Map()
+let warningWrites = Promise.resolve()
+const MAX_TAB_WARNINGS = 40
+
+function validCheckFacts(data) {
+  return plain(data) && plain(data.visit) &&
+    typeof data.visit.visited === 'boolean' &&
+    (data.visit.first_visited_at === null ||
+      typeof data.visit.first_visited_at === 'string') &&
+    Array.isArray(data.matches) && data.matches.length <= 20 &&
+    Number.isSafeInteger(data.company_history_count) &&
+    typeof data.company_known === 'boolean' &&
+    typeof data.lookup_complete === 'boolean' &&
+    typeof data.checked_at === 'string'
+}
+
+function flushWarnings() {
+  const write = warningWrites.then(async () => {
+    await chrome.storage.session.set({
+      jobgridTabChecks: Object.fromEntries(tabWarnings),
+    })
+  })
+  warningWrites = write.catch(() => {})
+  return write
+}
+
+async function recordTabWarning(tabId, url, selected, beforeVisit, saveState) {
+  if (!connection || connection !== selected) return
+  if (!tabWarnings.has(tabId) && tabWarnings.size >= MAX_TAB_WARNINGS) {
+    tabWarnings.delete(tabWarnings.keys().next().value)
+  }
+  tabWarnings.set(tabId, {
+    account_id: selected.accountId, tab_id: tabId, url,
+    before_visit: beforeVisit, save_state: saveState,
+  })
+  await flushWarnings()
+}
+
+async function readTabStatus(tabId) {
+  if (!connection) return error('not_connected', 'Open JobGrid to connect')
+  const state = tabWarnings.get(tabId)
+  if (!state || state.account_id !== connection.accountId) {
+    return error('no_check', 'No checked job is available for this tab')
+  }
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.url !== state.url) return error('stale_tab', 'Page changed')
+  } catch { return unavailable() }
+  return { ok: true, data: {
+    protocol_version: VERSION, account_id: state.account_id,
+    url: state.url, before_visit: state.before_visit,
+    save_state: state.save_state,
+  } }
 }
