@@ -4207,3 +4207,61 @@ screen-reader acceptance, store review or production deployment. Those
 remain independent extension acceptance gates. Roll back by unloading
 the development extension or reverting its feature branch. Existing durable
 JobGrid history remains unchanged by that rollback.
+
+
+## Persistent-browser acceptance harness for extension job memory
+
+The browser acceptance suite lives in **frontend/tests/extension.spec.ts**.
+It loads the development service worker from a disposable persistent Chromium
+profile, then sends real HTTP requests through the local Vite /api proxy to
+an authenticated FastAPI instance. Unlike isolated Node mock tests, it
+exercises the extension's tab, worker, isolated bridge and server transport.
+
+The harness copies extension/ to a temporary directory, substitutes
+manifest.dev.json and replaces only the *copied* frontend origin values with
+http://localhost:5173. Only this temporary fixture pregrants localhost and
+the synthetic jobs.lever.co origin. The checked-in development manifest still
+uses optional host grants; the distributed release manifest remains inert.
+An intercepted HTTPS job detail renders visible employer/role headings plus
+a form input used as a privacy trap. Every test uses a unique synthetic
+account and job URL and deletes its disposable browser profile afterward.
+
+Integration acceptance cases include:
+
+- First check returns unvisited; first navigation saves a visit without
+  incorrectly saying it was previously visited. Explicit popup-authorized
+  apply is saved once and a tracking-parameter revisit preserves the original
+  application ID/time and first-visit timestamp. An owned CSV source row is
+  then deleted, and its separate visit and application evidence must survive.
+- A signed-in second account sees no first-account visits or applications,
+  and attempted job-page/subframe messages do not gain privileged worker
+  access or expose matching history.
+- Popup fields have explicit labels, feedback has live status semantics,
+  keyboard focus reaches role fields, confirmation gates the save control,
+  and enlarged text does not hide required actions.
+- Offline check failures are not converted into no-record claims, page
+  navigation and site opt-out invalidate warnings, and browser restart
+  requires explicit reconnection without automatic apply replay.
+
+**Local verification:** Start a disposable FastAPI backend with TEST_AUTH=true,
+ENVIRONMENT=test, FRONTEND_URL=http://localhost:5173, and a dedicated test
+database as directed by the local backend test setup. Then run:
+
+    cd frontend
+    npx playwright test tests/extension.spec.ts --project=chromium
+
+The Playwright configuration starts Vite with JOBGRID_LOCAL_API_PROXY=1.
+The Node-only contracts are separately checked with:
+
+    cd extension
+    npm test
+
+The integration test must fail, not silently skip, if the browser or local
+backend cannot run. Manual Chrome optional permission prompts, real Chrome
+worker suspension, screen-reader announcements, genuine host permission
+revocation, deployed OAuth and normal extension popup-window UX require
+independent evidence. A persistent headless Chromium fixture does not verify
+these real Chrome and assistive-technology gates. Disabling/unloading
+the development extension stops observation without deleting historical
+JobGrid visit/application records. No new endpoint, migration, paid service,
+production installation or release permission is introduced by this suite.

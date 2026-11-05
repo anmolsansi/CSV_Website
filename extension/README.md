@@ -195,3 +195,81 @@ and acceptance limitations: [EXT-37–40 popup guide](../docs/EXT37_40_POPUP_CON
 To validate locally: `cd extension && npm test`. The automated tests are
 not evidence of real Chrome permissions, OAuth, extension store acceptance or
 deployed production behavior.
+
+
+## Local Chromium integration and safety acceptance (EXT-41–44)
+
+The acceptance harness in frontend/tests/extension.spec.ts opens a disposable
+persistent Chromium profile with the development worker and the local Vite
+proxy/FastAPI server. It covers real cookie-authenticated /check, /visit and
+explicit /apply requests; first-visit versus revisit warnings; cross-account
+isolation; hostile page/postMessage attempts; keyboard-focused popup fields;
+offline errors; per-tab navigation/opt-out; and browser restart requiring a
+fresh connection. Each test uses synthetic accounts/jobs and cleans up the
+profile. Do not point it at a deployed account or production database.
+
+Start a disposable backend with TEST_AUTH=true, ENVIRONMENT=test, a test
+database and FRONTEND_URL=http://localhost:5173. From frontend/, run
+npx playwright test tests/extension.spec.ts --project=chromium.
+The test config starts Vite and its local /api proxy. Separately run
+cd extension && npm test for isolated worker/permission contracts.
+
+The harness changes only its *temporary* copied manifest to pregrant
+localhost and a synthetic Lever origin. The committed manifests are
+unchanged. This does **not** establish normal Chrome optional permission
+prompts, real installed-popup/tab behavior, a true service-worker suspension,
+real grant revocation, deployed OAuth or a screen-reader audit. Those gates
+are still open. Uninstall the development extension to stop testing. Saved
+server history is unaffected by uninstalling it. No release or store
+distribution is implied by a passing automated run.
+
+
+### Manual acceptance still required before checking EXT-41–44 complete
+
+Run only in a disposable Chrome user profile with a copied **development**
+extension, local Vite/FastAPI, test-auth enabled and an isolated test database.
+Do not load an installed release extension or use a personal browser profile,
+real job application, or deployed account. Keep a record of Chrome version,
+extension/dev backend SHA, test DB identifier, case ID, expected/actual result
+and sanitized screenshot or short video. Never upload cookies, application
+history, private profile data or complete job URLs as QA evidence.
+
+1. **EXT-41, real Chrome launch and persistence.** Confirm Chrome's
+   browser-owned JobGrid host-permission prompt before connecting. In the
+   disposable JobGrid tab, sign in to synthetic account A. Open an opted-in
+   synthetic Lever job: first navigation must show the *pre-save* unvisited
+   result, later navigation must show **Visited before**. Record one explicit
+   application; revisit the canonical job URL and verify **Already applied**
+   with unchanged timestamp. Delete only the synthetic CSV source row,
+   reload, and verify the application and separate external visit remain.
+2. **EXT-42, account/hostile-page boundary.** Keep a synthetic job tab open,
+   switch the JobGrid tab from A to synthetic account B between a check and
+   an attempted apply, and confirm the write is rejected and no private A
+   history is shown. Test an untrusted job-page script and iframe that send
+   forged page messages and inspect the page DOM/storage. They must never
+   receive private matches or write another account's records.
+3. **EXT-43, actual popup accessibility.** Keyboard-only (Tab, Shift+Tab,
+   Enter, Space) check and edit the employer/title fields, stage, cancel
+   confirmation, pause/resume, cancel/confirm Forget visits, and disconnect.
+   Use a screen reader in the *real extension popup* to verify associated
+   field labels, meaningful focus after invalid fields, and a single
+   announcement for loading, applied, possible, empty, error, paused and
+   manual-only states. At Chrome 200% zoom and increased OS text size, no
+   necessary control may be clipped, inaccessible or understandable only
+   by badge color.
+4. **EXT-44, genuine MV3 and permission lifecycle.** Use
+   chrome://extensions to stop/inspect the JobGrid service worker with a
+   pending, unresolved synthetic apply. Wake/reconnect deliberately and
+   confirm the selected account and current URL are rechecked; no apply
+   may auto-replay. Test offline read, offline write, reload, SPA
+   pushState navigation, tab closure and granted-host revocation *while a
+   check is in flight*. Results/badges from stale URL, account or grant
+   must be ignored or cleared, and the backend must have no unintended
+   writes. Restart the entire disposable browser and verify no private
+   session results or pending actions are retained.
+
+A green headless Playwright run is not evidence that these four manual
+walkthroughs passed. Leave the EXT-41–44 issue checkboxes open unless the
+actual expected/observed results and environment are recorded. If an assertion
+fails, do not merge or widen permissions. Record the exact case and use the
+ticket's defined stop/architect-decision process before runtime changes.
