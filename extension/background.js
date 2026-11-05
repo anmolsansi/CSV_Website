@@ -459,10 +459,9 @@ async function runNavigationCheck(tabId, url, selected) {
   // aborts the visit, rather than making the warning impossible to recover.
   await recordTabWarning(tabId, url, selected, beforeVisit, 'checked')
   if (!await observationStillAllowed(tabId, url, selected)) return
-  if (beforeVisit.visit.visited === true) {
-    await recordTabWarning(tabId, url, selected, beforeVisit, 'already_visited')
-    return
-  }
+  // A pre-existing clicked CSV row or opened track can set visit.visited even
+  // without a durable external JobVisit. Always call the idempotent visit
+  // endpoint after a successful check; it preserves the first visit time.
   const visit = await dispatch('visit', { url })
   // The server uses the selected cookie owner; an unknown response must never
   // appear as a saved visit. Original check matches are never overwritten.
