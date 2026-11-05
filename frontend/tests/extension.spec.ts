@@ -6,6 +6,8 @@
  */
 import { chromium, expect, test, type Page } from '@playwright/test'
 import fs from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { buildPilot } from '../../extension/package.mjs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -577,5 +579,99 @@ test('EXT-44 offline failure, navigation, opt-out and full profile restart fail 
     const unauthorised = await extCommand(freshPopup, 'ext39:submit-pending', { tab_id: jobTab })
     expect(unauthorised.ok).toBe(false)
     expect(['not_connected', 'no_check']).toContain(unauthorised.error.code)
+  })
+})
+
+
+// EXT-47 loads the actual archive without the development fixture overlay.
+test('EXT-47 unmodified release ZIP loads with its recorded version and no granted hosts or worker', async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'jobgrid-ext47-load-'))
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined
+  try {
+    const artifact = await buildPilot({ outputDir: path.join(workspace, 'dist') })
+    const extensionPath = path.join(workspace, 'unpacked')
+    execFileSync('unzip', ['-q', artifact.file, '-d', extensionPath])
+    const manifest = JSON.parse(await fs.readFile(path.join(extensionPath, 'manifest.json'), 'utf8'))
+    context = await chromium.launchPersistentContext(path.join(workspace, 'profile'), {
+      headless: true, channel: process.env.JOBGRID_PILOT_CHROME === '1' ? 'chrome' : 'chromium',
+      ignoreDefaultArgs: ['--disable-extensions'],
+      args: ['--enable-unsafe-extension-debugging'],
+    })
+    // Chrome no longer supports the old load-extension flag; use its testing API.
+    const cdp = await context.browser()!.newBrowserCDPSession()
+    const { id: extensionId } = await cdp.send('Extensions.loadUnpacked', { path: extensionPath })
+    const popup = await context.newPage()
+    const errors: string[] = []
+    popup.on('pageerror', error => errors.push(error.message))
+    await popup.goto('chrome-extension://' + extensionId + '/popup.html')
+    await expect(popup.getByRole('status')).toHaveText('Not connected yet')
+    await expect(popup.getByText('No browsing is tracked by this shell.')).toBeVisible()
+    const loaded = await popup.evaluate(async () => {
+      const api = (globalThis as any).chrome
+      return { manifest: api.runtime.getManifest(), grants: await api.permissions.getAll() }
+    })
+    expect(loaded.manifest).toEqual(manifest)
+    expect(loaded.manifest.version).toBe(artifact.version)
+    expect(loaded.grants.origins || []).toEqual([])
+    expect(context.serviceWorkers()).toHaveLength(0)
+    expect(errors).toEqual([])
+    await cdp.send('Extensions.uninstall', { id: extensionId })
+    console.log('EXT-47 archive-load browser=' + context.browser()?.version() +
+      ' version=' + artifact.version + ' sha256=' + artifact.sha256 + ' uninstall=ok outcome=ok')
+  } finally {
+    await context?.close()
+    await fs.rm(workspace, { recursive: true, force: true })
+  }
+})
+
+
+test('EXT-45 real worker check times out at eight seconds without retry, writes or payload diagnostics', async () => {
+  test.setTimeout(60_000)
+  await withRealExtension(async ({ context, app, popup }) => {
+    const owner = await signIn(app, 'ext45-timeout-' + crypto.randomUUID() + '@example.test')
+    await connectRealExtension(popup, app, owner)
+    const diagnostics: string[] = []
+    context.on('console', message => diagnostics.push(message.text()))
+    context.on('weberror', error => diagnostics.push(error.error().message))
+    const writes: string[] = []
+    context.on('request', request => {
+      if (/\/browser-memory\/(visit|apply|visits)(?:\?|$)/.test(request.url())) {
+        writes.push(new URL(request.url()).pathname)
+      }
+    })
+    let checks = 0
+    let release: () => void = () => {}
+    const stalled = new Promise<void>(resolve => { release = resolve })
+    await context.route('**/api/crm/browser-memory/check', async route => {
+      checks += 1
+      await stalled
+      await route.abort().catch(() => {})
+    })
+    const payload = {
+      url: 'https://jobs.lever.co/acme/ext45-private-path?req=ext45-private-query',
+      company: 'EXT45 Private Company', title: 'EXT45 Private Title',
+    }
+    try {
+      const started = performance.now()
+      const result = await extCommand(popup, 'ext26:command', { kind: 'check', payload })
+      const elapsed = performance.now() - started
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('timeout')
+      expect(result.data).toBeUndefined()
+      // Real timers may run late on a busy runner; never accept an early expiry.
+      expect(elapsed).toBeGreaterThanOrEqual(7_900)
+      expect(elapsed).toBeLessThan(12_000)
+      expect(checks).toBe(1)
+      expect(writes).toEqual([])
+      const cookieValues = (await context.cookies()).map(cookie => cookie.value).filter(Boolean)
+      for (const secret of [...Object.values(payload), 'ext45-private-query', 'session_token', ...cookieValues]) {
+        expect(diagnostics.join('\n')).not.toContain(secret)
+      }
+      console.log('EXT-45 bridge-timeout browser=' + context.browser()?.version() +
+        ' elapsed_ms=' + Math.round(elapsed) + ' checks=' + checks +
+        ' writes=0 outcome=timeout diagnostic_count=' + diagnostics.length)
+    } finally {
+      release()
+    }
   })
 })

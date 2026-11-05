@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:extension": "playwright test tests/extension.spec.ts --project=chromium"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.17.3",

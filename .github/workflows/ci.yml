@@ -28,6 +28,41 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  extension-node:
+    name: Extension Node contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run extension contract and permission assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extension/ci-artifacts
+          node --test --test-reporter=junit extension/tests/*.test.mjs > extension/ci-artifacts/extension-node.xml
+          # Node 22 writes valid JUnit <testcase> elements directly under
+          # <testsuites> (no <testsuite> wrapper). Our Python verifier expects
+          # the Playwright/pytest envelope, so validate Node's own format here.
+          TEST_COUNT="$(grep -c '<testcase ' extension/ci-artifacts/extension-node.xml || true)"
+          if [ "$TEST_COUNT" -lt 1 ] ||
+             grep -Eq '<(failure|error|skipped)([ >])' extension/ci-artifacts/extension-node.xml; then
+            echo "EXT-46 Node contracts: empty or nonpassing JUnit report"
+            exit 1
+          fi
+          echo "EXT-46 Node contracts: tests=$TEST_COUNT failures=0 errors=0 skipped=0"
+
+      - name: Upload extension Node test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-node-contracts-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: extension/ci-artifacts/extension-node.xml
+
   frontend-e2e:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
@@ -155,6 +190,25 @@ jobs:
             node --input-type=module -e "import { chromium } from 'playwright'; const browser = await chromium.launch({ headless: true }); console.log(browser.version()); await browser.close();"
           } > ci-artifacts/jg023-browser-release-evidence.txt
 
+      - name: Run real-loaded extension E2E and reject empty reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          # The existing test server uses a disposable DB and local Vite /api proxy.
+          # Development cases use test-only grants; the ZIP smoke loads unmodified release bytes.
+          npx playwright test tests/extension.spec.ts --project=chromium --reporter=junit > ci-artifacts/ext-chromium.xml
+          python ../scripts/verify_junit.py ci-artifacts/ext-chromium.xml \
+            --label "EXT-46 persistent-profile Chromium" --min-tests 9 --max-skips 0
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ci-artifacts/ext-chromium.xml").getroot()
+          names = [case.get("name", "") for case in root.iter("testcase")]
+          for prefix in ("EXT-45 real worker check ", "EXT-47 unmodified release ZIP "):
+              if not any(name.startswith(prefix) for name in names):
+                  raise SystemExit("Missing required extension acceptance: " + prefix)
+          PY
+
       - name: Run tab-helper safety regressions
         run: node --test unit/*.test.mjs
 
@@ -204,6 +258,7 @@ jobs:
             frontend/ci-artifacts/jg023-playwright-focused.txt
             frontend/ci-artifacts/playwright-collection.txt
             frontend/ci-artifacts/c07-e2e-runtime.txt
+            frontend/ci-artifacts/ext-chromium.xml
 
       - name: Sanitize backend logs on failure
         if: failure()
@@ -383,6 +438,16 @@ jobs:
           python ../scripts/verify_junit.py ci-artifacts/c07-backend-regressions.xml \
             --label "C-07 backend regressions" --min-tests 1 --max-skips 0
 
+      - name: Record EXT-45 bounded warm lookup benchmark (synthetic accounts only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          pytest tests/test_browser_memory_matches.py::test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits \
+            -q -s | tee ci-artifacts/ext45-benchmark.txt
+          grep -Eq '^EXT-45 benchmark action=check outcome=ok .*visits=10000 samples=30 .*warm_p95_ms=' \
+            ci-artifacts/ext45-benchmark.txt
+
       - name: Verify backend test collection is nonempty
         shell: bash
         run: |
@@ -417,6 +482,7 @@ jobs:
             backend/ci-artifacts/c07-backend-regressions.xml
             backend/ci-artifacts/pytest-collection.txt
             backend/ci-artifacts/pytest.xml
+            backend/ci-artifacts/ext45-benchmark.txt
 
       - name: Upload backend failure artifacts
         if: failure()
@@ -426,3 +492,32 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
           path: backend/ci-artifacts/
+
+  pilot-package:
+    name: Inactive pilot artifact (never published)
+    runs-on: ubuntu-latest
+    needs: [extension-node, frontend-e2e, backend-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build, checksum and unzip-test isolated release-shell ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          node extension/package.mjs
+          cd extension/dist
+          sha256sum -c *.sha256
+          unzip -t jobgrid-pilot-v*.zip
+
+      - name: Keep versioned artifact for reviewed, offline pilot only
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobgrid-inactive-pilot-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            extension/dist/jobgrid-pilot-v*.zip
+            extension/dist/jobgrid-pilot-v*.zip.sha256

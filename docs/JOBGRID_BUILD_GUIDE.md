@@ -4265,3 +4265,88 @@ these real Chrome and assistive-technology gates. Disabling/unloading
 the development extension stops observation without deleting historical
 JobGrid visit/application records. No new endpoint, migration, paid service,
 production installation or release permission is introduced by this suite.
+
+
+## Extension verification, warm lookup budget and inert pilot archive
+
+The optional development extension is still separated from the inactive
+release-shell manifest. Backend owner-scoped facts, observed external
+visits, CSV clicks and explicit application receipts remain distinct
+records, and none is deleted when Chrome removes its extension.
+
+**Lookup performance contract.** The synthetic EXT-45 regression in
+backend/tests/test_browser_memory_matches.py inserts 10,000 account-owned
+external visits and 521 dense-company applications, checks the unique
+owner/hash index plus an actual supported-dialect query plan, and times
+30 authenticated HTTP checks through FastAPI TestClient, including cookie
+resolution, validation, rate counting and serialization. Its first HTTP call is
+reported separately; no process/database cold-start measurement is claimed.
+Nearest-rank warm p95 must be <= 2,000 ms on the recorded fixture, old
+definite application matches cannot disappear, result sets remain <= 20,
+and a second account cannot read the first account's visits. The test
+prints only aggregate timing/action/outcome/dialect/count, never request
+URLs, account labels, cookies, company or title. Earlier service-only 2026-11-05 PostgreSQL CI fixture: **10,000 visits**, **30 warm
+lookups**, **14.0 ms warm p95**, **21.6 ms separate cold lookup**, and
+**index plan**; see https://github.com/anmolsansi/CSV_Website/actions/runs/41991907712 .
+The current HTTP fixture measured local PostgreSQL warm p95 **15.7 ms**,
+first check **23.9 ms**, and SQLite warm p95 **240.4 ms**, first check **161.1 ms**
+(Python 3.12.12, macOS, UTC; 30 warm samples each). These exclude network and
+Chrome startup. A separate injected-database-error test proves synthetic
+URL/company/title/cookie values stay out of the generic 503 and captured logs.
+The real-worker timeout case measured **8,011 ms**, one unanswered check, zero
+retries/writes and no diagnostic messages on Chromium **149.0.7827.55**.
+A real Chrome cold start must still be inspected manually.
+
+**CI enforcement.** Existing frontend build, backend compile, PostgreSQL
+pytest, SQLite release and browser time-zone jobs remain unchanged. The
+main CI adds a Node 22 extension job running all source contract,
+permission and packaging tests. It also runs the real loaded-extension
+persistent Chromium test independently in the existing local Vite/FastAPI
+E2E job, then runs the full browser suite. Both extension JUnit reports
+fail for empty, failed or skipped results. The Node 22 report directly
+contains testcase entries and is checked for a nonzero count and failures;
+the Playwright report uses scripts/verify_junit.py with a minimum of nine
+results (eight extension cases plus setup), zero skips and explicit presence
+of the EXT-45 timeout and EXT-47 unmodified-ZIP cases.
+Their XML is retained only as short-lived sanitized CI evidence. The
+browser setup uses disposable synthetic accounts, fixture-pregranted
+localhost/Lever hosts and bundled Playwright Chromium, not a production
+account or a browser permission-dialog test.
+
+**Deterministic release-shell package.** Run node extension/package.mjs
+from the repository root. This generates extension/dist/jobgrid-pilot-vX.Y.Z.zip
+with a .sha256 sidecar. The script validates the exact existing MV3
+optional-permission list and enforces two runtime members: manifest.json
+and popup.html. It rejects dev hosts, active scripts, symlinks and secret
+sentinels. Chrome-invalid three-component versions (leading zeros, components
+above 65535 or all zero), unknown manifest fields/action surfaces and HTML
+event handlers are also rejected. It writes a fixed-timestamp ZIP independent of host timezone
+or local file modifications. Node tests build twice, compare SHA-256,
+read the archive with unzip, and prove unsafe manifests/popups fail
+before writing output. The browser smoke unpacks that exact ZIP and loads
+its unmodified release manifest/popup, asserting version, no host grants,
+no worker and no page errors. A CI archive job depends on passing Node, E2E
+and PostgreSQL suites. It retains the inactive ZIP for seven days,
+without creating a GitHub release or Chrome Web Store submission.
+
+**Use and rollback.** See extension/README.md for the exact checksum,
+unpack, Load unpacked, version update, Pause/disable, Remove and
+account-owned Forget visits instructions. The distributed ZIP has no
+background worker and cannot check, visit or apply; it is only an
+inspectable, versioned shell. The active development popup and worker
+remain outside the release artifact. Uninstalling the shell has no
+server-side history effect. Optional grant/revocation, deployed OAuth, MV3 suspension, accessibility
+and production release are pending external gates, not marked as passed
+by Node, pytest, headless Chromium or packaging. The unmodified ZIP also passed load/popup/version/zero-host/zero-worker/uninstall
+acceptance in installed Google Chrome **157.0.8103.38**, using a disposable
+profile and Chrome's documented Extensions.loadUnpacked/uninstall testing API.
+The earlier command-line load failure was not evidence of an invalid package.
+Reproduce from frontend/ with `JOBGRID_PILOT_CHROME=1 npm run test:extension --
+--no-deps --grep EXT-47` (one shell command). This does not verify normal Chrome
+permission-dialog, manual toolbar, live-account or OAuth acceptance.
+
+For local PostgreSQL acceptance, use an explicitly disposable database with its
+session timezone and test-process TZ set to UTC, matching CI. A local cluster
+initialized in America/New_York otherwise produces offset/naive-time fixture
+failures. With that setup, the full local PostgreSQL suite passed **737 tests**;
+the extension Node suite passed **70**, and the frontend production build passed.

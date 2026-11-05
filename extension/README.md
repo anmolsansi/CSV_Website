@@ -273,3 +273,132 @@ walkthroughs passed. Leave the EXT-41–44 issue checkboxes open unless the
 actual expected/observed results and environment are recorded. If an assertion
 fails, do not merge or widen permissions. Record the exact case and use the
 ticket's defined stop/architect-decision process before runtime changes.
+
+
+## Lookup performance and privacy diagnostics (EXT-45)
+
+The isolated benchmark in backend/tests/test_browser_memory_matches.py seeds
+10,000 synthetic owner-specific visits, 521 applied company rows and a second
+account. It verifies the owner/hash unique index and the disposable database
+query plan, then times 30 authenticated HTTP checks through FastAPI TestClient,
+including validation, owner resolution, rate counting and serialization. The first
+HTTP check is recorded separately; it is not a process or database cold start. Nearest-rank warm p95 must be no greater than 2,000 ms;
+matches must be bounded to 20, old definite URLs must survive the dense
+possible-match scan, and foreign visits must stay hidden.
+
+Run the benchmark in a disposable backend with project requirements installed:
+
+    cd backend
+    DATABASE_URL=sqlite:///:memory: python -m pytest tests/test_browser_memory_matches.py -q -s
+
+PostgreSQL is also exercised by CI. Inspect the aggregate EXT-45 benchmark
+line in actual test output for backend dialect, 10,000 visits, 30 samples,
+separate first-check time, measured warm p95 and index-plan result. Earlier service-only
+CI evidence on 2026-11-05 (PostgreSQL on Ubuntu, Python 3.12):
+10,000 visits, 30 warm samples, measured warm p95 **14.0 ms**,
+separate cold lookup **21.6 ms**, query plan **index**.
+Source: https://github.com/anmolsansi/CSV_Website/actions/runs/41991907712 .
+The current authenticated HTTP fixture measured **15.7 ms warm p95**,
+**23.9 ms first check** on local PostgreSQL 16 / Python 3.12.12 (macOS, UTC),
+and **240.4 ms warm p95**, **161.1 ms first check** on local SQLite. These are
+30-sample TestClient results, without network/Chrome startup latency.
+No Chrome cold-start timing is inferred from either backend run. The extension worker's
+8-second timeout is separate from backend warm latency. Diagnostics may
+report action, outcome, count and rounded durations, but must never expose
+raw URLs/query strings, cookies, account labels, private company/title
+fields or application data. The test checks synthetic payload sentinels
+against captured application logs. A separate HTTP regression injects a driver
+exception containing synthetic URL/company/title/cookie values and verifies a
+generic 503 response and sanitized diagnostics. Neither test certifies all
+production logs. The real-worker browser test holds one check unanswered and
+measures the 8-second deadline: observed **8,011 ms** on Chromium 149.0.7827.55,
+with one request, zero writes/retries and zero browser diagnostic messages.
+
+## CI and reproducible inactive pilot archive (EXT-46–47)
+
+The existing CI workflow retains the frontend build, backend compile,
+PostgreSQL tests, and full Playwright Chromium suite. It adds a separate
+Node 22 extension-contract job with JUnit requiring nonzero tests and zero
+failures/skips. The local Vite/FastAPI E2E job separately executes the eight
+persistent-profile extension acceptance tests (plus authentication setup) before the full suite, with
+JUnit minimum of nine results and explicit required EXT-45/47 case names enforced. It loads the real development worker in
+bundled Chromium using disposable synthetic accounts and temporarily
+pregranted local-only fixture hosts, not a deployed account.
+
+Once Node, Chromium and PostgreSQL tests pass, a gated job builds and
+SHA-256/verifies an inert versioned pilot ZIP and retains it as a GitHub
+Actions artifact for seven days. It never uploads a store listing.
+
+Local commands from the repository root:
+
+    node --test extension/tests/*.test.mjs
+    cd frontend && npm ci && npx playwright install --with-deps chromium && npm run test:extension
+
+The frontend test requires a disposable TEST_AUTH=true backend at
+localhost:8000, with the local Vite /api proxy enabled by Playwright.
+Do not treat successful headless tests as real Chrome optional-permission,
+screen-reader, MV3 suspension, or deployed OAuth acceptance.
+
+Build and verify the release-shell ZIP:
+
+    node extension/package.mjs
+    cd extension/dist
+    sha256sum -c *.sha256
+    unzip -t jobgrid-pilot-v*.zip
+
+Artifacts are named jobgrid-pilot-v<manifest-version>.zip and matching
+.zip.sha256. Packaging includes only manifest.json and popup.html, in
+stable sorted order with fixed timestamps and reproducible SHA-256.
+The tests reject unsafe permissions, localhost/dev hosts, secret
+sentinels, executable scripts/HTML handlers, source symlinks, unrecognized
+manifest activation surfaces and Chrome-invalid version components (leading
+zeros, >65535 or all-zero version). No output is created on rejection.
+The browser smoke builds and unpacks the actual ZIP, without the development
+manifest overlay, and checks the loaded version, popup, no host grants and no
+worker. Local Chromium 149.0.7827.55 passed with SHA-256
+`1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1`.
+
+IMPORTANT: The release ZIP is intentionally **inactive**. It has no
+background worker, content scripts, network bridge or automatic tracking,
+and cannot check/save/apply to real jobs. Development-only functionality
+must not be promoted without the pending external Chrome/OAuth gates.
+
+### Privacy, unpacked install, updates and removal
+
+Use a disposable Chrome user profile only. After SHA verification, unzip
+to a fresh directory, open chrome://extensions, enable Developer mode,
+choose Load unpacked, and select the folder with manifest.json. The
+popup must show Not connected yet and No browsing is tracked by this
+shell. There should be no host-permission or account prompt on install.
+This proves only that the inactive package loads. The automated archive
+load/uninstall smoke also passed in installed Google Chrome **157.0.8103.38**
+with zero granted hosts/workers and the same SHA-256 as Chromium. It uses
+Chrome's [Extensions testing API](https://chromedevtools.github.io/devtools-protocol/tot/Extensions/)
+and a disposable profile, with Playwright's extension-disabling default removed.
+The old command-line load attempt returned ERR_BLOCKED_BY_CLIENT; the tested
+API path loads the artifact successfully. From frontend/, reproduce with:
+
+    JOBGRID_PILOT_CHROME=1 npm run test:extension -- --no-deps --grep EXT-47
+
+The normal CI command still uses bundled Chromium. This smoke verifies the
+release shell, not browser-owned optional-grant prompts, deployed OAuth,
+manual toolbar interactions or active development-worker acceptance.
+
+For an update, disable/remove the previous test installation, unpack
+a separately verified version into a new folder, load that new folder,
+and record the installed ZIP version/checksum separately from the
+frontend/backend SHA. To pause the inactive shell, disable it in Chrome.
+For the separate development extension, use its confirmed Pause checks
+control or disable it under chrome://extensions. Choose Remove to uninstall.
+
+Uninstalling clears extension-controlled browser state, **not** server
+visits or applications previously saved by a development install.
+The development popup's confirmed Forget visits deletes only the
+selected account's external visits and does not delete applications,
+CSV click history or imported rows. Keep the expected account visible
+before any destructive step. Do not use actual personal accounts,
+job applications or production backend data during these checks.
+
+A production extension activation, store submission or rollout is
+explicitly outside this ZIP. Unproven Chrome permissions, worker
+suspension, accessibility and OAuth gates remain open.
