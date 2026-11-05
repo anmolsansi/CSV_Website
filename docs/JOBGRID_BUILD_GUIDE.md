@@ -4231,7 +4231,8 @@ Integration acceptance cases include:
 - First check returns unvisited; first navigation saves a visit without
   incorrectly saying it was previously visited. Explicit popup-authorized
   apply is saved once and a tracking-parameter revisit preserves the original
-  application ID/time and first-visit timestamp.
+  application ID/time and first-visit timestamp. An owned CSV source row is
+  then deleted, and its separate visit and application evidence must survive.
 - A signed-in second account sees no first-account visits or applications,
   and attempted job-page/subframe messages do not gain privileged worker
   access or expose matching history.
@@ -4258,9 +4259,9 @@ The Node-only contracts are separately checked with:
 The integration test must fail, not silently skip, if the browser or local
 backend cannot run. Manual Chrome optional permission prompts, real Chrome
 worker suspension, screen-reader announcements, genuine host permission
-revocation, deployed OAuth, normal extension popup-window UX, and a source-row
-deletion/retention fixture require independent evidence. A headed Chromium
-fixture is not equivalent to any of these external gates. Disabling/unloading
+revocation, deployed OAuth and normal extension popup-window UX require
+independent evidence. A persistent headless Chromium fixture does not verify
+these real Chrome and assistive-technology gates. Disabling/unloading
 the development extension stops observation without deleting historical
 JobGrid visit/application records. No new endpoint, migration, paid service,
 production installation or release permission is introduced by this suite.
