@@ -421,3 +421,12 @@ test('packaged popup in a browser tab can run the legacy read-only probe', async
   assert.equal(iframe.ok, false)
   assert.equal(worker.messages.length, 1)
 })
+
+test('EXT-37 distinguishes denied requests and offline network failures', async () => {
+  const forbidden = setup({ answer: () => json({ detail: 'Denied' }, 403) })
+  assert.equal((await forbidden.send(request())).error.code, 'forbidden')
+  const disconnected = setup({ answer: () => { throw new TypeError('NetworkError') } })
+  assert.equal((await disconnected.send(request())).error.code, 'unavailable')
+  assert.equal(forbidden.pageWrites.length, 0)
+  assert.equal(disconnected.pageWrites.length, 0)
+})
