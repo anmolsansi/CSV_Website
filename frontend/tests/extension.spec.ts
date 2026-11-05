@@ -270,6 +270,17 @@ test('EXT-41 local API: first visit is not previous; explicit apply is durable a
     const owner = await signIn(app, 'ext41-' + crypto.randomUUID() + '@example.test')
     await connectRealExtension(popup, app, owner)
     const url = 'https://jobs.lever.co/acmelabs/' + crypto.randomUUID().replaceAll('-', '')
+    // Seed an actual CSV source row so its later removal is observable.
+    const upload = await app.evaluate(async jobUrl => {
+      const body = new FormData()
+      body.append('file', new Blob(['url,company_guess,title\n' +
+        jobUrl + ',Acme Labs,Platform Engineer\n'], { type: 'text/csv' }), 'ext41.csv')
+      const response = await fetch('/api/upload', { method: 'POST',
+        credentials: 'same-origin', body })
+      return { status: response.status, json: await response.json() }
+    }, url)
+    expect(upload.status, JSON.stringify(upload.json)).toBe(200)
+    expect(upload.json.inserted).toBe(1)
     const { job, jobTab } = await openObservedJob(context, popup, url)
     const first = await extCommand(popup, 'ext32:tab-status', { tab_id: jobTab })
     expect(first.ok).toBe(true)
@@ -301,6 +312,27 @@ test('EXT-41 local API: first visit is not previous; explicit apply is durable a
     expect(canonical.visit.first_visited_at).toBe(visited.visit.first_visited_at)
     expect(canonical.matches[0].track_id).toBe(applied.matches[0].track_id)
     expect(canonical.matches[0].applied_at).toBe(applied.matches[0].applied_at)
+    const rows = await app.evaluate(async () =>
+      (await fetch('/api/rows?page_size=100', { credentials: 'same-origin' })).json())
+    const ownedRow = rows.rows.find((row: any) => row.url === url)
+    expect(ownedRow?.id).toBeGreaterThan(0)
+    const deleted = await app.evaluate(async rowId => {
+      const response = await fetch('/api/rows', {
+        method: 'DELETE', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ row_ids: [rowId] }),
+      })
+      return { status: response.status, data: await response.json() }
+    }, ownedRow.id)
+    expect(deleted.status, JSON.stringify(deleted.data)).toBe(200)
+    const afterDelete = await checkedVisit(app, url)
+    expect(afterDelete.visit.first_visited_at).toBe(visited.visit.first_visited_at)
+    expect(afterDelete.matches[0].track_id).toBe(applied.matches[0].track_id)
+    const otherOwner = await signIn(app, 'ext41-b-' + crypto.randomUUID() + '@example.test')
+    expect(otherOwner).not.toBe(owner)
+    const unrelated = await checkedVisit(app, url)
+    expect(unrelated.visit.visited).toBe(false)
+    expect(unrelated.matches).toEqual([])
   })
 })
 
