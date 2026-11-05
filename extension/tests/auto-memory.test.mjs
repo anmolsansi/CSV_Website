@@ -326,3 +326,21 @@ test('EXT-32 removes cached warnings on permission revocation and tab navigation
   assert.equal((await changed.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
   assert.equal(changed.storageSession.jobgridTabChecks['2'], undefined)
 })
+
+
+test('EXT-33 manually checks an unsupported public tab but never writes a visit', async () => {
+  const w = createWorker()
+  assert.equal((await w.connect()).ok, true)
+  w.tabs.set(2, { id: 2, url: 'https://careers.example.org/roles/engineer', status: 'complete' })
+  const result = await w.send(packet('ext33:current-tab-check'))
+  assert.equal(result.ok, true)
+  assert.equal(result.data.save_state, 'manual_only')
+  assert.equal(result.data.before_visit.visit.visited, false)
+  const stored = await w.send(packet('ext32:tab-status', { tab_id: 2 }))
+  assert.equal(stored.ok, true)
+  assert.equal(stored.data.save_state, 'manual_only')
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'check').length, 1)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'visit').length, 0)
+  assert.equal(w.calls.filter(([, m]) => m.type === 'ext29:extract').length, 0)
+  assert.equal(w.requested.length, 0, 'activeTab fallback never asks for host access')
+})
