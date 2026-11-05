@@ -253,6 +253,19 @@ async function connect(tabId) {
   } }
 }
 
+async function forgetSelectedVisits() {
+  if (!connection) return error('not_connected', 'Connect JobGrid first')
+  if (paused) return error('paused', 'Tracking is paused')
+  const result = await dispatch('forget_visits', {})
+  if (!result.ok) return result
+  // Old visit badges and checks cannot remain authoritative after deletion.
+  clearObservationTimers()
+  await warningWrites
+  await clearAllPending()
+  await chrome.storage.session.remove('jobgridTabChecks')
+  return result
+}
+
 async function dispatch(kind, payload) {
   const selected = connection
   if (!selected) return error('not_connected', 'Open JobGrid to connect')
@@ -349,6 +362,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await clearConnection()
       return { ok: true, data: { protocol_version: VERSION, disconnected: true } }
     }
+    if (message.kind === 'forget_visits') return forgetSelectedVisits()
     return dispatch(message.kind, message.payload)
   }
 
