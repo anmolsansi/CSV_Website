@@ -628,6 +628,66 @@ async function manualCheckCurrentTab() {
   } }
 }
 
+async function stagePendingApply(tabId, company, title) {
+  const selected = connection
+  if (!selected) return error('not_connected', 'Connect JobGrid first')
+  const checked = tabWarnings.get(tabId)
+  if (!checked || checked.account_id !== selected.accountId) {
+    return error('no_check', 'Check this job before preparing an application')
+  }
+  let tab
+  try { tab = await chrome.tabs.get(tabId) } catch { return unavailable() }
+  if (connection !== selected || tab.url !== checked.url) return unavailable()
+  purgeExpiredPending()
+  const normalizedCompany = company.trim()
+  const normalizedTitle = title.trim()
+  if (!normalizedCompany || !normalizedTitle) return error('invalid_fields', 'Employer and title are required')
+  const existing = pendingByTab.get(tabId)
+  if (!existing && pendingByTab.size >= MAX_PENDING_APPLY) {
+    return error('pending_limit', 'Clear another pending job before continuing')
+  }
+  const same = existing && existing.account_id === selected.accountId &&
+    existing.url === checked.url && existing.company === normalizedCompany &&
+    existing.title === normalizedTitle
+  const next = same ? existing : {
+    account_id: selected.accountId, tab_id: tabId, url: checked.url,
+    company: normalizedCompany, title: normalizedTitle,
+    idempotency_key: crypto.randomUUID(), created_at: Date.now(),
+  }
+  pendingByTab.set(tabId, next)
+  await flushPending()
+  if (connection !== selected) return unavailable()
+  return { ok: true, data: { protocol_version: VERSION, account_id: selected.accountId,
+    pending: true, ...next } }
+}
+
+async function pendingApplyStatus(tabId) {
+  if (!connection) return error('not_connected', 'Connect JobGrid first')
+  purgeExpiredPending()
+  const item = pendingByTab.get(tabId)
+  if (!item || item.account_id !== connection.accountId) {
+    return { ok: true, data: { protocol_version: VERSION,
+      account_id: connection.accountId, pending: false } }
+  }
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.url !== item.url) {
+      dropPendingTab(tabId)
+      return error('stale_tab', 'Page changed')
+    }
+  } catch { dropPendingTab(tabId); return unavailable() }
+  return { ok: true, data: { protocol_version: VERSION,
+    account_id: connection.accountId, pending: true, ...item } }
+}
+
+async function clearPendingTab(tabId) {
+  if (!connection) return error('not_connected', 'Connect JobGrid first')
+  dropPendingTab(tabId)
+  await pendingWrites
+  return { ok: true, data: { protocol_version: VERSION,
+    account_id: connection.accountId, pending: false } }
+}
+
 async function readTabStatus(tabId) {
   if (!connection) return error('not_connected', 'Open JobGrid to connect')
   const state = tabWarnings.get(tabId)
