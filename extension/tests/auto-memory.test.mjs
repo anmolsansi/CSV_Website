@@ -392,3 +392,29 @@ test('EXT-34 keeps stable pending UUID for identical drafts, clears changed and 
   assert.equal(invalid.error.code, 'account_changed')
   assert.equal(w.storageSession.jobgridPendingApply, undefined)
 })
+
+
+test('EXT-35 pause blocks observations, clears warnings/badges and resume rechecks account', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.behavior.alreadyVisited = true
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal(w.badges.get(2), 'V')
+  const count = w.calls.filter(([, m]) => m.kind === 'check').length
+  const paused = await w.send(packet('ext35:set-paused', { paused: true }))
+  assert.equal(paused.ok, true)
+  assert.equal(paused.data.paused, true)
+  assert.equal(w.badges.get(2), '')
+  assert.equal(w.storageSession.jobgridTabChecks, undefined)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(600)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'check').length, count)
+  assert.equal((await w.send(packet('ext33:current-tab-check'))).error.code, 'paused')
+  const resumed = await w.send(packet('ext35:set-paused', { paused: false }))
+  assert.equal(resumed.ok, true)
+  assert.equal(resumed.data.paused, false)
+  await w.send(packet('ext26:disconnect'))
+  assert.equal((await w.send(packet('ext35:status'))).data.connected, false)
+  assert.equal(w.storageSession.jobgridPaused, undefined)
+})
