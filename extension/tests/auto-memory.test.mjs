@@ -24,6 +24,8 @@ export function createWorker() {
     [2, { id: 2, url: JOB, status: 'complete' }],
   ])
   let listener, updated, removed, permissionRemoved
+  let activeAccount = 101
+  const behavior = { checkFailure: false, visitFailure: false, alreadyVisited: false, candidateFailure: false }
   const calls = []
   const scriptOperations = []
   const chrome = {
@@ -66,17 +68,23 @@ export function createWorker() {
       sendMessage: async (tabId, message) => {
         calls.push([tabId, message])
         if (message.type === 'ext29:extract') {
+          if (behavior.candidateFailure) return { version: 1, request_id: message.request_id, ok: false }
           return { version: 1, request_id: message.request_id, ok: true, url: JOB,
             company: 'Acme', title: 'Engineer' }
         }
+        if ((message.kind === 'check' && behavior.checkFailure) ||
+            (message.kind === 'visit' && behavior.visitFailure)) {
+          return { version: 1, request_id: message.request_id, ok: false,
+            error: { code: 'unavailable', message: 'Retry' } }
+        }
         return { version: 1, request_id: message.request_id, ok: true,
           data: message.kind === 'session'
-            ? { protocol_version: 1, account_id: 101, account_label: 'Test account' }
+            ? { protocol_version: 1, account_id: activeAccount, account_label: 'Test account' }
             : message.kind === 'check'
-              ? { protocol_version: 1, account_id: 101, checked_at: '2026-11-04T00:00:00Z',
-                visit: { visited: false, first_visited_at: null }, matches: [],
+              ? { protocol_version: 1, account_id: activeAccount, checked_at: '2026-11-04T00:00:00Z',
+                visit: { visited: behavior.alreadyVisited, first_visited_at: behavior.alreadyVisited ? '2026-11-03T00:00:00Z' : null }, matches: [],
                 company_history_count: 0, company_known: false, lookup_complete: true }
-              : { protocol_version: 1, account_id: 101, created: true,
+              : { protocol_version: 1, account_id: activeAccount, created: true,
                 first_visited_at: '2026-11-04T00:00:01Z' },
         }
       },
@@ -107,7 +115,8 @@ export function createWorker() {
   }
   return {
     send, calls, scripts, requested, scriptOperations, storageSession, storageLocal,
-    permissions, tabs, packet, connect: () => send(packet('ext26:connect', { tab_id: 1 })),
+    permissions, tabs, packet, behavior, setAccount: id => { activeAccount = id },
+    connect: () => send(packet('ext26:connect', { tab_id: 1 })),
     emitUpdated: (id, change) => { const tab = tabs.get(id); Object.assign(tab, change);
       updated?.(id, change, tab) },
     revoke: origin => { permissions.delete(origin); permissionRemoved?.({ origins: [origin] }) },
@@ -169,4 +178,53 @@ test('EXT-30 denies forged senders, unknown hosts and revocation cannot remain o
   const status = await w.send(packet('ext30:site-status', { host: 'jobs.lever.co' }))
   assert.equal(status.data.opted_in, false)
   assert.equal(w.scripts.size, 0)
+})
+
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+const optIntoLever = async w => {
+  assert.equal((await w.connect()).ok, true)
+  assert.equal((await w.send(packet('ext30:site-opt-in', {
+    host: 'jobs.lever.co', enabled: true,
+  }))).ok, true)
+}
+
+test('EXT-31 triggers exactly one check per qualifying top-level navigation', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal(w.calls.filter(([, message]) => message.kind === 'check').length, 1)
+  assert.equal(w.calls.filter(([, message]) => message.type === 'ext29:extract').length, 1)
+  assert.equal(w.calls.filter(([, message]) => message.kind === 'visit').length, 1)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(550)
+  assert.equal(w.calls.filter(([, message]) => message.kind === 'check').length, 1)
+})
+
+test('EXT-31 cancels a pending check on navigation and rejects unsupported URLs', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  w.emitUpdated(2, { url: 'https://jobs.lever.co/acme', status: 'loading' })
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal(w.calls.filter(([, message]) => message.kind === 'check').length, 0)
+  assert.equal(w.calls.filter(([, message]) => message.kind === 'visit').length, 0)
+})
+
+test('EXT-31 does not check when candidate extraction fails or permission is revoked', async () => {
+  const a = createWorker()
+  await optIntoLever(a)
+  a.behavior.candidateFailure = true
+  a.emitUpdated(2, { status: 'complete' })
+  await sleep(630)
+  assert.equal(a.calls.filter(([, message]) => message.kind === 'check').length, 0)
+  const b = createWorker()
+  await optIntoLever(b)
+  b.revoke('https://jobs.lever.co/*')
+  b.emitUpdated(2, { status: 'complete' })
+  await sleep(630)
+  assert.equal(b.calls.filter(([, message]) => message.kind === 'check').length, 0)
 })
