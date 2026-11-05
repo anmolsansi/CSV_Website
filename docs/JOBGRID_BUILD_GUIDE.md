@@ -4506,3 +4506,82 @@ change and re-establish the relevant acceptance; never silently combine results
 from different source or artifact versions. No recurring monitor, provider
 restart, scheduled email, deployment or store publication has been enabled by
 preparing this record.
+
+
+### Fifty-task source/evidence audit (EXT-50.01)
+
+Audit date: 2026-11-05. Candidate source is main `569835c`; merged source
+records were fetched from GitHub PRs #185–197. The table maps every roadmap
+task to a merged change or this continuation. “Implementation/CI” describes
+code and automated acceptance, never deployed OAuth, permission prompts or
+store readiness. The task packets and parent issue #184 retain external gaps.
+This audit does not convert their unchecked evidence into a release pass.
+
+| Task | Contract reviewed / evidence focus | Source record | Current acceptance boundary |
+|---|---|---|---|
+| EXT-01 | Exact public origin/account expectations | [#185](https://github.com/anmolsansi/CSV_Website/pull/185), `73acc91` | Implemented; automated regression evidence, not live release |
+| EXT-02 | MV3 shell and separate development manifest | [#185](https://github.com/anmolsansi/CSV_Website/pull/185), `73acc91` | Inactive shell load passed; active permission UX pending |
+| EXT-03 | Isolated fixed-route cookie session bridge | [#185](https://github.com/anmolsansi/CSV_Website/pull/185), `73acc91` | Local bridge passed; deployed OAuth transport pending |
+| EXT-04 | Cookie-owned session route | [#186](https://github.com/anmolsansi/CSV_Website/pull/186), `2c30b9e` | Implemented; automated regression evidence, not live release |
+| EXT-05 | Real Chrome/deployed OAuth handshake | [#186](https://github.com/anmolsansi/CSV_Website/pull/186), `2c30b9e` | BLOCKED: real provider/controlled identities unavailable |
+| EXT-06 | Visits/receipt models and migration 019 | [#186](https://github.com/anmolsansi/CSV_Website/pull/186), `2c30b9e` | Implemented; automated regression evidence, not live release |
+| EXT-07 | Strict public URL/request schemas | [#187](https://github.com/anmolsansi/CSV_Website/pull/187), `12fe2ac` | Implemented; automated regression evidence, not live release |
+| EXT-08 | Owner-locked capped replayable visits | [#187](https://github.com/anmolsansi/CSV_Website/pull/187), `12fe2ac` | Implemented; automated regression evidence, not live release |
+| EXT-09 | Update only matching existing source rows | [#187](https://github.com/anmolsansi/CSV_Website/pull/187), `12fe2ac` | Implemented; automated regression evidence, not live release |
+| EXT-10 | Owner-only forget and account purge | [#188](https://github.com/anmolsansi/CSV_Website/pull/188), `1606342` | Implemented; automated regression evidence, not live release |
+| EXT-11 | Shared applied identity matcher | [#188](https://github.com/anmolsansi/CSV_Website/pull/188), `1606342` | Implemented; automated regression evidence, not live release |
+| EXT-12 | Definite matches survive dense-company cap | [#188](https://github.com/anmolsansi/CSV_Website/pull/188), `1606342` | Implemented; automated regression evidence, not live release |
+| EXT-13 | Independent visit and company facts | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-14 | Frozen read-only check response/errors | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-15 | Identity false-positive matrix | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-16 | Explicit apply without CSV capture | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-17 | Preserve existing applied time/status | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-18 | UUID/digest-bounded apply receipts | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-19 | Guarded visit/apply/delete routes | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-20 | Concurrent apply/retry atomicity | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-21 | Shared rate windows and Origin/account checks | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-22 | Checksummed optional visit backup schema | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-23 | Compose JSON/ZIP visit export | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-24 | Transactional visit restore | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-25 | Deletion/restore/purge boundaries | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-26 | Selected tab/account command dispatcher | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-27 | Timeout and stale-response cancellation | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-28 | Safe supported ATS detail classifier | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-29 | Public editable metadata candidates | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Implemented; automated regression evidence, not live release |
+| EXT-30 | Host grants and independent site opt-ins | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Registration logic passed; normal grant UX pending |
+| EXT-31 | Top-frame navigation debounce | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Implemented; automated regression evidence, not live release |
+| EXT-32 | Visit only after successful check | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Implemented; automated regression evidence, not live release |
+| EXT-33 | Current-tab user-gesture fallback | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-34 | Bounded session-only pending intent | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-35 | Pause/disconnect and badge invalidation | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-36 | Safe popup warning states | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-37 | Honest offline/partial/error states | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-38 | Editable metadata and explicit confirm | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-39 | Stable-UUID ambiguous apply retry | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-40 | Safe forget/disconnect/open-app controls | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-41 | Real persistent Chromium/local API journey | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Chromium/local passed; deployed normal-Chrome pilot pending |
+| EXT-42 | Two-account/forgery/privacy negatives | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Synthetic A/B/privacy passed; selected deployed pair pending |
+| EXT-43 | Keyboard/zoom/labels and screen reader | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Keyboard/labels passed; screen-reader acceptance pending |
+| EXT-44 | Restart/offline/SPA/revocation/suspension | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Offline/restart passed; genuine worker suspension/manual grants pending |
+| EXT-45 | Bounded HTTP timing and diagnostics | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | HTTP/real-timer tests passed; deployed cold/warm observation belongs to EXT-48 |
+| EXT-46 | Nonempty CI contract/extension gates | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | CI gates and actual suites passed on PR #197 source; continuation head rechecked separately |
+| EXT-47 | Deterministic inactive ZIP and load proof | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | Inactive ZIP deterministic; installed Chrome/Chromium load passed; no active pilot |
+| EXT-48 | Deployed pilot/recovery/48h observation | EXT-48–50 continuation, issue #184 | BLOCKED: active candidate/target/accounts/48h absent |
+| EXT-49 | Privacy/publisher/store-input acceptance | EXT-48–50 continuation, issue #184 | DRAFT: publisher/ID/approved URLs absent; shell not a functional submission |
+| EXT-50 | Final accepted feature/release handoff | EXT-48–50 continuation, issue #184 | PARTIAL: audit prepared; 48/49 and inherited manual gates open |
+
+**Release findings:** the current release artifact is deliberately inactive, so
+its successful load cannot satisfy connect/check/visit/apply manual journeys.
+C-09/C-10 controlled-account/environment/recovery prerequisites are not closed.
+No 48-hour observation is recorded. Public publisher/privacy/support details
+are missing. Declared permissions are not exercised by the shell, so a store
+necessity/functional-feature claim cannot be signed off. These are blocking
+release findings, not a reason to activate development code implicitly.
+
+**Preserved contracts:** cookie-resolved owner; expected-account/Origin guards
+for writes; visits/imports/saved/applied remain distinct; source deletion does
+not erase applications; exact/canonical matches bypass the bounded possible
+scan; confirmed apply uses stable receipts and keeps prior applied facts;
+restore is composed/transactional and excludes operational receipts; additive
+tables survive compatible code rollback. Existing tests exercise these seams;
+missing live proof stays identified by its owner instead of inferred from CI.
