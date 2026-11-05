@@ -549,7 +549,7 @@ test('EXT-40 forget requires exact popup confirmation, clears stale warnings, an
   assert.equal((await w.send(packet('ext32:tab-status', { tab_id: 2 }))).error.code, 'no_check')
   assert.equal(w.storageSession.jobgridTabChecks, undefined)
   assert.equal(w.storageSession.jobgridPendingApply, undefined)
-  assert.equal(w.badges.get(2), '')
+  assert.ok(!w.badges.get(2), 'no badge may exist before or after deletion')
   assert.equal((await w.send(packet('ext35:status'))).data.connected, true)
 })
 
