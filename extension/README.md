@@ -1,6 +1,6 @@
-# JobGrid Chrome extension, foundation pilot
+# JobGrid Chrome extension — development implementation and inactive release shell
 
-This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, EXT-26–28 account-bound worker/ATS route classifier, EXT-29–32 development-only page observation, and EXT-33–36 current-tab and popup flows for the 50-step roadmap in `development.md` §9. **The release extension is not yet a functioning history tracker.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Full onboarding, page observation, confirmation UI and Chrome/OAuth pilot remain future work.
+This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, EXT-26–28 account-bound worker/ATS route classifier, EXT-29–32 development-only page observation, and EXT-33–36 current-tab and popup flows for the 50-step roadmap in `development.md` §9. **The release extension is not yet a functioning history tracker.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Development page observation, confirmation and lifecycle controls are implemented; active release packaging, normal permission/suspension/screen-reader acceptance and deployed Chrome/OAuth pilot sign-off remain open.
 
 ## Environment and trust
 
@@ -8,7 +8,7 @@ This directory includes the EXT-01–03 foundation, EXT-05 disposable session pr
 - **Live Chrome/OAuth acceptance: NOT VERIFIED.** No controlled real-user session or extension bridge handshake has been demonstrated by EXT-01–03. The `/crm/browser-memory/session` route is now implemented, but its real Chrome/production OAuth handshake still requires acceptance.
 - **Local disposable frontend/API pair:** `http://localhost:5173` (Vite with `/api` proxy configured for the test backend, if needed) and `http://localhost:8000` (FastAPI with a disposable SQLite/test database and `TEST_AUTH=true` only for local development). These are **development fixtures**, not approved remote sites or release settings. Do not use production accounts or data.
 - **Account expectation:** One explicitly selected, signed-in JobGrid tab for one server-resolved account. Keep a JobGrid tab open. Switching users, missing tab or logout suspends future tracking until a deliberate reconnect. Neither the extension nor tests store auth tokens or session cookies.
-- **Supported optional ATS hosts:** `boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`. The future automatic check only applies to exact supported job-detail routes, never arbitrary browsing. No site is enabled at installation. The development worker supports an explicit per-host opt-in command, but the release popup does not expose it yet.
+- **Supported optional ATS hosts:** `boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`. The development automatic check only applies to exact supported job-detail routes, never arbitrary browsing. No site is enabled at installation. The development worker supports an explicit per-host opt-in command, but the release popup does not expose it yet.
 - **Trust invariant:** `extension/config.js` owns the exact configured release HTTPS frontend origin. Both the release manifest and isolated bridge must agree with it. The manifest requests no host access at install. The popup cannot enter arbitrary API servers. No write comes from the page or from a session read.
 
 ## Install the shell
@@ -18,7 +18,7 @@ This directory includes the EXT-01–03 foundation, EXT-05 disposable session pr
 3. Open the JobGrid extension toolbar popup. It should display **Not connected yet** and **No browsing is tracked by this shell**.
 4. Confirm Chrome lists no site access granted and that the extension has not connected to JobGrid. Unload the extension to roll back. There is no backend migration or account-data change in these three tickets.
 
-`manifest.dev.json` is a **development-only alternative** containing one localhost optional host pattern. For local Chrome tests, copy the directory to a disposable temp directory, replace only that copy's `manifest.json` with `manifest.dev.json`, and overlay its public `APP_ORIGIN` and bridge `TRUSTED_ORIGIN` with the **same** exact local `http://localhost:5173` origin. Use `parseTrustedOrigin(value, { allowLocal: true })` for the test origin. Never edit or distribute the release source with localhost entries. A dev manifest must not be included in any release ZIP; release packaging is a later EXT ticket.
+`manifest.dev.json` is a **development-only alternative** containing one localhost optional host pattern. For local Chrome tests, copy the directory to a disposable temp directory, replace only that copy's `manifest.json` with `manifest.dev.json`, and overlay its public `APP_ORIGIN` and bridge `TRUSTED_ORIGIN` with the **same** exact local `http://localhost:5173` origin. Use `parseTrustedOrigin(value, { allowLocal: true })` for the test origin. Never edit or distribute the release source with localhost entries. A dev manifest must not be included in any release ZIP; the current package script allowlists only the inactive release manifest/popup.
 
 ## Session bridge contract (EXT-03)
 
@@ -402,3 +402,77 @@ job applications or production backend data during these checks.
 A production extension activation, store submission or rollout is
 explicitly outside this ZIP. Unproven Chrome permissions, worker
 suspension, accessibility and OAuth gates remain open.
+
+## Store preparation packet (EXT-49) — draft, not submitted
+
+The [privacy disclosure draft](../docs/CHROME_EXTENSION_PRIVACY.md) describes
+what the inactive ZIP actually does and separately explains the development
+implementation. The selected distribution owner is `anmolsansi`; the canonical policy and public
+support destinations are in the privacy draft. Operator commitments, policy
+publication and actual store identity must be verified before submission. EXT-48 deployed
+pilot acceptance has not been established. Do not upload the inactive shell
+as a functioning job-memory extension.
+
+### Proposed listing text for owner review
+
+- **Existing package name:** JobGrid Job Memory (Pilot).
+- **Artifact description:** Inactive engineering shell for a future opt-in JobGrid job-memory companion.
+- **Language:** English; other locales have not been prepared or reviewed.
+- **Current behavior:** This build displays a disconnected status. It does not
+  connect an account, track visits, check history, mark applications or request
+  site access. Account connection and job-memory controls are in the separate
+  development implementation and are not included in this ZIP.
+- **Future active single purpose, not a current release claim:** Help the
+  selected JobGrid account distinguish recorded visits, prior applications and
+  possible employer history while reviewing a job. Explicitly confirming an
+  application records a fact in JobGrid; it does not submit a job application.
+- **Category/distribution audience/regions:** Await publisher selection for an
+  accepted functioning candidate; no public availability is implied.
+
+This is engineering review copy, not publication-ready marketing. All active
+feature claims must be rechecked against the exact active package, normal
+Chrome permissions, deployed account transport and operator-approved policy.
+
+### Candidate package and review handoff
+
+| Item | Prepared evidence / remaining requirement |
+|---|---|
+| Package | `jobgrid-pilot-v0.1.0.zip`; explicit members `manifest.json`, `popup.html` |
+| SHA-256 | `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1` |
+| Existing accepted package CI | [PR #197 source CI](https://github.com/anmolsansi/CSV_Website/actions/runs/42000972910); published source `9123064`, merged as `569835c` |
+| Chrome package load | Unmodified ZIP version/popup/zero-host/zero-worker/uninstall checks passed on installed Chrome 157.0.8103.38; no active function implied |
+| Publisher and stable store ID | `anmolsansi` selected; use Chrome-assigned unpublished-draft Item ID when available; actual ID not allocated |
+| Policy/support destinations | Policy: https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md (404 pending publication); support: https://github.com/anmolsansi/CSV_Website/issues (verified 200) |
+| Store icon and screenshots | Not prepared for an accepted active package; use only synthetic, accurately represented UI |
+| Submission/review status | NOT SUBMITTED / NOT APPROVED |
+
+Build and independently check the candidate before handoff:
+
+```sh
+node extension/package.mjs
+(cd extension/dist && shasum -a 256 -c jobgrid-pilot-v0.1.0.zip.sha256 && unzip -t jobgrid-pilot-v0.1.0.zip)
+```
+
+These checksum commands use macOS `shasum`; Linux CI uses `sha256sum -c`.
+Keep the ZIP and sidecar together. A changed source/version is a new candidate,
+requiring new checksums, privacy/permission review and acceptance; never reuse
+the recorded hash for a promoted development build. A signing key, browser
+profile, test manifest, account record, cookie, .env or private backup is never
+a store input. The package tests independently decode the archive and verify
+its explicit member allowlist, deterministic bytes and negative boundaries.
+
+### Install, remove, restore and support
+
+Use the earlier checksum/unpacked-install instructions and a disposable profile.
+The shell should show “Not connected yet,” request no site access and leave
+server history untouched. To stop it, disable/remove it in Chrome. Removing a
+development install clears browser extension state, not previously saved visits
+or applications. Its confirmed Forget visits removes only external visit memory;
+restoring an older backup can bring it back. Do not describe uninstall as erasing
+all server data or private backup copies.
+
+Public technical support is the selected repository Issues page. Before active
+distribution, establish a private path and responsible owner for sensitive
+account/deletion/recovery requests and publish/approve the canonical policy. No email
+was sent, support account created, store record uploaded, listing published or
+production extension enabled by preparing this packet.

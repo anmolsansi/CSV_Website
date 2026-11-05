@@ -4350,3 +4350,293 @@ session timezone and test-process TZ set to UTC, matching CI. A local cluster
 initialized in America/New_York otherwise produces offset/naive-time fixture
 failures. With that setup, the full local PostgreSQL suite passed **737 tests**;
 the extension Node suite passed **70**, and the frontend production build passed.
+
+## Extension release-candidate acceptance (EXT-48–50)
+
+The working release candidate is main `569835caf29f4b2623fd0e60730332b044d7e02b`
+(PR #197 merged). This section is an acceptance record, not permission to
+change a production service or close a gate without observing it.
+
+### Candidate and target identity (EXT-48.01)
+
+| Item | Recorded value / acceptance boundary |
+|---|---|
+| Source candidate | `569835caf29f4b2623fd0e60730332b044d7e02b` |
+| Previous compatible application source for local rehearsal | `0c42e999772181907d8dcd590ced2c4fa5708b84`; its backend runtime and migrations are identical to this candidate |
+| Extension artifact | `jobgrid-pilot-v0.1.0.zip`, inactive shell, `manifest.json` and `popup.html` only |
+| Artifact SHA-256 | `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1` |
+| Trusted frontend | `https://csv-website-steel.vercel.app`; exact optional-host scope only |
+| Observed frontend deployment | Vercel production `dpl_7wVcNEdGQE74XYXDDQQkJB3LsNWu`, READY, source `569835c` on 2026-11-05 |
+| Documented backend | `https://jobgrid-api.onrender.com`; current deployed source not verified in this acceptance |
+| Isolated deployed database/object store | NOT SELECTED / NOT VERIFIED; do not use the production database for a rehearsal |
+| Operator and two controlled OAuth identities | NOT PROVIDED; do not substitute a personal session or dev login for live OAuth proof |
+| Render access | User confirmed Anmol’s workspace on 2026-11-05; read-only inventory found no JobGrid service, and the recorded service ID returned 404. No provider setting changed |
+| Earlier release prerequisites | C-09/C-10 controlled accounts, complete recovery and provider acceptance remain open in their owning records |
+
+**Confirmed Render inspection:** workspace `tea-d7so32sm0tmc73dc3cp0` was explicitly authorized by the user. Listing all services including previews returned no service for `anmolsansi/CSV_Website`. A scoped lookup of historical JobGrid service `srv-dalu7u3l550s73ch5lu0` returned 404. This establishes an access/resource gap in this workspace, not proof that no deployment exists anywhere. The user confirmed that the isolated pilot target and OAuth accounts remain pending. No replacement service, new database, paid resource or production activation was created.
+
+A READY frontend deployment says nothing about backend version, database
+isolation, OAuth success or the contents of the installed extension. Record
+all four separately. The inactive ZIP cannot execute the connect/check/visit/
+apply pilot journey. Promoting development code to a production manifest is
+an additional activation decision, not a documentation or packaging step.
+
+### Controlled Chrome/OAuth walkthrough (EXT-48.02)
+
+Public unauthenticated reads of the production frontend `/api/health` and
+`/api/crm/browser-memory/session` on 2026-11-05 each timed out after 30 seconds
+without a response in this execution environment; the web-fetch fallback
+could not access them either. This is an inconclusive reachability result,
+not a 401, an OAuth pass, or proof of a provider outage. Vercel metadata is
+recorded separately above. No deployed login, application write or rollback
+was performed.
+
+Before execution, record a disposable target, exact frontend/backend source
+SHAs, database/storage identity, active artifact hash, operator, Chrome version
+and controlled accounts A/B. Establish that C-09/C-10 prerequisites hold. Keep
+session cookies, provider tokens, backups and account data outside public
+GitHub evidence. Do not turn on TEST_AUTH at the deployed target.
+
+| Step | Expected observation | Current result |
+|---|---|---|
+| Load approved active artifact in a disposable normal Chrome profile | No broad install grants; grant only exact JobGrid origin after gesture | NOT RUN; shipped ZIP is inactive |
+| Log in through the real provider as controlled A | Correct account from `/api/crm/browser-memory/session`; secure cookie remains browser-owned | NOT RUN; controlled identities/target missing |
+| Connect one signed-in tab and grant an ATS host, then separately opt in | Only that supported top-frame job-detail route is observed | NOT RUN |
+| Check unseen synthetic URL, revisit and explicitly confirm applied | Visit/apply remain distinct; original applied time and one receipt survive same-key retry | NOT RUN |
+| Switch to B, log out, close/reopen app tab, revoke host permission | No wrong-owner writes, stale result, hidden reconnect or collection after revocation | NOT RUN |
+| Restart browser/backend; remove source CSV in disposable account | Durable visits/applications remain; browser session connection is re-established deliberately | NOT RUN |
+| Measure cold start separately, then 30 warm checks | Record actual environment/errors/timeouts; warm p95 <=2s; check deadline 8s | NOT RUN; local/CI measurements are not deployed timing |
+
+A successful synthetic local dev-login test cannot replace any real-provider
+row in this table. The optional-host browser UI, actual MV3 suspension and
+screen-reader gaps from EXT-02/05/41–44 must also be accepted on the chosen
+active candidate. A new release manifest/package is required before the
+inactive ZIP can be called a functioning pilot; do not edit the production
+manifest as a side effect of this walkthrough.
+
+### Local backup and code-rollback rehearsal (EXT-48.03)
+
+**PASS, local disposable rehearsal only — 2026-11-05.** PostgreSQL 16,
+Python 3.12.12, UTC; dedicated database `jobgrid_ext48_rehearsal_test` and
+private temporary filesystem storage. TEST_AUTH was used only locally. No
+production database, object store or provider was modified.
+
+The candidate backend (`569835c`) created one synthetic owner with one CSV
+row, visit, explicitly applied track, first-applied event, apply receipt and
+uploaded synthetic PDF. Same-key apply replay returned the original response.
+A complete ZIP export contained the PDF bytes. A canonical row-content hash
+was captured from each of the six nonempty owner tables using ordered
+`to_jsonb(row)::text` values, not screenshots or only counts.
+
+The previous compatible source `0c42e99` was extracted with `git archive` to
+a temporary directory and started in a **separate Python process** using the
+same disposable migrated database and document directory. It authenticated
+the synthetic account, read the original visit/application and kept schema
+019 plus all six source hashes unchanged. The current candidate then started
+in another process; the same hashes still matched. No schema downgrade,
+table drop, data rewrite or production rollback was performed. Backend runtime
+and migration files are identical across these two revisions: this proves
+that bounded rollback pair, not compatibility with pre-019 applications.
+
+A second disposable account first rejected the source account expectation
+with 409. It then verified, restored and replayed the ZIP. Restored visit and
+applied timestamps matched source values; exactly one visit, track and document
+version remained; apply receipts were not imported. Downloaded PDF bytes matched
+SHA-256 `4fe69afb9154f31e4a69888bc5af8db01b84fe496290033e5c7e855f336949d1`.
+The source account's six full-content hashes remained unchanged after restore.
+
+| Source table | Nonempty count | Hash before, on previous code, and after return/restore |
+|---|---:|---|
+| `csv_rows` | 1 | `f66986b35b40776ff7d59742b15a72af3b8dcef3d130a4472820fa5863b1db31` |
+| `job_tracks` | 1 | `e21277c772e576df2e95619d4070dad3e7250830b25317944cb32ba6c83f2ad7` |
+| `job_visits` | 1 | `92333822f7f2c2262f9052ca76dc8a216386359839eb1c67267d857367cc9d8e` |
+| `browser_apply_receipts` | 1 | `03fd716ba506fbe982d9b0a4b69bc05afa799a771c19b370db6157df95ae410a` |
+| `job_lifecycle_events` | 1 | `29432573995bf62093fa0c6662bc2d208efa64e2cb10669451fb832cd932dc98` |
+| `document_versions` | 1 | `0aed7b54b717d93c3d0df664016a88d67c91b468855fb65025b8587ced6d4cbf` |
+
+Rehearsal sequence: create a dedicated disposable PostgreSQL database and
+private document directory; configure its role/process timezone to UTC;
+start the candidate with local dev auth and explicit localhost frontend/CORS;
+seed via `/upload`, browser-memory visit/apply and `/crm/documents`; export
+`/crm/backup/export/bundle`; hash the owner rows above; stop the process;
+start archived previous backend with the same disposable resources; compare;
+stop it and return to the candidate; `verify_only`, `merge_missing`, then repeat
+`merge_missing` into a second disposable account; download/hash its document;
+compare source hashes again. Keep JWT cookies and ZIP contents private.
+
+Existing reproducible fixture regressions cover the same recovery boundaries:
+`test_complete_backup.py`, `test_document_backup.py`, `test_browser_visits.py`
+and `test_browser_memory_apply.py`. Never point pytest at a live database.
+A real selected-environment database/object backup, operator recovery objectives,
+deployed OAuth, browser/backend replacement and 48h observation are **not proven**
+by this local exercise and still block deployed EXT-48 acceptance.
+
+### Observation and rollback sign-off (EXT-48.04)
+
+**NOT STARTED.** The required 48-hour deployed observation cannot be replaced
+by CI runtime, an old deployment's age or a written runbook. Start its clock
+only after the operator approves an isolated active candidate and both real
+OAuth/account walkthroughs pass. Record dates/times with an explicit timezone.
+
+| Evidence field | Current value / required record |
+|---|---|
+| Operator and reviewer | Not supplied; identify the person authorized for the selected target |
+| Candidate frontend/backend/DB/storage identity | Incomplete; frontend metadata alone is insufficient |
+| Active installed artifact version/hash/stable identity | Not selected; inactive shell cannot exercise pilot behavior |
+| Observation start and end | NOT STARTED / NOT COMPLETED; require at least 48 hours on one candidate |
+| Cold start / reconnect | NOT RUN; record duration, expected failure state and successful deliberate reconnect |
+| Warm lookups | NOT RUN on deployed candidate; record 30 samples and p95 separately from cold timing |
+| A/B account switch, logout, revoke and suspension | NOT RUN in the deployed pilot |
+| Complete backup / disposable deployed restore | NOT RUN; local rehearsal above is narrower evidence |
+| Previous deployed backend revision and rollback procedure | Not approved/selected; local pair does not authorize provider rollback |
+| Counts, relationships, earliest timestamps and document hashes | Capture before, after rollback and after returning to candidate; compare nonempty records |
+| Critical/high findings and operator signal | No deployed observation evidence; cannot sign off “none” |
+| Release decision | NOT ACCEPTED; EXT-48 and dependent final closure remain open |
+
+Rollback triggers include wrong-owner disclosure/write, duplicate application
+or changed original applied time, lost document/history, unsafe permission
+expansion, a failed backup/hash comparison, insecure auth behavior, or a
+required dependency not recovering. On a trigger: stop checks and writes,
+disable/revoke the active extension, preserve private evidence, and let the
+authorized operator restore compatible application code while retaining additive
+tables and stored history. Do not downgrade Alembic or recreate the database/
+bucket as ordinary code rollback. Verify health/readiness, controlled account
+identity, history and document hashes before resuming.
+
+If a candidate or permission boundary changes during observation, record the
+change and re-establish the relevant acceptance; never silently combine results
+from different source or artifact versions. No recurring monitor, provider
+restart, scheduled email, deployment or store publication has been enabled by
+preparing this record.
+
+
+### Fifty-task source/evidence audit (EXT-50.01)
+
+Audit date: 2026-11-05. Candidate source is main `569835c`; merged source
+records were fetched from GitHub PRs #185–197. The table maps every roadmap
+task to a merged change or this continuation. “Implementation/CI” describes
+code and automated acceptance, never deployed OAuth, permission prompts or
+store readiness. The task packets and parent issue #184 retain external gaps.
+This audit does not convert their unchecked evidence into a release pass.
+
+| Task | Contract reviewed / evidence focus | Source record | Current acceptance boundary |
+|---|---|---|---|
+| EXT-01 | Exact public origin/account expectations | [#185](https://github.com/anmolsansi/CSV_Website/pull/185), `73acc91` | Implemented; automated regression evidence, not live release |
+| EXT-02 | MV3 shell and separate development manifest | [#185](https://github.com/anmolsansi/CSV_Website/pull/185), `73acc91` | Inactive shell load passed; active permission UX pending |
+| EXT-03 | Isolated fixed-route cookie session bridge | [#185](https://github.com/anmolsansi/CSV_Website/pull/185), `73acc91` | Local bridge passed; deployed OAuth transport pending |
+| EXT-04 | Cookie-owned session route | [#186](https://github.com/anmolsansi/CSV_Website/pull/186), `2c30b9e` | Implemented; automated regression evidence, not live release |
+| EXT-05 | Real Chrome/deployed OAuth handshake | [#186](https://github.com/anmolsansi/CSV_Website/pull/186), `2c30b9e` | BLOCKED: real provider/controlled identities unavailable |
+| EXT-06 | Visits/receipt models and migration 019 | [#186](https://github.com/anmolsansi/CSV_Website/pull/186), `2c30b9e` | Implemented; automated regression evidence, not live release |
+| EXT-07 | Strict public URL/request schemas | [#187](https://github.com/anmolsansi/CSV_Website/pull/187), `12fe2ac` | Implemented; automated regression evidence, not live release |
+| EXT-08 | Owner-locked capped replayable visits | [#187](https://github.com/anmolsansi/CSV_Website/pull/187), `12fe2ac` | Implemented; automated regression evidence, not live release |
+| EXT-09 | Update only matching existing source rows | [#187](https://github.com/anmolsansi/CSV_Website/pull/187), `12fe2ac` | Implemented; automated regression evidence, not live release |
+| EXT-10 | Owner-only forget and account purge | [#188](https://github.com/anmolsansi/CSV_Website/pull/188), `1606342` | Implemented; automated regression evidence, not live release |
+| EXT-11 | Shared applied identity matcher | [#188](https://github.com/anmolsansi/CSV_Website/pull/188), `1606342` | Implemented; automated regression evidence, not live release |
+| EXT-12 | Definite matches survive dense-company cap | [#188](https://github.com/anmolsansi/CSV_Website/pull/188), `1606342` | Implemented; automated regression evidence, not live release |
+| EXT-13 | Independent visit and company facts | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-14 | Frozen read-only check response/errors | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-15 | Identity false-positive matrix | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-16 | Explicit apply without CSV capture | [#189](https://github.com/anmolsansi/CSV_Website/pull/189), `a1c991b` | Implemented; automated regression evidence, not live release |
+| EXT-17 | Preserve existing applied time/status | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-18 | UUID/digest-bounded apply receipts | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-19 | Guarded visit/apply/delete routes | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-20 | Concurrent apply/retry atomicity | [#190](https://github.com/anmolsansi/CSV_Website/pull/190), `032fcc5` | Implemented; automated regression evidence, not live release |
+| EXT-21 | Shared rate windows and Origin/account checks | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-22 | Checksummed optional visit backup schema | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-23 | Compose JSON/ZIP visit export | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-24 | Transactional visit restore | [#191](https://github.com/anmolsansi/CSV_Website/pull/191), `c75e06e` | Implemented; automated regression evidence, not live release |
+| EXT-25 | Deletion/restore/purge boundaries | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-26 | Selected tab/account command dispatcher | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-27 | Timeout and stale-response cancellation | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-28 | Safe supported ATS detail classifier | [#192](https://github.com/anmolsansi/CSV_Website/pull/192), `bd58a12` | Implemented; automated regression evidence, not live release |
+| EXT-29 | Public editable metadata candidates | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Implemented; automated regression evidence, not live release |
+| EXT-30 | Host grants and independent site opt-ins | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Registration logic passed; normal grant UX pending |
+| EXT-31 | Top-frame navigation debounce | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Implemented; automated regression evidence, not live release |
+| EXT-32 | Visit only after successful check | [#193](https://github.com/anmolsansi/CSV_Website/pull/193), `63c554a` | Implemented; automated regression evidence, not live release |
+| EXT-33 | Current-tab user-gesture fallback | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-34 | Bounded session-only pending intent | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-35 | Pause/disconnect and badge invalidation | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-36 | Safe popup warning states | [#194](https://github.com/anmolsansi/CSV_Website/pull/194), `de60aa8` | Implemented; automated regression evidence, not live release |
+| EXT-37 | Honest offline/partial/error states | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-38 | Editable metadata and explicit confirm | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-39 | Stable-UUID ambiguous apply retry | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-40 | Safe forget/disconnect/open-app controls | [#195](https://github.com/anmolsansi/CSV_Website/pull/195), `36cbe5a` | Implemented; automated regression evidence, not live release |
+| EXT-41 | Real persistent Chromium/local API journey | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Chromium/local passed; deployed normal-Chrome pilot pending |
+| EXT-42 | Two-account/forgery/privacy negatives | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Synthetic A/B/privacy passed; selected deployed pair pending |
+| EXT-43 | Keyboard/zoom/labels and screen reader | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Keyboard/labels passed; screen-reader acceptance pending |
+| EXT-44 | Restart/offline/SPA/revocation/suspension | [#196](https://github.com/anmolsansi/CSV_Website/pull/196), `0c42e99` | Offline/restart passed; genuine worker suspension/manual grants pending |
+| EXT-45 | Bounded HTTP timing and diagnostics | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | HTTP/real-timer tests passed; deployed cold/warm observation belongs to EXT-48 |
+| EXT-46 | Nonempty CI contract/extension gates | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | CI gates and actual suites passed on PR #197 source; continuation head rechecked separately |
+| EXT-47 | Deterministic inactive ZIP and load proof | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | Inactive ZIP deterministic; installed Chrome/Chromium load passed; no active pilot |
+| EXT-48 | Deployed pilot/recovery/48h observation | EXT-48–50 continuation, issue #184 | BLOCKED: active candidate/target/accounts/48h absent |
+| EXT-49 | Privacy/publisher/store-input acceptance | EXT-48–50 continuation, issue #184 | DRAFT: owner/support selected; policy publication, allocated store ID and functional package pending |
+| EXT-50 | Final accepted feature/release handoff | EXT-48–50 continuation, issue #184 | PARTIAL: audit prepared; 48/49 and inherited manual gates open |
+
+**Release findings:** the current release artifact is deliberately inactive, so
+its successful load cannot satisfy connect/check/visit/apply manual journeys.
+C-09/C-10 controlled-account/environment/recovery prerequisites are not closed.
+No 48-hour observation is recorded. Distribution owner and destinations are selected by user delegation; canonical
+policy publication and allocated store identity are still missing. Declared permissions are not exercised by the shell, so a store
+necessity/functional-feature claim cannot be signed off. These are blocking
+release findings, not a reason to activate development code implicitly.
+
+**Preserved contracts:** cookie-resolved owner; expected-account/Origin guards
+for writes; visits/imports/saved/applied remain distinct; source deletion does
+not erase applications; exact/canonical matches bypass the bounded possible
+scan; confirmed apply uses stable receipts and keeps prior applied facts;
+restore is composed/transactional and excludes operational receipts; additive
+tables survive compatible code rollback. Existing tests exercise these seams;
+missing live proof stays identified by its owner instead of inferred from CI.
+
+### Evidence bundle and release ownership (EXT-50.02)
+
+| Evidence layer | Observed record | What it does not establish |
+|---|---|---|
+| Candidate source/merge | Main `569835c`, PR #197 merged; predecessor `0c42e99` | Installed/active extension, backend deployed revision or isolation |
+| Merged main CI | [Full CI](https://github.com/anmolsansi/CSV_Website/actions/runs/42002738031), [SQLite](https://github.com/anmolsansi/CSV_Website/actions/runs/42002738119), [timezones](https://github.com/anmolsansi/CSV_Website/actions/runs/42002738003): success on `569835c` | Live OAuth, actual provider recovery or 48h pilot |
+| Original package evidence | [PR #197 source CI/artifact](https://github.com/anmolsansi/CSV_Website/actions/runs/42000972910); deterministic inactive shell hash above | Functioning active-pilot package or store approval |
+| This local recovery exercise | 67 existing recovery tests passed; separate old/current processes preserved six nonempty table hashes; ZIP restored/replayed and PDF hash matched | Selected-environment failover or private cloud object recovery |
+| Extension contracts | 70 existing Node tests passed; package rebuilt with the same SHA-256 and two-file allowlist | Browser-owned grants, actual MV3 suspension or screen-reader verification |
+| Frontend deployment | Vercel READY deployment/source recorded in EXT-48.01 | Backend/provider state; actual health/session reads were inconclusive |
+| Public disclosures/listing | Draft privacy file and README packet prepared; official Chrome documentation compared | Owner-approved public policy/support locations or functional-package certification |
+| Feature release sign-off | NOT ACCEPTED | No earlier/later external gate is inferred complete |
+
+The source/CI links are immutable evidence of their recorded revisions. Check
+this continuation PR's own head before merging its documents; its validation
+state is recorded in the PR and parent issue #184 rather than inferred from
+the merged baseline. A full CI pass never starts or completes the observation
+clock. Public evidence contains only safe revisions, counts, hashes, outcomes
+and blockers; cookies, backups and controlled account records remain private.
+
+| Responsibility | Assigned authority / current availability |
+|---|---|
+| Code/doc preparation and local fixture evidence | This branch and traceable micro commits under #184 |
+| Deployed operator, isolated DB/storage identity and rollback window | Requires owner selection/confirmation; not supplied |
+| Two controlled real-provider identities | Requires owner availability; no personal session reuse or production TEST_AUTH |
+| Active extension promotion and compatibility approval | Requires explicit candidate decision and new package/hash; current release stays inactive |
+| 48h observation and cold/reconnect sign-off | Authorized operator/reviewer; not started |
+| Publisher identity, store item ID, public policy/support approvals | `anmolsansi` selected; public support verified 200; canonical policy publication and real Chrome Item ID remain pending |
+| Final release reviewer | Must review the remaining gates and exact artifact/revisions; not assigned by this document |
+
+No merge, provider deploy/restart, data mutation, store upload or public
+activation is authorized merely by writing the handoff. Keep EXT-48, EXT-49
+and final EXT-50 acceptance unchecked until their own criteria are observed.
+
+
+### Delegated distribution decisions — 2026-11-05
+
+The user asked the assistant to choose the publisher/distribution details. Use
+`anmolsansi`, the verified public repository owner, as individual distribution
+owner. Select public technical support at https://github.com/anmolsansi/CSV_Website/issues (HTTP 200), and canonical
+privacy policy at https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md (currently HTTP 404 because the document awaits
+publication/merge from draft PR #198). These are concrete selections, not a
+claim that the policy is already public/approved or a Chrome publisher is
+registered. Sensitive account requests need a private channel before release.
+
+For stable identity, record the Chrome-assigned Item ID after an accepted active
+package is uploaded as an unpublished dashboard draft; do not manufacture an ID.
+Chrome's documented public-key workflow can align unpacked development identity
+with that real store item. No item, publisher registration, signing key, store
+upload or paid resource was created by choosing this sequence. The deployment
+pilot target/accounts remain pending as the user confirmed, so observation and
+final release acceptance still cannot start.
