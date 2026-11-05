@@ -4037,7 +4037,7 @@ The observation pieces are:
    fetch JobGrid or receive history results.
 4. **Visit after check (EXT-32):** only a valid, successful /check response
    allows /visit through the existing account-checked, cookie-backed bridge.
-   Already visited URLs do not need a second write. The original check
+   A successful check always submits an idempotent /visit: a checked visited flag may come from a legacy clicked row or opened track instead of a durable JobVisit. The visit endpoint preserves the original first-visit timestamp on replay. The original check
    response is saved **before** the visit, and never modified to reflect a
    later write. A failed or ambiguous write is marked save_unknown, not saved.
    The worker keeps at most 40 tab records in trusted session storage and
