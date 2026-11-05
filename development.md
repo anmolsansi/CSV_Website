@@ -3025,7 +3025,7 @@ Inspect existing Playwright config/fixtures and 9.6 evidence matrix; rules: test
 | [ ] [EXT-42](#ext-42) | Exercise two-account switch, forged messages and hostile site privacy negatives. | `frontend/tests/extension.spec.ts`, `backend/tests/test_browser_memory_security.py`; never leak counts/IDs to foreign account/job page, untrusted sites cannot trigger writes; dep: 41. Docs: none, regression only. |
 | [ ] [EXT-43](#ext-43) | Exercise keyboard/screen-reader labels and every popup failure state. | `frontend/tests/extension.spec.ts`, `popup.html`, `popup.css`; focus return, live status, zoom/no overflow, controls without color; dep: 41. Docs: accessibility. |
 | [ ] [EXT-44](#ext-44) | Verify worker suspension/restart, offline recovery, reload/SPA and permission revocation. | `frontend/tests/extension.spec.ts`, `extension/README.md`; no phantom visited/applied/clearance, repeated apply one track/time, no auto-replay after restart; dep: 41. Docs: lifecycle recovery. |
-| [ ] [EXT-45](#ext-45) | Run timed matrix and verify bounded API/log behavior. | `backend/tests/test_browser_memory_matches.py`, `extension/README.md`; 30 warm checks p95, cold-start/timeout separately, 10k visits/query plan, no payload/cookie/query URL in logs; dep: 42–44. Docs: measured limits, not guessed results. |
+| [x] [EXT-45](#ext-45) | Run timed matrix and verify bounded API/log behavior. | `backend/tests/test_browser_memory_matches.py`, `extension/README.md`; 30 warm checks p95, cold-start/timeout separately, 10k visits/query plan, no payload/cookie/query URL in logs; dep: 42–44. Docs: measured limits, not guessed results. |
 
 #### Band 10 — Packaging, rollout and handover (MAS-EXT-5)
 
@@ -3033,8 +3033,8 @@ Inspect `.github/workflows/ci.yml`, section 7 deployment runbook, C-09/C-10 evid
 
 | Task (~2% each) | Deliverable and reason | Allowed files / validation / dependencies |
 |---|---|---|
-| [ ] [EXT-46](#ext-46) | Add extension contract/permission/Node-test checks and local extension E2E to existing CI. | `.github/workflows/ci.yml`, `frontend/package.json`, `extension/README.md`; clean install, existing suites intact, extension test reports actually collected; dep: 41–45. Docs: commands. |
-| [ ] [EXT-47](#ext-47) | Produce versioned pilot ZIP and privacy/install/remove instructions without dev hosts/secrets. | `extension/manifest.json`, `extension/README.md`, NEW `extension/package.mjs`, `extension/tests/package.test.mjs`; assert allowlisted members/dev-host and secret exclusions, deterministic package, archive manifest/hash review and unpack/install test; dep: 46. Docs: artifact/version/checksum. |
+| [x] [EXT-46](#ext-46) | Add extension contract/permission/Node-test checks and local extension E2E to existing CI. | `.github/workflows/ci.yml`, `frontend/package.json`, `extension/README.md`; clean install, existing suites intact, extension test reports actually collected; dep: 41–45. Docs: commands. |
+| [x] [EXT-47](#ext-47) | Produce versioned pilot ZIP and privacy/install/remove instructions without dev hosts/secrets. | `extension/manifest.json`, `extension/README.md`, NEW `extension/package.mjs`, `extension/tests/package.test.mjs`; assert allowlisted members/dev-host and secret exclusions, deterministic package, archive manifest/hash review and unpack/install test; dep: 46. Docs: artifact/version/checksum. |
 | [ ] [EXT-48](#ext-48) | Accept migration/backup rollback and real Chrome/deployed OAuth pilot on one candidate. | `extension/README.md`, `development.md` evidence record; two controlled accounts, proxy auth, store-free unpacked installation, warm/cold checks, restart, first-time application preserved, old-code rollback with visit table retained; dep: 47,24, C-09/C-10 prerequisites. External failures remain blocked, not passed. |
 | [ ] [EXT-49](#ext-49) | Prepare store submission inputs, exact permissions/disclosures and privacy policy for human review. | `extension/README.md`, NEW `docs/CHROME_EXTENSION_PRIVACY.md`; verify store ID/origins/owner/support URL and stored-data disclosure; dep: 48. Submission/publication is separate from local completion; do not invent store approval. |
 | [ ] [EXT-50](#ext-50) | Review full feature diff, evidence/checklist and release/rollback handoff. | `development.md`, `docs/JOBGRID_BUILD_GUIDE.md`, `docs/repo_context.md`, `extension/README.md`; all applicable tests/CI green, no unresolved critical/high findings, PR/installed-version/deployed-revision states recorded separately; dep: 49 and all prior acceptance. Docs: current system, no task diary. |
@@ -10097,7 +10097,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-45 — Measure bounded lookup performance and safe diagnostics
 
-**Status:** IMPLEMENTED on PR #197; continuation validation in progress; external Chrome acceptance remains pending.\
+**Status:** IMPLEMENTED / scoped local acceptance verified on PR #197; final-head CI tracked there. Inactive packaging is distinct from active-pilot/OAuth/store acceptance.\
 **Priority:** P1\
 **Type:** Performance acceptance\
 **Execution position:** 45/50; band 9/10 — Integration acceptance; group step 5/5.
@@ -10211,11 +10211,11 @@ New file/command paths become runnable only after their owning task supplies the
 
 ##### Acceptance criteria
 
-- [ ] Warm p95 <=2s for recorded fixture/environment; timeouts terminate at 8s and cold starts are not mixed into warm samples.
-- [ ] Known exact job is returned under dense company history with bounded result size/candidate scan.
-- [ ] Diagnostic capture contains action/outcome/duration only, with no real/synthetic payload sentinel or cookie text.
-- [ ] Every numbered EXT-45 checkpoint is implemented or proven already satisfied with current evidence.
-- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+- [x] Warm p95 <=2s for recorded fixture/environment; timeouts terminate at 8s and cold starts are not mixed into warm samples.
+- [x] Known exact job is returned under dense company history with bounded result size/candidate scan.
+- [x] Diagnostic capture contains action/outcome/duration only, with no real/synthetic payload sentinel or cookie text.
+- [x] Every numbered EXT-45 checkpoint is implemented or proven already satisfied with current evidence.
+- [x] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
 
 ##### Observability and operations
 
@@ -10236,25 +10236,25 @@ If target misses, report measured results and fix the query/call path; do not ra
 
 Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
 
-- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
-- [ ] Required caller regressions, diff/security review and relevant docs are complete.
-- [ ] One focused micro-commit references main issue and `[45/50]`; no unrelated files or empty filler commits.
-- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
-- [ ] No claim of a later task, store approval or production release is included.
+- [x] Owned implementation/artifact and exact positive/failure assertions pass.
+- [x] Required caller regressions, diff/security review and relevant docs are complete.
+- [x] One focused micro-commit references main issue and `[45/50]`; no unrelated files or empty filler commits.
+- [x] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [x] No claim of a later task, store approval or production release is included.
 
 ##### Evidence record and suggested tracking metadata
 
 Document ID: `EXT-45`; title: **Measure bounded lookup performance and safe diagnostics**; parent: one Chrome job/company memory main issue; band 9: Integration acceptance; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
-Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+**Evidence (2026-11-05):** Baseline `e7182aa`; branch `feat/ext-45-47-performance-ci-pilot-package`; [PR #197](https://github.com/anmolsansi/CSV_Website/pull/197), tracking [#184](https://github.com/anmolsansi/CSV_Website/issues/184). HTTP benchmark: `test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits` in `backend/tests/test_browser_memory_matches.py`; 10,000 visits, 521 applications, indexed plan, 30 samples. Local Python 3.12.12/macOS/UTC: PostgreSQL warm p95 15.7 ms, separate first check 23.9 ms; SQLite warm p95 240.4 ms, first 161.1 ms. These are TestClient timings, not network/process cold starts. Injected SQL exception test verifies generic 503 and no payload/cookie diagnostics. Real Chromium 149.0.7827.55 unanswered bridge: 8,011 ms, one request, zero writes/retries, no diagnostic messages. Full local PostgreSQL: 737 passed; matching SQLite file: 11 passed. Deployed cold-start/OAuth evidence remains owned by the release gate. Current-system instructions: `extension/README.md` and `docs/JOBGRID_BUILD_GUIDE.md`. No production deployment, activation, account mutation or store submission was performed.
 
-**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Task-owned implementation and local evidence are recorded above; predecessor manual permission/accessibility/MV3-suspension and deployed OAuth acceptance remain open in their owning packets. Final head CI and merge status are recorded in PR #197; no merge is implied.
 
 <a id="ext-46"></a>
 
 #### EXT-46 — Add reproducible extension checks to existing CI
 
-**Status:** IMPLEMENTED on PR #197; continuation validation in progress; external Chrome acceptance remains pending.\
+**Status:** IMPLEMENTED / scoped local acceptance verified on PR #197; final-head CI tracked there. Inactive packaging is distinct from active-pilot/OAuth/store acceptance.\
 **Priority:** P1\
 **Type:** CI\
 **Execution position:** 46/50; band 10/10 — Delivery and handover; group step 1/5.
@@ -10368,11 +10368,11 @@ New file/command paths become runnable only after their owning task supplies the
 
 ##### Acceptance criteria
 
-- [ ] Clean install runs extension Node tests and a real-loaded-extension E2E case in CI.
-- [ ] A deliberately invalid permission or failing extension assertion makes the owning check fail.
-- [ ] Existing required job names, frontend build, backend and timezone tests remain present; reports contain nonzero extension test count.
-- [ ] Every numbered EXT-46 checkpoint is implemented or proven already satisfied with current evidence.
-- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+- [x] Clean install runs extension Node tests and a real-loaded-extension E2E case in CI.
+- [x] A deliberately invalid permission or failing extension assertion makes the owning check fail.
+- [x] Existing required job names, frontend build, backend and timezone tests remain present; reports contain nonzero extension test count.
+- [x] Every numbered EXT-46 checkpoint is implemented or proven already satisfied with current evidence.
+- [x] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
 
 ##### Observability and operations
 
@@ -10393,25 +10393,25 @@ Do not weaken required checks or let unsupported extension launch turn into a su
 
 Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
 
-- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
-- [ ] Required caller regressions, diff/security review and relevant docs are complete.
-- [ ] One focused micro-commit references main issue and `[46/50]`; no unrelated files or empty filler commits.
-- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
-- [ ] No claim of a later task, store approval or production release is included.
+- [x] Owned implementation/artifact and exact positive/failure assertions pass.
+- [x] Required caller regressions, diff/security review and relevant docs are complete.
+- [x] One focused micro-commit references main issue and `[46/50]`; no unrelated files or empty filler commits.
+- [x] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [x] No claim of a later task, store approval or production release is included.
 
 ##### Evidence record and suggested tracking metadata
 
 Document ID: `EXT-46`; title: **Add reproducible extension checks to existing CI**; parent: one Chrome job/company memory main issue; band 10: Delivery and handover; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
-Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+**Evidence (2026-11-05):** Baseline `e7182aa`; branch `feat/ext-45-47-performance-ci-pilot-package`; [PR #197](https://github.com/anmolsansi/CSV_Website/pull/197), tracking [#184](https://github.com/anmolsansi/CSV_Website/issues/184). `.github/workflows/ci.yml` retains existing required suites and adds nonempty, zero-skip extension reports. Local extension Node: 70 passed; deliberate invalid permission and failing assertion each exited 1 in temporary fixtures. Persistent-profile Chromium: eight extension cases plus setup, 9 passed/0 failed/0 skipped; report explicitly requires the EXT-45 timeout and EXT-47 archive cases. Frontend unit: 14 passed; production build passed. Published implementation CI at eb8a310 passed its Node/backend/build/timezone/SQLite and dedicated extension steps; final-head complete CI state is recorded in PR #197 / issue #184, not inferred from earlier runs. Current-system instructions: `extension/README.md` and `docs/JOBGRID_BUILD_GUIDE.md`. No production deployment, activation, account mutation or store submission was performed.
 
-**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Task-owned implementation and local evidence are recorded above; predecessor manual permission/accessibility/MV3-suspension and deployed OAuth acceptance remain open in their owning packets. Final head CI and merge status are recorded in PR #197; no merge is implied.
 
 <a id="ext-47"></a>
 
 #### EXT-47 — Package a reproducible unpacked pilot artifact
 
-**Status:** IMPLEMENTED on PR #197; continuation validation in progress; external Chrome acceptance remains pending.\
+**Status:** IMPLEMENTED / scoped local acceptance verified on PR #197; final-head CI tracked there. Inactive packaging is distinct from active-pilot/OAuth/store acceptance.\
 **Priority:** P1\
 **Type:** Packaging\
 **Execution position:** 47/50; band 10/10 — Delivery and handover; group step 2/5.
@@ -10533,11 +10533,11 @@ New file/command paths become runnable only after their owning task supplies the
 
 ##### Acceptance criteria
 
-- [ ] Two packages from identical source produce the same SHA-256 and only allowlisted runtime members.
-- [ ] Release archive contains no localhost permission, dev fixture, inline/eval/remote executable script or credential sentinel.
-- [ ] Unpack/load in temporary Chrome succeeds and manifest version matches the recorded artifact.
-- [ ] Every numbered EXT-47 checkpoint is implemented or proven already satisfied with current evidence.
-- [ ] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
+- [x] Two packages from identical source produce the same SHA-256 and only allowlisted runtime members.
+- [x] Release archive contains no localhost permission, dev fixture, inline/eval/remote executable script or credential sentinel.
+- [x] Unpack/load in temporary Chrome succeeds and manifest version matches the recorded artifact.
+- [x] Every numbered EXT-47 checkpoint is implemented or proven already satisfied with current evidence.
+- [x] Scoped regression and inherited caller behavior pass; unrun external checks remain pending.
 
 ##### Observability and operations
 
@@ -10558,19 +10558,19 @@ Packaging creates no Chrome Web Store upload or automatic public release. A miss
 
 Update the relevant current-system section of `docs/JOBGRID_BUILD_GUIDE.md` for what/why/how/where, usage, failure/retry, verification and limits. Do not turn the guide into a chronological task diary.
 
-- [ ] Owned implementation/artifact and exact positive/failure assertions pass.
-- [ ] Required caller regressions, diff/security review and relevant docs are complete.
-- [ ] One focused micro-commit references main issue and `[47/50]`; no unrelated files or empty filler commits.
-- [ ] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
-- [ ] No claim of a later task, store approval or production release is included.
+- [x] Owned implementation/artifact and exact positive/failure assertions pass.
+- [x] Required caller regressions, diff/security review and relevant docs are complete.
+- [x] One focused micro-commit references main issue and `[47/50]`; no unrelated files or empty filler commits.
+- [x] Main issue checklist and applicable Linear state agree with evidence; this packet changes from planned only when its own exit criteria pass.
+- [x] No claim of a later task, store approval or production release is included.
 
 ##### Evidence record and suggested tracking metadata
 
 Document ID: `EXT-47`; title: **Package a reproducible unpacked pilot artifact**; parent: one Chrome job/company memory main issue; band 10: Delivery and handover; priority P1; dependencies as above. Suggested labels: `jobgrid`, `chrome-extension`, plus the actual affected area. GitHub issue, Linear ID, implementation branch, commit and PR: **not assigned by this packet**; discover/reuse when implementation is authorized.
 
-Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
+**Evidence (2026-11-05):** Baseline `e7182aa`; branch `feat/ext-45-47-performance-ci-pilot-package`; [PR #197](https://github.com/anmolsansi/CSV_Website/pull/197), tracking [#184](https://github.com/anmolsansi/CSV_Website/issues/184). `extension/package.mjs` builds an allowlisted, deterministic inactive archive; six package tests passed. Exact ZIP unpacks/loads with matching version 0.1.0, zero host grants/workers/page errors, and uninstalls in bundled Chromium 149.0.7827.55 and installed Google Chrome 157.0.8103.38. The installed-Chrome command uses a disposable profile and the documented Extensions testing API, not the deprecated load-extension path. SHA-256: `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1`. Reproduce from frontend/: `JOBGRID_PILOT_CHROME=1 npm run test:extension -- --no-deps --grep EXT-47`. ZIP remains an inactive shell; active permission prompts, real OAuth and store release are not established. Current-system instructions: `extension/README.md` and `docs/JOBGRID_BUILD_GUIDE.md`. No production deployment, activation, account mutation or store submission was performed.
 
-**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Task-owned implementation and local evidence are recorded above; predecessor manual permission/accessibility/MV3-suspension and deployed OAuth acceptance remain open in their owning packets. Final head CI and merge status are recorded in PR #197; no merge is implied.
 
 <a id="ext-48"></a>
 
