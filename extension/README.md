@@ -293,25 +293,35 @@ Run the benchmark in a disposable backend with project requirements installed:
 
 PostgreSQL is also exercised by CI. Inspect the aggregate EXT-45 benchmark
 line in actual test output for backend dialect, 10,000 visits, 30 samples,
-separate cold time, measured warm p95 and index-plan result. Recorded CI evidence on 2026-11-05 (PostgreSQL on Ubuntu, Python 3.12):
+separate first-check time, measured warm p95 and index-plan result. Earlier service-only
+CI evidence on 2026-11-05 (PostgreSQL on Ubuntu, Python 3.12):
 10,000 visits, 30 warm samples, measured warm p95 **14.0 ms**,
 separate cold lookup **21.6 ms**, query plan **index**.
 Source: https://github.com/anmolsansi/CSV_Website/actions/runs/41991907712 .
-No Chrome cold-start timing is inferred from this backend run. The extension worker's
+The current authenticated HTTP fixture measured **15.7 ms warm p95**,
+**23.9 ms first check** on local PostgreSQL 16 / Python 3.12.12 (macOS, UTC),
+and **240.4 ms warm p95**, **161.1 ms first check** on local SQLite. These are
+30-sample TestClient results, without network/Chrome startup latency.
+No Chrome cold-start timing is inferred from either backend run. The extension worker's
 8-second timeout is separate from backend warm latency. Diagnostics may
 report action, outcome, count and rounded durations, but must never expose
 raw URLs/query strings, cookies, account labels, private company/title
 fields or application data. The test checks synthetic payload sentinels
-against captured application logs; it does not certify all production logs.
+against captured application logs. A separate HTTP regression injects a driver
+exception containing synthetic URL/company/title/cookie values and verifies a
+generic 503 response and sanitized diagnostics. Neither test certifies all
+production logs. The real-worker browser test holds one check unanswered and
+measures the 8-second deadline: observed **8,011 ms** on Chromium 149.0.7827.55,
+with one request, zero writes/retries and zero browser diagnostic messages.
 
 ## CI and reproducible inactive pilot archive (EXT-46–47)
 
 The existing CI workflow retains the frontend build, backend compile,
 PostgreSQL tests, and full Playwright Chromium suite. It adds a separate
 Node 22 extension-contract job with JUnit requiring nonzero tests and zero
-failures/skips. The local Vite/FastAPI E2E job separately executes the six
-persistent-profile extension acceptance tests before the full suite, with
-JUnit minimum collection enforced. It loads the real development worker in
+failures/skips. The local Vite/FastAPI E2E job separately executes the eight
+persistent-profile extension acceptance tests (plus authentication setup) before the full suite, with
+JUnit minimum of nine results and explicit required EXT-45/47 case names enforced. It loads the real development worker in
 bundled Chromium using disposable synthetic accounts and temporarily
 pregranted local-only fixture hosts, not a deployed account.
 
@@ -339,8 +349,14 @@ Build and verify the release-shell ZIP:
 Artifacts are named jobgrid-pilot-v<manifest-version>.zip and matching
 .zip.sha256. Packaging includes only manifest.json and popup.html, in
 stable sorted order with fixed timestamps and reproducible SHA-256.
-The test rejects unsafe permissions, localhost/dev hosts, secret
-sentinels, executable scripts, source symlinks and unexpected files.
+The tests reject unsafe permissions, localhost/dev hosts, secret
+sentinels, executable scripts/HTML handlers, source symlinks, unrecognized
+manifest activation surfaces and Chrome-invalid version components (leading
+zeros, >65535 or all-zero version). No output is created on rejection.
+The browser smoke builds and unpacks the actual ZIP, without the development
+manifest overlay, and checks the loaded version, popup, no host grants and no
+worker. Local Chromium 149.0.7827.55 passed with SHA-256
+`1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1`.
 
 IMPORTANT: The release ZIP is intentionally **inactive**. It has no
 background worker, content scripts, network bridge or automatic tracking,
@@ -354,7 +370,10 @@ to a fresh directory, open chrome://extensions, enable Developer mode,
 choose Load unpacked, and select the folder with manifest.json. The
 popup must show Not connected yet and No browsing is tracked by this
 shell. There should be no host-permission or account prompt on install.
-This proves only that the inactive package loads.
+This proves only that the inactive package loads. An automated attempt in
+installed Google Chrome 157.0.8103.38 with a disposable profile returned
+`ERR_BLOCKED_BY_CLIENT`; it is not normal-Chrome acceptance. Run these manual
+steps in an unrestricted disposable profile before closing that gate.
 
 For an update, disable/remove the previous test installation, unpack
 a separately verified version into a new folder, load that new folder,
