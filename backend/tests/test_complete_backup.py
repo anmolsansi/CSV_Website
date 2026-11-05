@@ -214,6 +214,7 @@ def _read_visits(db, owner):
         ]
 
 
+@pytest.mark.postgresql
 @pytest.mark.parametrize("existing", [False, True])
 def test_visit_restore_preserves_instant_in_non_utc_postgres(db_session, complete_backup, existing):
     if db_session.get_bind().dialect.name != "postgresql":

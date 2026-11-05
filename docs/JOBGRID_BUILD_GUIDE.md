@@ -2079,6 +2079,43 @@ JG-021 has no migration file and performs no persisted-data rewrite. If the rele
 A locally passing JG-021 CI run is not the complete R7 production release. Later R7 tickets still own production configuration rejection, provider/staging acceptance, backup/restore release evidence, and the final production release gate.
 
 
+
+### C-07 SQLite release and PostgreSQL timezone restore classification
+
+The C-07 SQLite workflow in `.github/workflows/c07-sqlite.yml` runs
+`pytest tests/ -m "not postgresql"`, then checks its JUnit report with
+`--max-skips 0`. A test that *runtime-skips* itself on SQLite is a release
+failure even if all executed assertions pass. PostgreSQL-only tests must be
+marked `@pytest.mark.postgresql` so they are deselected before execution.
+
+In `backend/tests/test_complete_backup.py`,
+`test_visit_restore_preserves_instant_in_non_utc_postgres` verifies the
+original UTC instant, microseconds, and safe replay against a PostgreSQL
+connection configured with `timezone=America/New_York`. Its two `existing`
+parameter variants require PostgreSQL semantics. Both have one test-level
+`@pytest.mark.postgresql` marker, like the existing PostgreSQL restore-lock
+test. This changes test selection only, not backup or restore behavior.
+PostgreSQL CI still runs both variants. The
+`backend/tests/test_ci_release_matrix.py` release-contract regression checks
+the marker remains attached, protecting against future unmarked skips.
+
+To inspect the selection locally, from `backend/` run:
+
+```sh
+pytest tests/test_complete_backup.py -m "not postgresql" --collect-only -q
+pytest tests/test_complete_backup.py -m postgresql --collect-only -q
+pytest tests/test_ci_release_matrix.py -q
+```
+
+The first collection must omit the PostgreSQL timezone variants, and the
+second must list both. Run the complete C-07 hosted SQLite release workflow
+and the PostgreSQL backend CI suite on the same PR SHA for release acceptance.
+The SQLite gate remains strict: no tolerated runtime skips or bypassed tests.
+No database migration, runtime configuration change, or dependency is needed.
+Rollback consists only of reverting the test classification/regression/docs
+commits if the test selection proves wrong. Never weaken `--max-skips 0`.
+
+
 ## JG-022 fail-fast production configuration
 
 JG-022 adds a production-only startup safety gate without changing database schema, stored user data, or application/visit semantics. Validation runs while `app.config` is imported, before `app.main` can initialize the database, run migrations, register routes, or start the maintenance scheduler.
