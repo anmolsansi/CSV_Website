@@ -620,3 +620,18 @@ test('EXT-38 blocks known applied URL but permits user-reviewed possible/company
   } }, selected), false)
   assert.equal(checkedJobForAccount({ ...snapshot, apply_status: 'saved' }, selected), false)
 })
+
+test('EXT-39 navigating away removes the private confirmed recovery key', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  await w.send(packet('ext34:stage-apply', { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  w.behavior.applyFailureOnce = true
+  assert.equal((await w.send(packet('ext39:submit-pending', { tab_id: 2 }))).error.code, 'save_unknown')
+  assert.ok(w.storageSession.jobgridUnresolvedApply)
+  w.emitUpdated(2, { url: 'https://jobs.lever.co/acme/different', status: 'loading' })
+  await sleep(30)
+  assert.equal(w.storageSession.jobgridUnresolvedApply, undefined)
+  assert.equal((await w.send(packet('ext39:submit-pending', { tab_id: 2 }))).ok, false)
+})
