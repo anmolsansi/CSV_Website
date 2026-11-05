@@ -200,8 +200,9 @@ async function withRealExtension(
   }
 }
 
-async function extCommand(popup: Page, type: string, extra: Record<string, unknown> = {}) {
-  return popup.evaluate(async ({ type, extra }) => {
+async function extCommand(popup: Page, type: string, extra: Record<string, unknown> = {},
+  offlineMayLoseEnvelope = false) {
+  return popup.evaluate(async ({ type, extra, offlineMayLoseEnvelope }) => {
     const request_id = crypto.randomUUID()
     let response: any
     try {
@@ -215,10 +216,15 @@ async function extCommand(popup: Page, type: string, extra: Record<string, unkno
     }
     if (response === undefined)
       return { version: 1, request_id, ok: false, error: { code: 'unavailable' } }
-    if (response?.request_id !== request_id || response?.version !== 1)
+    if (response?.request_id !== request_id || response?.version !== 1) {
+      // Exactly as popup.dev.js does, failed offline transport must not be
+      // interpreted as a successful check or an empty application history.
+      if (offlineMayLoseEnvelope)
+        return { version: 1, request_id, ok: false, error: { code: 'unavailable' } }
       throw Error('Extension command response envelope mismatch')
+    }
     return response
-  }, { type, extra })
+  }, { type, extra, offlineMayLoseEnvelope })
 }
 
 async function tabIdFor(popup: Page, url: string): Promise<number> {
@@ -484,7 +490,7 @@ test('EXT-44 offline failure, navigation, opt-out and full profile restart fail 
     expect(stored.visit.visited).toBe(true)
     await job.bringToFront()
     await context.setOffline(true)
-    const offline = await extCommand(popup, 'ext33:current-tab-check')
+    const offline = await extCommand(popup, 'ext33:current-tab-check', {}, true)
     expect(offline.ok).toBe(false)
     expect(['unavailable', 'timeout', 'protocol_error', 'not_authenticated',
       'account_changed']).toContain(offline.error.code)
