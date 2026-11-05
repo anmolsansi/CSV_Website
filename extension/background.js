@@ -14,12 +14,15 @@ const MANUAL_CHECK = 'ext33:current-tab-check'
 const STAGE_APPLY = 'ext34:stage-apply'
 const PENDING_APPLY = 'ext34:pending-apply'
 const CLEAR_PENDING = 'ext34:clear-pending'
+const SET_PAUSED = 'ext35:set-paused'
+const LIFECYCLE_STATUS = 'ext35:status'
 const MAX_BYTES = 8192
 const TIMEOUT_MS = 8000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 let connection = null
 let generation = 0
+let paused = false
 const SESSION_DEBOUNCE_MS = 5000
 
 const plain = value => value !== null && typeof value === 'object' &&
@@ -82,6 +85,9 @@ function validMessage(message) {
     Object.hasOwn(ATS_ORIGINS, message.host) && typeof message.enabled === 'boolean'
   if (message.type === SITE_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'host']) && Object.hasOwn(ATS_ORIGINS, message.host)
+  if (message.type === LIFECYCLE_STATUS) return Object.keys(message).length === 3
+  if (message.type === SET_PAUSED) return keysOnly(message,
+    ['type', 'version', 'request_id', 'paused']) && typeof message.paused === 'boolean'
   if (message.type === MANUAL_CHECK) return Object.keys(message).length === 3
   if (message.type === STAGE_APPLY) return keysOnly(message,
     ['type', 'version', 'request_id', 'tab_id', 'company', 'title']) &&
@@ -245,7 +251,8 @@ chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS, MANUAL_CHECK,
-    STAGE_APPLY, PENDING_APPLY, CLEAR_PENDING].includes(message?.type)) return false
+    STAGE_APPLY, PENDING_APPLY, CLEAR_PENDING, SET_PAUSED,
+    LIFECYCLE_STATUS].includes(message?.type)) return false
   const requestId = validUUID(message?.request_id) ? message.request_id : null
   if (!popupSender(sender) || !validMessage(message) && message.type !== PROBE) {
     sendResponse(answer(requestId, error('forbidden_sender', 'Unsupported request')))
