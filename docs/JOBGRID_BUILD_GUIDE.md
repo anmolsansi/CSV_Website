@@ -4096,8 +4096,9 @@ kept for 15 minutes in extension session storage. Repeated identical staging
 preserves the same UUID. Edits create a new one. `pending-apply` returns
 only current-account/current-tab intent, and `clear-pending` drops one.
 Account changes, tab changes, reconnect, pause and disconnect erase stale
-intent. This state has **no** server-side write. Explicit editable confirmation,
-retry/recovery and /apply are separate EXT-38–39 requirements.
+intent. The staging command itself makes **no** server-side write. The development
+popup now performs the separate EXT-38–39 explicit confirmation and retry flow
+described below.
 
 **Lifecycle and badges:** `ext35:set-paused` requires a trusted popup and
 boolean `paused`. Pausing stops automation and manual checks, removes
@@ -4127,3 +4128,82 @@ under worker suspension, deployed OAuth and store approval remain independent
 EXT-41–50 gates. Roll back by disabling the development extension or reverting
 the feature branch. No backend API, database migration, production setting,
 new dependency or paid service changes.
+
+
+### EXT-37–40: development popup, confirmed application and privacy controls
+
+The development-only `extension/popup.dev.html` provides account-connected
+warning, editable apply, retry and privacy controls. `extension/manifest.json`
+and the release `popup.html` remain inert. No new public API, database change,
+broad permission grant, paid resource or production feature flag was introduced.
+
+**Read/check states.** The popup renders a complete successful lookup with
+separate applied/possible, prior-visit, employer-history and new-job evidence.
+If `lookup_complete=false`, an extra incomplete-lookup warning remains visible,
+even alongside stronger evidence. A failed check never means "not applied":
+offline, authentication, forbidden, rate-limit, timeout, unsupported and
+unavailable errors have explicit text. For 429, **Retry check** is disabled
+through the server's bounded Retry-After window (or a conservative 60 seconds
+when missing); the timer only reenables the button, it never sends a request.
+Failed visit writes retain the original `before_visit` facts and report
+unknown save status. All untrusted page labels use `textContent`.
+
+**Apply flow.** After a successful check of the active public URL, the user
+may edit a required employer (at most 320 characters) and title (at most
+500 characters). Both are trimmed and validated. The selected server-owned
+JobGrid account ID and exact checked URL are displayed. Existing definite
+exact/canonical applied history blocks a second popup apply. Possible/company
+matches remain warnings that users can review, without treating them as
+definite duplicates. Clicking **Review application details** stages intent
+through `ext34:stage-apply`, binding account, checked URL, fields and one
+UUID in trusted session storage. The user then checks a separate explicit
+confirmation box and clicks **Save application in JobGrid**. This records
+only the JobGrid application, never submits an external ATS application form.
+
+The popup sends `ext39:submit-pending` with only a tab ID and the signed
+internal request envelope. The worker verifies the exact popup sender, selected
+cookie-authenticated account, checked live URL and current active tab. It
+forwards the immutable staged payload through the existing isolated bridge
+to `POST /crm/browser-memory/apply` with the original UUID
+`Idempotency-Key`. Concurrent clicks share one in-flight request. A confirmed
+server receipt updates the popup and application badge but never modifies the
+historical `before_visit` lookup snapshot. Backend receipts and applied-event
+semantics remain authoritative.
+
+A lost response, timeout or unverified save reports **Save result unknown**,
+never Saved. No automatic retry occurs. One confirmed but unresolved
+account/URL/field/UUID tuple may remain in private `chrome.storage.session`
+for at most 24 hours. The normal editable unconfirmed draft still expires
+after 15 minutes. A suspended worker does not silently restore a connection;
+the user must reconnect the same account, check the same public URL again,
+review identical fields and explicitly submit again to reuse that UUID. New
+account, URL, fields, pause, disconnect, success or expiry invalidates that
+recovery key. Browser restart naturally ends the session-store recovery
+window. This avoids rewriting an application after an ambiguous commit.
+
+**Privacy.** Pause prompts for confirmation, halts observations, clears
+warnings, badges and pending intent, and resume rechecks the account.
+Disconnect prompts separately and erases extension-private state without
+deleting any server record. The **Forget saved visits** flow names the selected
+account and requires exactly `FORGET VISITS` before the worker sends the
+existing fixed DELETE /visits, with cookie-account verification. Successful
+deletion clears cached visit warnings and badges. Applications, CSV clicks,
+imported source history and receipts remain, and older selected backups
+could restore previously exported visits. **Open applications in JobGrid**
+uses only `APP_ORIGIN + '/applications'` with `noopener noreferrer`, never
+the untrusted job URL as a navigation destination.
+
+**Files/tests.** UI and validation live in `extension/popup.dev.js`,
+`popup.dev.html`, `popup-state.js`, and `popup-apply.js`.
+The fixed isolated transport remains `jobgrid-bridge.js`; the worker
+owns authorization and session state in `background.js`.
+`node --test extension/tests/*.test.mjs` covers typed failures, field
+bounds, confirmation, exact applied blocks, same-key retry, account/tab
+switches, privacy deletion and a simulated popup DOM interaction.
+Detailed user instructions and limitations:
+`docs/EXT37_40_POPUP_CONFIRMATION.md`. The tests do **not** establish real
+unpacked Chrome permission UX, deployed OAuth, worker suspension in Chrome,
+screen-reader acceptance, store review or production deployment. Those
+remain independent extension acceptance gates. Roll back by unloading
+the development extension or reverting its feature branch. Existing durable
+JobGrid history remains unchanged by that rollback.
