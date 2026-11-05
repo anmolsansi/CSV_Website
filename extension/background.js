@@ -86,6 +86,7 @@ function validMessage(message) {
 async function clearConnection() {
   generation++
   connection = null
+  clearObservationTimers()
   await chrome.storage.session.remove('jobgridConnection')
 }
 
@@ -143,6 +144,7 @@ async function injectBridge(tabId) {
 async function connect(tabId) {
   const epoch = ++generation
   connection = null
+  clearObservationTimers()
   const tab = await checkedTab(tabId)
   if (!tab) return unavailable()
   const injected = await injectBridge(tabId)
@@ -210,12 +212,15 @@ async function dispatch(kind, payload) {
 }
 
 chrome.tabs.onRemoved?.addListener(tabId => {
+  cancelObservation(tabId)
   if (connection?.tabId === tabId) void clearConnection()
 })
-chrome.tabs.onUpdated?.addListener((tabId, changes) => {
+chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
   if (connection?.tabId === tabId && (changes.url || changes.status === 'loading')) {
     void clearConnection()
+    return
   }
+  observeTabUpdate(tabId, changes, tab)
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -342,3 +347,110 @@ chrome.permissions.onRemoved?.addListener(removed => {
 // After a worker restart, restore registration only for an earlier explicit
 // site choice that Chrome still grants. The connection itself remains in memory.
 if (chrome.storage.local?.get) void syncSiteScripts().catch(() => {})
+
+
+// EXT-31: a single read-only check after a supported top-level navigation.
+// This is worker-owned; job pages cannot issue API requests or writes.
+const OBSERVE_DELAY_MS = 500
+const observationTimers = new Map()
+const observedUrls = new Map()
+const checkedPages = new Map()
+const OBSERVE_SECRET_KEYS = new Set(['token', 'access_token', 'auth',
+  'authorization', 'code', 'password', 'session', 'session_token'])
+
+function classifyObservedUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048 ||
+      value !== value.trim() || /[\u0000-\u001f\u007f]/.test(value)) return null
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password || url.port ||
+        url.hostname.endsWith('.') || !Object.hasOwn(ATS_ORIGINS, url.hostname) ||
+        url.origin !== 'https://' + url.hostname) return null
+    const path = url.hostname === 'jobs.lever.co'
+      ? /^\/[A-Za-z0-9][A-Za-z0-9_-]*\/[A-Za-z0-9][A-Za-z0-9_-]*$/
+      : /^\/[A-Za-z0-9][A-Za-z0-9_-]*\/jobs\/[A-Za-z0-9][A-Za-z0-9_-]*$/
+    if (!path.test(url.pathname)) return null
+    for (const key of url.searchParams.keys()) {
+      if (OBSERVE_SECRET_KEYS.has(key.toLowerCase())) return null
+    }
+    return url.hostname
+  } catch { return null }
+}
+
+function cancelObservation(tabId) {
+  const timer = observationTimers.get(tabId)
+  if (timer) clearTimeout(timer)
+  observationTimers.delete(tabId)
+  observedUrls.delete(tabId)
+  checkedPages.delete(tabId)
+}
+
+function clearObservationTimers() {
+  for (const tabId of observationTimers.keys()) cancelObservation(tabId)
+  observedUrls.clear()
+  checkedPages.clear()
+}
+
+async function observationStillAllowed(tabId, url, selected) {
+  if (!connection || connection !== selected || !classifyObservedUrl(url)) return false
+  try {
+    const host = classifyObservedUrl(url)
+    const optIns = await readOptIns()
+    if (optIns[host] !== true ||
+        !await chrome.permissions.contains({ origins: [ATS_ORIGINS[host]] })) return false
+    const tab = await chrome.tabs.get(tabId)
+    return connection === selected && tab.url === url && tab.status === 'complete'
+  } catch { return false }
+}
+
+async function readPublicCandidates(tabId, url) {
+  const requestId = crypto.randomUUID()
+  let timer
+  const expired = Symbol('expired')
+  let result
+  try {
+    result = await Promise.race([
+      chrome.tabs.sendMessage(tabId, {
+        type: 'ext29:extract', version: VERSION, request_id: requestId, url,
+      }),
+      new Promise(resolve => { timer = setTimeout(() => resolve(expired), TIMEOUT_MS) }),
+    ])
+  } catch { return null
+  } finally { clearTimeout(timer) }
+  if (result === expired || !plain(result) || result.ok !== true ||
+      result.version !== VERSION || result.request_id !== requestId ||
+      result.url !== url ||
+      !keysOnly(result, ['version', 'request_id', 'ok', 'url', 'title', 'company']) ||
+      (result.company !== null && !validText(result.company, 320)) ||
+      (result.title !== null && !validText(result.title, 500))) return null
+  return { company: result.company, title: result.title }
+}
+
+async function runNavigationCheck(tabId, url, selected) {
+  if (!await observationStillAllowed(tabId, url, selected)) return
+  const candidates = await readPublicCandidates(tabId, url)
+  if (!candidates || !await observationStillAllowed(tabId, url, selected)) return
+  const result = await dispatch('check', { url, ...candidates })
+  if (!result.ok || !connection || connection !== selected ||
+      !await observationStillAllowed(tabId, url, selected)) return
+  // Keep the response before any future visit write. EXT-32 persists and
+  // uses this immutable pre-write warning snapshot.
+  checkedPages.set(tabId, { url, accountId: selected.accountId,
+    beforeVisit: result.data })
+}
+
+function observeTabUpdate(tabId, changes, tab) {
+  if (!validId(tabId)) return
+  if (changes?.url || changes?.status === 'loading') cancelObservation(tabId)
+  if (changes?.status !== 'complete' &&
+      !(changes?.url && tab?.status === 'complete')) return
+  const url = tab?.url
+  const selected = connection
+  if (!selected || !classifyObservedUrl(url) || observedUrls.get(tabId) === url) return
+  observedUrls.set(tabId, url)
+  const timer = setTimeout(() => {
+    observationTimers.delete(tabId)
+    void runNavigationCheck(tabId, url, selected).catch(() => {})
+  }, OBSERVE_DELAY_MS)
+  observationTimers.set(tabId, timer)
+}
