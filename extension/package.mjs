@@ -22,7 +22,11 @@ const FORBIDDEN = /localhost|127\.0\.0\.1|manifest\.dev\.json|popup\.dev\.html|(
 
 function assertReleaseManifest(manifest) {
   const version = typeof manifest?.version === 'string' ? manifest.version.split('.') : []
-  if (!manifest || manifest.manifest_version !== 3 ||
+  const fields = ['manifest_version', 'name', 'version', 'description', 'action',
+    'permissions', 'optional_host_permissions']
+  if (!manifest || Object.keys(manifest).some(key => !fields.includes(key)) ||
+      Object.keys(manifest.action || {}).some(key => !['default_title', 'default_popup'].includes(key)) ||
+      manifest.manifest_version !== 3 ||
       version.length !== 3 ||
       !version.every(part => /^(0|[1-9][0-9]*)$/.test(part) && Number(part) <= 65535) ||
       !version.some(part => Number(part) > 0) ||
@@ -46,7 +50,7 @@ function assertSafeMember(name, data) {
   if (name === 'popup.html' && (
     !/<main>/.test(value) ||
     !/Not connected yet/.test(value) ||
-    /<script\b|<iframe\b|<object\b|<embed\b|on(?:load|click|error)\s*=|javascript:|<link\b[^>]+https?:/i.test(value)
+    /<script\b|<iframe\b|<object\b|<embed\b|\bon[a-z][a-z0-9_-]*\s*=|javascript:|<link\b[^>]+https?:/i.test(value)
   )) {
     throw new Error('Release popup must remain script-free and visibly disconnected')
   }

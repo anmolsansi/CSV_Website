@@ -126,3 +126,30 @@ test('EXT-47 enforces Chrome version limits before creating output', async t => 
     assert.equal(result.name, 'jobgrid-pilot-v' + version + '.zip')
   }
 })
+
+
+test('EXT-47 rejects additional manifest activation surfaces and HTML handlers', async t => {
+  const folder = await temp(t)
+  const source = await sourceCopy(folder)
+  const manifestPath = path.join(source, 'manifest.json')
+  const popupPath = path.join(source, 'popup.html')
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'))
+  const popup = await fs.readFile(popupPath, 'utf8')
+  const outputDir = path.join(folder, 'rejected')
+  for (const extra of [
+    { devtools_page: 'popup.html' },
+    { sandbox: { pages: ['popup.html'] } },
+    { options_page: 'popup.html' },
+    { action: { ...manifest.action, default_icon: 'missing.png' } },
+  ]) {
+    await fs.writeFile(manifestPath, JSON.stringify({ ...manifest, ...extra }))
+    await assert.rejects(() => buildPilot({ sourceDir: source, outputDir }), /permission contract/)
+    await assert.rejects(fs.access(outputDir), { code: 'ENOENT' })
+  }
+  await fs.writeFile(manifestPath, JSON.stringify(manifest))
+  for (const handler of ['onfocus', 'onmouseover', 'onanimationstart', 'ONPOINTERENTER']) {
+    await fs.writeFile(popupPath, popup.replace('<main>', '<main ' + handler + '="alert(1)">'))
+    await assert.rejects(() => buildPilot({ sourceDir: source, outputDir }), /script-free/)
+    await assert.rejects(fs.access(outputDir), { code: 'ENOENT' })
+  }
+})
