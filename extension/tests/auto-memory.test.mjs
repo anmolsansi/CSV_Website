@@ -299,3 +299,25 @@ test('EXT-32 disconnect erases private warning state and blocks tab-status sende
   assert.equal(w.storageSession.jobgridTabChecks, undefined)
   assert.equal((await w.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
 })
+
+
+test('EXT-32 removes cached warnings on permission revocation and tab navigation', async () => {
+  const revoked = createWorker()
+  await optIntoLever(revoked)
+  revoked.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal((await revoked.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, true)
+  revoked.revoke('https://jobs.lever.co/*')
+  await sleep(30)
+  assert.equal((await revoked.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
+  assert.equal(revoked.storageSession.jobgridTabChecks['2'], undefined)
+
+  const changed = createWorker()
+  await optIntoLever(changed)
+  changed.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  changed.emitUpdated(2, { url: 'https://jobs.lever.co/acme', status: 'loading' })
+  await sleep(30)
+  assert.equal((await changed.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
+  assert.equal(changed.storageSession.jobgridTabChecks['2'], undefined)
+})
