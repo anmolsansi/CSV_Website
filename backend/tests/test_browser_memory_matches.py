@@ -323,3 +323,99 @@ def test_ext_15_alias_title_is_possible_only_and_shared_ats_host_is_not_company(
     assert unrelated["company_history_count"] == 0
     db_session.refresh(old)
     assert (old.url, old.status, old.applied_at, same_company_other_role.url) == before
+
+
+# EXT-45 performance acceptance is an isolated, synthetic database test. It does
+# not time a cold Chrome worker or stand in for live OAuth/permission acceptance.
+def test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits(db_session, caplog):
+    import math
+    import time
+    from sqlalchemy import func, inspect, text
+
+    owner, other = _owner(db_session), _owner(db_session)
+    original = "https://jobs.example.test/openings/ext45-old?req=old&utm_source=first"
+    old = _applied(db_session, owner, original, status="withdrawn",
+                   when=datetime(2024, 1, 2, 9, 0, 0))
+    # Older definite matches must survive a deliberately dense employer scan.
+    for number in range(520):
+        _applied(db_session, owner,
+                 f"https://jobs.example.test/openings/ext45-new-{number}?req={number}")
+
+    # Exercise the real owner/hash unique index at the documented 10,000 cap.
+    # Bulk insert is fixture setup, never an application endpoint or a quota bypass.
+    visit_rows = []
+    for number in range(10_000):
+        url = original if number == 0 else f"https://jobs.example.test/visited/ext45-{number}"
+        identity = canonicalize_job_url(url)
+        visit_rows.append({
+            "user_id": owner.id,
+            "canonical_url": identity.canonical_url,
+            "canonical_url_hash": identity.canonical_url_hash,
+        })
+    db_session.execute(JobVisit.__table__.insert(), visit_rows)
+    _applied(db_session, other, original)
+    db_session.commit()
+
+    assert db_session.query(func.count(JobVisit.id)).filter_by(user_id=owner.id).scalar() == 10_000
+    unique_names = {
+        constraint["name"]
+        for constraint in inspect(db_session.get_bind()).get_unique_constraints("job_visits")
+    }
+    assert "uq_job_visits_user_hash" in unique_names
+
+    query = (
+        "SELECT id FROM job_visits WHERE user_id = :owner "
+        "AND canonical_url_hash = :digest LIMIT 1"
+    )
+    dialect = db_session.get_bind().dialect.name
+    explain = "EXPLAIN QUERY PLAN " if dialect == "sqlite" else "EXPLAIN "
+    plan = db_session.execute(text(explain + query), {
+        "owner": owner.id,
+        "digest": visit_rows[0]["canonical_url_hash"],
+    }).all()
+    # Inspect actual disposable query execution, not an invented "indexed" claim.
+    # PostgreSQL is free to choose a different plan on tiny fixtures, but a 10k
+    # fixture should use the existing owner/hash index on supported runtimes.
+    assert plan
+    assert any("index" in " ".join(map(str, row)).lower() for row in plan)
+
+    def check():
+        return read_browser_memory_facts(
+            db_session, user_id=owner.id, url=original,
+            company="Acme Corp", title="Backend Engineer",
+        )
+
+    with caplog.at_level("INFO"):
+        cold_start = time.perf_counter()
+        cold_result = check()
+        cold_ms = round((time.perf_counter() - cold_start) * 1000, 1)
+        samples_ms = []
+        for _ in range(30):
+            start = time.perf_counter()
+            result = check()
+            samples_ms.append((time.perf_counter() - start) * 1000)
+    assert cold_result["visit"]["visited"] is True
+    assert result["matches"][0]["track_id"] == old.id
+    assert result["matches"][0]["confidence"] == "exact"
+    assert result["matches"][0]["status"] == "withdrawn"
+    assert result["lookup_complete"] is False
+    assert result["company_history_count"] == 521
+    assert len(result["matches"]) <= 20
+    assert read_browser_memory_facts(
+        db_session, user_id=other.id,
+        url="https://jobs.example.test/visited/ext45-9999",
+    )["visit"]["visited"] is False
+
+    warm = sorted(samples_ms)
+    p95_ms = warm[math.ceil(len(warm) * 0.95) - 1]
+    assert p95_ms <= 2000, f"EXT-45 warm p95 exceeds 2s: {p95_ms:.1f}ms"
+    # Only aggregate/sanitized fields: never print URLs, account labels or SQL.
+    print(f"EXT-45 benchmark action=check outcome=ok "
+          f"dialect={dialect} visits=10000 samples=30 "
+          f"cold_ms={cold_ms} warm_p95_ms={p95_ms:.1f} "
+          f"query_plan=index")
+    # Neither the real lookup nor its diagnostics may write private payload
+    # sentinels or URL query fragments to application logs.
+    for forbidden in ("ext45-old", "ext45-9999", "utm_source=first",
+                      "Backend Engineer", "Acme Corp"):
+        assert forbidden not in caplog.text
