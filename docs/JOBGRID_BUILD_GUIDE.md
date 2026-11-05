@@ -4003,3 +4003,67 @@ site-rules.test.mjs covers positive and hostile URLs. These are synthetic
 contract tests, not evidence of live OAuth or Chrome optional permissions.
 To roll back, disable the dev extension/worker. No backend tables or history
 need to be removed for these extension-only changes.
+
+
+### Development-only external job observation (EXT-29–32)
+
+The release extension manifest remains disabled and has no background worker.
+The development manifest uses the existing account-bound worker in
+extension/background.js. No backend routes, migrations, third-party services or
+deployment settings change in EXT-29–32.
+
+The observation pieces are:
+
+1. **Public candidate reader (EXT-29):** extension/job-candidates.js is an
+   isolated, passive top-frame content script. On an internal worker message
+   and only for exact supported Greenhouse/Lever detail URLs it reads bounded,
+   visible title/company *heading candidates* and rejects form/input/hidden/
+   editable descendants. It never reads application answers or considers an
+   ATS slug the employer. Both values may be absent; the user must be able to
+   correct them in the later EXT-38 confirmation UI.
+2. **Site consent (EXT-30):** extension/background.js accepts internal
+   popup-only ext30:site-status and ext30:site-opt-in messages. A connection
+   is required to opt in, Chrome must approve the exact host pattern, and a
+   dynamic document-idle content script is registered only for that host.
+   Disabling/revoking access unregisters the script. No startup prompt or
+   wildcard permission is used. Consent is stored as a host boolean map in
+   chrome.storage.local and revalidated against Chrome permissions on restart.
+3. **Navigation check (EXT-31):** a top-level tabs.onUpdated completed job
+   detail event is debounced for 500 ms and deduplicated until the next
+   navigation. The worker rechecks the consent, permission, URL, live tab,
+   selected JobGrid account and document, then requests public candidates
+   via a bounded isolated-message reply. Only the existing authenticated
+   JobGrid /check bridge makes the network request. The job page does not
+   fetch JobGrid or receive history results.
+4. **Visit after check (EXT-32):** only a valid, successful /check response
+   allows /visit through the existing account-checked, cookie-backed bridge.
+   Already visited URLs do not need a second write. The original check
+   response is saved **before** the visit, and never modified to reflect a
+   later write. A failed or ambiguous write is marked save_unknown, not saved.
+   The worker keeps at most 40 tab records in trusted session storage and
+   exposes the current tab's pre-write warning to the popup-only
+   ext32:tab-status command. Account disconnect/reconnect clears the records.
+   A navigation, revoked permission, account switch or failed check prevents
+   automatic writes.
+
+**Permission and privacy boundaries:** The release manifest is still inert.
+No ordinary end-user opt-in or warning popup is available until later UI
+tickets. A trusted popup development harness may exercise the commands, but
+content scripts cannot call the privileged command handler. Check and visit
+errors are fail-closed. Never interpret an unavailable check as "not applied".
+Never retry an ambiguous visit automatically: the backend's visit identity is
+idempotent, but repeating requests would obscure the warning/error state.
+
+**Validation:** cd extension && npm test runs synthetic heading/privacy,
+host consent/revocation, 500 ms navigation and check-before-write tests.
+Existing extension/manifest and backend suites remain required CI gates.
+These tests do not prove live Chrome optional-permission UX, deployed OAuth,
+screen-reader UI, service-worker suspension recovery, real site layout
+stability or a store-ready package. Manual Chrome and production acceptance
+are separately scoped to EXT-41–50.
+
+**Rollback:** Disable or uninstall the development extension and revoke
+site access. This stops new checks/writes without changing existing account
+visits. To forget persisted visit data, use the existing authenticated
+DELETE /crm/browser-memory/visits explicit-confirmation flow once its popup
+UX is implemented. Do not roll back migrations or delete CRM applications.
