@@ -4569,14 +4569,14 @@ This audit does not convert their unchecked evidence into a release pass.
 | EXT-46 | Nonempty CI contract/extension gates | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | CI gates and actual suites passed on PR #197 source; continuation head rechecked separately |
 | EXT-47 | Deterministic inactive ZIP and load proof | [#197](https://github.com/anmolsansi/CSV_Website/pull/197), `569835c` | Inactive ZIP deterministic; installed Chrome/Chromium load passed; no active pilot |
 | EXT-48 | Deployed pilot/recovery/48h observation | EXT-48–50 continuation, issue #184 | BLOCKED: active candidate/target/accounts/48h absent |
-| EXT-49 | Privacy/publisher/store-input acceptance | EXT-48–50 continuation, issue #184 | DRAFT: publisher/ID/approved URLs absent; shell not a functional submission |
+| EXT-49 | Privacy/publisher/store-input acceptance | EXT-48–50 continuation, issue #184 | DRAFT: owner/support selected; policy publication, allocated store ID and functional package pending |
 | EXT-50 | Final accepted feature/release handoff | EXT-48–50 continuation, issue #184 | PARTIAL: audit prepared; 48/49 and inherited manual gates open |
 
 **Release findings:** the current release artifact is deliberately inactive, so
 its successful load cannot satisfy connect/check/visit/apply manual journeys.
 C-09/C-10 controlled-account/environment/recovery prerequisites are not closed.
-No 48-hour observation is recorded. Public publisher/privacy/support details
-are missing. Declared permissions are not exercised by the shell, so a store
+No 48-hour observation is recorded. Distribution owner and destinations are selected by user delegation; canonical
+policy publication and allocated store identity are still missing. Declared permissions are not exercised by the shell, so a store
 necessity/functional-feature claim cannot be signed off. These are blocking
 release findings, not a reason to activate development code implicitly.
 
@@ -4615,9 +4615,28 @@ and blockers; cookies, backups and controlled account records remain private.
 | Two controlled real-provider identities | Requires owner availability; no personal session reuse or production TEST_AUTH |
 | Active extension promotion and compatibility approval | Requires explicit candidate decision and new package/hash; current release stays inactive |
 | 48h observation and cold/reconnect sign-off | Authorized operator/reviewer; not started |
-| Publisher identity, store item ID, public policy/support approvals | Requires distribution owner; not supplied |
+| Publisher identity, store item ID, public policy/support approvals | `anmolsansi` selected; public support verified 200; canonical policy publication and real Chrome Item ID remain pending |
 | Final release reviewer | Must review the remaining gates and exact artifact/revisions; not assigned by this document |
 
 No merge, provider deploy/restart, data mutation, store upload or public
 activation is authorized merely by writing the handoff. Keep EXT-48, EXT-49
 and final EXT-50 acceptance unchecked until their own criteria are observed.
+
+
+### Delegated distribution decisions — 2026-11-05
+
+The user asked the assistant to choose the publisher/distribution details. Use
+`anmolsansi`, the verified public repository owner, as individual distribution
+owner. Select public technical support at https://github.com/anmolsansi/CSV_Website/issues (HTTP 200), and canonical
+privacy policy at https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md (currently HTTP 404 because the document awaits
+publication/merge from draft PR #198). These are concrete selections, not a
+claim that the policy is already public/approved or a Chrome publisher is
+registered. Sensitive account requests need a private channel before release.
+
+For stable identity, record the Chrome-assigned Item ID after an accepted active
+package is uploaded as an unpublished dashboard draft; do not manufacture an ID.
+Chrome's documented public-key workflow can align unpacked development identity
+with that real store item. No item, publisher registration, signing key, store
+upload or paid resource was created by choosing this sequence. The deployment
+pilot target/accounts remain pending as the user confirmed, so observation and
+final release acceptance still cannot start.

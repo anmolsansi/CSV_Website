@@ -407,8 +407,9 @@ suspension, accessibility and OAuth gates remain open.
 
 The [privacy disclosure draft](../docs/CHROME_EXTENSION_PRIVACY.md) describes
 what the inactive ZIP actually does and separately explains the development
-implementation. The publisher must approve the policy/contact locations and
-operator commitments before this packet can be submitted. EXT-48 deployed
+implementation. The selected distribution owner is `anmolsansi`; the canonical policy and public
+support destinations are in the privacy draft. Operator commitments, policy
+publication and actual store identity must be verified before submission. EXT-48 deployed
 pilot acceptance has not been established. Do not upload the inactive shell
 as a functioning job-memory extension.
 
@@ -440,8 +441,8 @@ Chrome permissions, deployed account transport and operator-approved policy.
 | SHA-256 | `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1` |
 | Existing accepted package CI | [PR #197 source CI](https://github.com/anmolsansi/CSV_Website/actions/runs/42000972910); published source `9123064`, merged as `569835c` |
 | Chrome package load | Unmodified ZIP version/popup/zero-host/zero-worker/uninstall checks passed on installed Chrome 157.0.8103.38; no active function implied |
-| Publisher and stable store ID | NOT PROVIDED; unpacked IDs are path-specific and unsuitable |
-| Public policy/support links | NOT PROVIDED / NOT APPROVED; do not substitute invented or placeholder production URLs |
+| Publisher and stable store ID | `anmolsansi` selected; use Chrome-assigned unpublished-draft Item ID when available; actual ID not allocated |
+| Policy/support destinations | Policy: https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md (404 pending publication); support: https://github.com/anmolsansi/CSV_Website/issues (verified 200) |
 | Store icon and screenshots | Not prepared for an accepted active package; use only synthetic, accurately represented UI |
 | Submission/review status | NOT SUBMITTED / NOT APPROVED |
 
@@ -470,7 +471,8 @@ or applications. Its confirmed Forget visits removes only external visit memory;
 restoring an older backup can bring it back. Do not describe uninstall as erasing
 all server data or private backup copies.
 
-Before public distribution, the owner must supply a reachable approved support
-location and identify who handles account/deletion/recovery questions. No email
+Public technical support is the selected repository Issues page. Before active
+distribution, establish a private path and responsible owner for sensitive
+account/deletion/recovery requests and publish/approve the canonical policy. No email
 was sent, support account created, store record uploaded, listing published or
 production extension enabled by preparing this packet.

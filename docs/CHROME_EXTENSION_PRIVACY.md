@@ -1,9 +1,10 @@
 # JobGrid Job Memory — draft privacy disclosure
 
 Prepared 2026-11-05 from main `569835c`, for EXT-49. **Draft for owner review;
-not an approved public policy or store submission.** Publisher, policy/support
-locations and operator retention commitments are not yet supplied. This draft
-must be approved and made publicly available before an active distribution.
+not an approved public policy or store submission.** The user delegated
+distribution-metadata choices on 2026-11-05; the selected owner and destinations
+are recorded below. Operator retention/access commitments, publication at the
+canonical policy URL and active-deployment acceptance remain outstanding.
 
 ## What the current ZIP does
 
@@ -115,11 +116,34 @@ extension uninstall or Forget visits does not erase exported/off-platform copies
 
 ## Review and contact status
 
-Publisher/distribution owner, stable store item ID, approved public policy URL,
-approved support URL/contact and operator retention/access terms are **not
-provided**. These are required decisions, not placeholder production identities.
-Do not submit this draft, invent contact details or claim that store review has
-approved it. Store preparation details are in the [extension README](../extension/README.md).
+The user authorized choosing distribution metadata. Selected owner: **`anmolsansi`**,
+the verified public repository owner, acting as an individual project maintainer.
+This is a distribution-owner selection, not a claim of a registered legal entity,
+verified Chrome publisher account or store approval.
+
+Selected support: [https://github.com/anmolsansi/CSV_Website/issues](https://github.com/anmolsansi/CSV_Website/issues) — HTTP 200 verified on 2026-11-05.
+Use public issues only for non-sensitive technical questions. Do not post cookies,
+backups, private job history, credentials or account-deletion evidence. A private
+channel for sensitive account requests must be established before active release;
+no mailbox, staff access promise or response SLA is invented.
+
+Selected canonical policy: [https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md](https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md). It currently returns HTTP 404
+because this new document is only on draft PR #198. Its selected destination is
+fixed; publication/approval is still pending. The PR file is available for review
+and must not be represented as an accepted store policy.
+
+**Stable ID decision:** use the real Chrome Web Store Item ID assigned when the
+accepted functional package is uploaded as an unpublished draft under the selected
+publisher. No such item has been created, so no literal ID is assigned yet. Do not
+invent an ID or reuse a path-derived unpacked-profile ID. Chrome documents the
+[dashboard/public-key workflow](https://developer.chrome.com/docs/extensions/reference/manifest/key)
+for keeping a matching development identity. Record the actual Item ID and public
+key then; never put a private signing key in this repository. Any manifest-key
+change requires its own package-contract update and new hash/acceptance.
+
+Distribution sequence: controlled unpacked pilot first, store submission only
+after active-candidate, deployed OAuth/observation and disclosure gates pass.
+Store preparation details are in the [extension README](../extension/README.md).
 
 ## Permission and host review for the distribution owner
 
@@ -141,10 +165,10 @@ actual Chrome/account acceptance before its listing answers can be finalized.
 
 | Distribution field | Current verified status |
 |---|---|
-| Publisher legal/distribution identity and authorized submitter | NOT PROVIDED |
-| Stable store item / extension ID | NOT PROVIDED; do not use a temporary unpacked-profile ID |
-| Approved publicly accessible policy location | NOT PROVIDED; this repository draft is not an approved endpoint |
-| Approved support/contact location | NOT PROVIDED; no contact mailbox or response promise is invented |
+| Distribution owner / Chrome submitter | `anmolsansi` selected by user delegation; developer-dashboard account/access not verified |
+| Stable store item / extension ID | Chrome-assigned Item ID from the future unpublished draft; actual ID not allocated |
+| Selected canonical policy | https://github.com/anmolsansi/CSV_Website/blob/main/docs/CHROME_EXTENSION_PRIVACY.md; HTTP 404 until document publication/merge, approval pending |
+| Selected public support | https://github.com/anmolsansi/CSV_Website/issues; HTTP 200 verified; private account-request channel pending |
 | Retention, backups, operator access and data-sharing commitments | Owner confirmation required for selected deployment |
 | Store submission / review / approval | NOT PERFORMED / NOT CLAIMED |
 
@@ -170,8 +194,8 @@ composed backup/forget implementation at main `569835c`.
 | Local/session/private data distinction | PASS for source description; operator access, processors and retention still need approval |
 | Forget, uninstall and older-backup behavior | PASS for source description; uninstall is not server erasure and restore may reintroduce visits |
 | No form/cookie/history-import claim | Matches the extension boundaries and tests; existing app-cookie attachment is explicitly distinguished from cookie capture |
-| Public privacy/support link resolution | BLOCKED: approved locations have not been supplied; no dummy endpoints were tested as real |
-| Publisher/stable store identity | BLOCKED: not supplied; unpacked path-derived IDs are not substituted |
+| Public privacy/support link resolution | PARTIAL: selected support returns 200; canonical policy returns 404 pending publication; no dummy endpoint is called live |
+| Publisher/stable store identity | Owner selected; Chrome account unverified and actual store ID not allocated; no invented ID |
 | Minimal functional package/permission necessity | BLOCKED FOR SUBMISSION: current shell does not use its declared required capabilities; active candidate/review required |
 | Remote executable code | None in the release artifact; it contains no script at all. Development executable code is packaged locally, not remotely loaded |
 | Package contents | Explicit two-file allowlist, deterministic checksum and independent ZIP decoder/negative tests; no profile/key/private history inputs |
