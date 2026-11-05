@@ -457,6 +457,25 @@ const OBSERVE_DELAY_MS = 500
 const observationTimers = new Map()
 const observedUrls = new Map()
 const checkedPages = new Map()
+const tabBadges = new Set()
+function clearTabBadge(tabId) {
+  if (!tabBadges.delete(tabId)) return
+  void chrome.action?.setBadgeText?.({ tabId, text: '' })?.catch?.(() => {})
+}
+function updateTabBadge(tabId, facts) {
+  if (paused || !chrome.action?.setBadgeText) return
+  const matches = facts.matches || []
+  const applied = matches.some(item => item?.confidence === 'exact' ||
+    item?.confidence === 'canonical')
+  const possible = matches.some(item => item?.confidence === 'possible')
+  const label = applied ? 'A' : possible ? '?' :
+    facts.visit?.visited ? 'V' : facts.company_known ? '?' : ''
+  clearTabBadge(tabId)
+  if (!label) return
+  tabBadges.add(tabId)
+  void chrome.action.setBadgeText({ tabId, text: label }).catch(() => {})
+}
+
 const OBSERVE_SECRET_KEYS = new Set(['token', 'access_token', 'auth',
   'authorization', 'code', 'password', 'session', 'session_token'])
 
@@ -487,6 +506,7 @@ function cancelObservation(tabId) {
   checkedPages.delete(tabId)
   tabWarnings.delete(tabId)
   dropPendingTab(tabId)
+  clearTabBadge(tabId)
 }
 
 function clearObservationTimers() {
@@ -494,6 +514,7 @@ function clearObservationTimers() {
   observedUrls.clear()
   checkedPages.clear()
   tabWarnings.clear()
+  for (const tabId of [...tabBadges]) clearTabBadge(tabId)
 }
 
 async function observationStillAllowed(tabId, url, selected) {
@@ -652,6 +673,7 @@ async function recordTabWarning(tabId, url, selected, beforeVisit, saveState) {
     before_visit: beforeVisit, save_state: saveState,
   })
   await flushWarnings()
+  updateTabBadge(tabId, beforeVisit)
 }
 
 // Only a trusted popup gesture may check an otherwise unsupported public URL.
