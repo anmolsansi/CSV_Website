@@ -428,3 +428,42 @@ def test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits(db_session, clie
     for forbidden in ("ext45-old", "ext45-9999", "utm_source=first",
                       "Backend Engineer", "Acme Corp"):
         assert forbidden not in caplog.text
+
+
+def test_ext_45_case_03_http_diagnostics_hide_payload_and_cookie_on_database_failure(
+    client, caplog, monkeypatch,
+):
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.routers import browser_memory
+
+    login = client.post("/auth/dev-login", json={
+        "email": f"ext45-log-{uuid4().hex}@example.test",
+    })
+    assert login.status_code == 200
+    cookie = client.cookies.get("session_token")
+    assert cookie
+    payload = {
+        "url": "https://jobs.example.test/ext45-private-path?req=ext45-private-query",
+        "company": "EXT45 Private Company", "title": "EXT45 Private Title",
+    }
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        success = client.post("/crm/browser-memory/check", json=payload)
+        assert success.status_code == 200
+
+        def unavailable(*args, **kwargs):
+            # Simulate a driver exception containing bound private SQL parameters.
+            raise SQLAlchemyError(str(payload) + cookie)
+
+        monkeypatch.setattr(browser_memory, "read_browser_memory_facts", unavailable)
+        failed = client.post("/crm/browser-memory/check", json=payload)
+    assert failed.status_code == 503
+    assert failed.json() == {"detail": {
+        "code": "browser_memory_unavailable",
+        "message": "Browser memory is temporarily unavailable.",
+    }}
+    assert any(record.name == "httpx" and "503" in record.getMessage()
+               for record in caplog.records)
+    for forbidden in (*payload.values(), "ext45-private-query", "session_token", cookie):
+        assert forbidden not in caplog.text
+        assert forbidden not in failed.text
