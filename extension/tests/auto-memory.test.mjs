@@ -529,3 +529,49 @@ test('EXT-39 fails closed for forged sender, stale tab, switched account and exp
   assert.equal((await c.send(packet('ext39:submit-pending', { tab_id: 2 }))).error.code, 'no_check')
   assert.equal(c.calls.filter(([, m]) => m.kind === 'apply').length, 0)
 })
+
+test('EXT-40 forget requires exact popup confirmation, clears stale warnings, and preserves application commands', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  await w.send(packet('ext34:stage-apply', { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  const kind = 'ext26:command'
+  for (const payload of [{}, { confirmed: false }, { confirmed: 'true' },
+    { confirmed: true, unexpected: 'yes' }]) {
+    assert.equal((await w.send(packet(kind, { kind: 'forget_visits', payload }))).ok, false)
+  }
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'forget_visits').length, 0)
+  const finished = await w.send(packet(kind, { kind: 'forget_visits', payload: { confirmed: true } }))
+  assert.equal(finished.ok, true)
+  assert.equal(finished.data.deleted, 3)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'forget_visits').length, 1)
+  assert.equal((await w.send(packet('ext32:tab-status', { tab_id: 2 }))).error.code, 'no_check')
+  assert.equal(w.storageSession.jobgridTabChecks, undefined)
+  assert.equal(w.storageSession.jobgridPendingApply, undefined)
+  assert.equal(w.badges.get(2), '')
+  assert.equal((await w.send(packet('ext35:status'))).data.connected, true)
+})
+
+test('EXT-40 never deletes on account change or while paused', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  const request = packet('ext26:command', { kind: 'forget_visits', payload: { confirmed: true } })
+  await w.send(packet('ext35:set-paused', { paused: true }))
+  assert.equal((await w.send(request)).error.code, 'paused')
+  await w.send(packet('ext35:set-paused', { paused: false }))
+  w.setAccount(202)
+  assert.equal((await w.send(request)).ok, false)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'forget_visits').length, 0)
+})
+
+test('EXT-40 privacy controls use literal copy and a trusted fixed JobGrid destination', async () => {
+  const { readFileSync } = await import('node:fs')
+  const html = readFileSync(new URL('../popup.dev.html', import.meta.url), 'utf8')
+  const js = readFileSync(new URL('../popup.dev.js', import.meta.url), 'utf8')
+  assert.match(html, /Type FORGET VISITS to confirm/)
+  assert.match(html, /rel="noopener noreferrer"/)
+  assert.match(js, /forgetPhrase.value !== 'FORGET VISITS'/)
+  assert.match(js, /APP_ORIGIN \+ '\/applications'/)
+  assert.doesNotMatch(js, /innerHTML|insertAdjacentHTML|document\.write/)
+})
