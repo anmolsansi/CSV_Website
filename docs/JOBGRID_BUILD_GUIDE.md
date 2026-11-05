@@ -4265,3 +4265,60 @@ these real Chrome and assistive-technology gates. Disabling/unloading
 the development extension stops observation without deleting historical
 JobGrid visit/application records. No new endpoint, migration, paid service,
 production installation or release permission is introduced by this suite.
+
+
+## Extension verification, warm lookup budget and inert pilot archive
+
+The optional development extension is still separated from the inactive
+release-shell manifest. Backend owner-scoped facts, observed external
+visits, CSV clicks and explicit application receipts remain distinct
+records, and none is deleted when Chrome removes its extension.
+
+**Lookup performance contract.** The synthetic EXT-45 regression in
+backend/tests/test_browser_memory_matches.py inserts 10,000 account-owned
+external visits and 521 dense-company applications, checks the unique
+owner/hash index plus an actual supported-dialect query plan, and times
+30 warmed service lookups. Its first cold call is reported separately.
+Nearest-rank warm p95 must be <= 2,000 ms on the recorded fixture, old
+definite application matches cannot disappear, result sets remain <= 20,
+and a second account cannot read the first account's visits. The test
+prints only aggregate timing/action/outcome/dialect/count, never request
+URLs, account labels, cookies, company or title. Measured CI values must
+be recorded from real run evidence, not predicted from the code.
+The development worker has a distinct 8,000 ms transport timeout;
+a real Chrome cold start must be inspected manually.
+
+**CI enforcement.** Existing frontend build, backend compile, PostgreSQL
+pytest, SQLite release and browser time-zone jobs remain unchanged. The
+main CI adds a Node 22 extension job running all source contract,
+permission and packaging tests. It also runs the real loaded-extension
+persistent Chromium test independently in the existing local Vite/FastAPI
+E2E job, then runs the full browser suite. Both extension JUnit reports
+use scripts/verify_junit.py and fail for empty, failed or skipped results.
+Their XML is retained only as short-lived sanitized CI evidence. The
+browser setup uses disposable synthetic accounts, fixture-pregranted
+localhost/Lever hosts and bundled Playwright Chromium, not a production
+account or a browser permission-dialog test.
+
+**Deterministic release-shell package.** Run node extension/package.mjs
+from the repository root. This generates extension/dist/jobgrid-pilot-vX.Y.Z.zip
+with a .sha256 sidecar. The script validates the exact existing MV3
+optional-permission list and enforces two runtime members: manifest.json
+and popup.html. It rejects dev hosts, active scripts, symlinks and secret
+sentinels, and writes a fixed-timestamp ZIP independent of host timezone
+or local file modifications. Node tests build twice, compare SHA-256,
+read the archive with unzip, and prove unsafe manifests/popups fail
+before writing output. A CI archive job depends on passing Node, E2E
+and PostgreSQL suites. It retains the inactive ZIP for seven days,
+without creating a GitHub release or Chrome Web Store submission.
+
+**Use and rollback.** See extension/README.md for the exact checksum,
+unpack, Load unpacked, version update, Pause/disable, Remove and
+account-owned Forget visits instructions. The distributed ZIP has no
+background worker and cannot check, visit or apply; it is only an
+inspectable, versioned shell. The active development popup and worker
+remain outside the release artifact. Uninstalling the shell has no
+server-side history effect. An actual Chrome installation smoke test,
+optional grant/revocation, deployed OAuth, MV3 suspension, accessibility
+and production release are pending external gates, not marked as passed
+by Node, pytest, headless Chromium or packaging.
