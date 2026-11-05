@@ -479,6 +479,49 @@ test('EXT-43 development popup exposes labels, live feedback and keyboard focus 
 })
 
 
+
+test('EXT-43 keyboard Enter reaches pause, resume, forget cancellation and disconnect', async () => {
+  test.setTimeout(90_000)
+  await withRealExtension(async ({ app, popup }) => {
+    const accountId = await signIn(app, 'ext43-keys-' + crypto.randomUUID() + '@example.test')
+    await connectRealExtension(popup, app, accountId)
+    await popup.reload()
+    await expect(popup.locator('#pause')).toBeEnabled()
+    await expect(popup.locator('#forget')).toBeEnabled()
+
+    popup.once('dialog', dialog => dialog.accept())
+    await popup.locator('#pause').focus()
+    await expect(popup.locator('#pause')).toBeFocused()
+    await popup.keyboard.press('Enter')
+    await expect(popup.locator('#connection')).toContainText('paused', { timeout: 10000 })
+    await expect(popup.locator('#check')).toBeDisabled()
+    await expect(popup.locator('#forget')).toBeDisabled()
+
+    await popup.locator('#pause').focus()
+    await popup.keyboard.press('Enter')
+    await expect(popup.locator('#connection')).toContainText('Connected', { timeout: 10000 })
+    await expect(popup.locator('#forget')).toBeEnabled()
+
+    await popup.locator('#forget').focus()
+    await popup.keyboard.press('Enter')
+    await expect(popup.locator('#forget-confirmation')).toBeVisible()
+    await expect(popup.locator('#forget-final')).toBeDisabled()
+    await popup.getByLabel('Type FORGET VISITS to confirm').fill('FORGET VISITS')
+    await expect(popup.locator('#forget-final')).toBeEnabled()
+    await popup.locator('#forget-cancel').focus()
+    await popup.keyboard.press('Enter')
+    await expect(popup.locator('#forget-confirmation')).toBeHidden()
+
+    popup.once('dialog', dialog => dialog.accept())
+    await popup.locator('#disconnect').focus()
+    await popup.keyboard.press('Enter')
+    await expect(popup.locator('#connection')).toContainText('Not connected', { timeout: 10000 })
+    await expect(popup.locator('#forget')).toBeDisabled()
+    // A confirmation controls destructive actions; cancel never deletes visits.
+    // Pressing Enter on disconnect does not submit a job application.
+  })
+})
+
 test('EXT-44 offline failure, navigation, opt-out and full profile restart fail closed', async () => {
   test.setTimeout(150_000)
   await withRealExtension(async ({ context, app, popup, extensionId, restart }) => {
