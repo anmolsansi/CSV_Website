@@ -43,8 +43,16 @@ jobs:
           set -euo pipefail
           mkdir -p extension/ci-artifacts
           node --test --test-reporter=junit extension/tests/*.test.mjs > extension/ci-artifacts/extension-node.xml
-          python3 scripts/verify_junit.py extension/ci-artifacts/extension-node.xml \
-            --label "EXT-46 Node contracts" --min-tests 1 --max-skips 0
+          # Node 22 writes valid JUnit <testcase> elements directly under
+          # <testsuites> (no <testsuite> wrapper). Our Python verifier expects
+          # the Playwright/pytest envelope, so validate Node's own format here.
+          TEST_COUNT="$(grep -c '<testcase ' extension/ci-artifacts/extension-node.xml || true)"
+          if [ "$TEST_COUNT" -lt 1 ] ||
+             grep -Eq '<(failure|error|skipped)([ >])' extension/ci-artifacts/extension-node.xml; then
+            echo "EXT-46 Node contracts: empty or nonpassing JUnit report"
+            exit 1
+          fi
+          echo "EXT-46 Node contracts: tests=$TEST_COUNT failures=0 errors=0 skipped=0"
 
       - name: Upload extension Node test evidence
         if: always()
