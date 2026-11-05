@@ -7,6 +7,8 @@ const PROBE = 'ext05:session-probe'
 const CONNECT = 'ext26:connect'
 const COMMAND = 'ext26:command'
 const DISCONNECT = 'ext26:disconnect'
+const SITE_OPT = 'ext30:site-opt-in'
+const SITE_STATUS = 'ext30:site-status'
 const MAX_BYTES = 8192
 const TIMEOUT_MS = 8000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -70,6 +72,11 @@ function validMessage(message) {
   if (message.type === CONNECT) return keysOnly(message, ['type', 'version',
     'request_id', 'tab_id']) && validId(message.tab_id)
   if (message.type === DISCONNECT) return Object.keys(message).length === 3
+  if (message.type === SITE_OPT) return keysOnly(message,
+    ['type', 'version', 'request_id', 'host', 'enabled']) &&
+    Object.hasOwn(ATS_ORIGINS, message.host) && typeof message.enabled === 'boolean'
+  if (message.type === SITE_STATUS) return keysOnly(message,
+    ['type', 'version', 'request_id', 'host']) && Object.hasOwn(ATS_ORIGINS, message.host)
   if (message.type === COMMAND) return keysOnly(message,
     ['type', 'version', 'request_id', 'kind', 'payload']) &&
     validCommand(message)
@@ -212,7 +219,7 @@ chrome.tabs.onUpdated?.addListener((tabId, changes) => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (![PROBE, CONNECT, COMMAND, DISCONNECT].includes(message?.type)) return false
+  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS].includes(message?.type)) return false
   const requestId = validUUID(message?.request_id) ? message.request_id : null
   if (!popupSender(sender) || !validMessage(message) && message.type !== PROBE) {
     sendResponse(answer(requestId, error('forbidden_sender', 'Unsupported request')))
@@ -230,6 +237,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return bridge(tabs[0].id, 'session')
     }
     if (message.type === CONNECT) return connect(message.tab_id)
+    if (message.type === SITE_OPT) return changeSiteOptIn(message.host, message.enabled)
+    if (message.type === SITE_STATUS) return readSiteStatus(message.host)
     if (message.type === DISCONNECT) {
       await clearConnection()
       return { ok: true, data: { protocol_version: VERSION, disconnected: true } }
@@ -241,3 +250,95 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     () => sendResponse(answer(requestId, unavailable())))
   return true
 })
+
+
+// EXT-30: explicit, exact-host opt-in. Nothing is registered on installation.
+// No host permission request is made except in response to a popup gesture.
+const ATS_ORIGINS = Object.freeze({
+  'boards.greenhouse.io': 'https://boards.greenhouse.io/*',
+  'job-boards.greenhouse.io': 'https://job-boards.greenhouse.io/*',
+  'jobs.lever.co': 'https://jobs.lever.co/*',
+})
+const SITE_STORAGE_KEY = 'jobgridSiteOptIns'
+const scriptId = host => 'jobgrid-public-' + host.replaceAll('.', '-')
+let siteSyncQueue = Promise.resolve()
+
+async function readOptIns() {
+  if (!chrome.storage.local?.get) return {}
+  const stored = (await chrome.storage.local.get(SITE_STORAGE_KEY))?.[SITE_STORAGE_KEY]
+  if (!plain(stored)) return {}
+  const result = {}
+  for (const host of Object.keys(ATS_ORIGINS)) {
+    if (stored[host] === true) result[host] = true
+  }
+  return result
+}
+
+async function readSiteStatus(host) {
+  const optIns = await readOptIns()
+  const granted = await chrome.permissions.contains({ origins: [ATS_ORIGINS[host]] })
+  return { ok: true, data: { protocol_version: VERSION, host,
+    opted_in: optIns[host] === true, permission_granted: granted } }
+}
+
+async function syncSiteScriptsNow() {
+  if (!chrome.scripting.getRegisteredContentScripts ||
+      !chrome.scripting.registerContentScripts ||
+      !chrome.scripting.unregisterContentScripts) return
+  const optIns = await readOptIns()
+  for (const [host, origin] of Object.entries(ATS_ORIGINS)) {
+    const id = scriptId(host)
+    const current = await chrome.scripting.getRegisteredContentScripts({ ids: [id] })
+    const registered = current.some(item => item.id === id)
+    const shouldRegister = optIns[host] === true &&
+      await chrome.permissions.contains({ origins: [origin] })
+    if (!shouldRegister && registered) {
+      await chrome.scripting.unregisterContentScripts({ ids: [id] })
+    } else if (shouldRegister && !registered) {
+      await chrome.scripting.registerContentScripts([{
+        id, matches: [origin], js: ['job-candidates.js'],
+        runAt: 'document_idle', allFrames: false, persistAcrossSessions: false,
+      }])
+    }
+  }
+}
+
+function syncSiteScripts() {
+  const task = siteSyncQueue.then(syncSiteScriptsNow)
+  siteSyncQueue = task.catch(() => {}) // a failed sync does not poison future grants
+  return task
+}
+
+async function changeSiteOptIn(host, enabled) {
+  if (!chrome.storage.local?.set) return unavailable()
+  if (enabled) {
+    if (!connection) return error('not_connected', 'Connect a JobGrid tab first')
+    // This call must remain the first awaited operation after the popup click,
+    // to preserve Chrome's user-gesture permission grant.
+    const granted = await chrome.permissions.request({ origins: [ATS_ORIGINS[host]] })
+    if (!granted) return error('permission_denied', 'Site access was not granted')
+  }
+  const optIns = await readOptIns()
+  if (enabled) optIns[host] = true
+  else delete optIns[host]
+  await chrome.storage.local.set({ [SITE_STORAGE_KEY]: optIns })
+  await syncSiteScripts()
+  return readSiteStatus(host)
+}
+
+chrome.permissions.onRemoved?.addListener(removed => {
+  const affected = Object.entries(ATS_ORIGINS)
+    .filter(([, origin]) => removed?.origins?.includes(origin))
+    .map(([host]) => host)
+  if (affected.length === 0) return
+  void (async () => {
+    const optIns = await readOptIns()
+    for (const host of affected) delete optIns[host]
+    await chrome.storage.local.set({ [SITE_STORAGE_KEY]: optIns })
+    await syncSiteScripts()
+  })().catch(() => {})
+})
+
+// After a worker restart, restore registration only for an earlier explicit
+// site choice that Chrome still grants. The connection itself remains in memory.
+if (chrome.storage.local?.get) void syncSiteScripts().catch(() => {})
