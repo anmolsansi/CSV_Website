@@ -42,7 +42,9 @@
     for (const selector of selectors) {
       const node = document.querySelector(selector)
       if (!node || typeof node.closest !== 'function' ||
-          node.closest(blockedAncestor)) continue
+          node.closest(blockedAncestor) ||
+          node.querySelector?.('form, input, textarea, select, [contenteditable]') ||
+          (typeof node.getClientRects === 'function' && node.getClientRects().length === 0)) continue
       // Never read form values, body text, input fields, hidden metadata or scripts.
       const raw = typeof node.innerText === 'string' ? node.innerText : node.textContent
       if (typeof raw !== 'string') continue
