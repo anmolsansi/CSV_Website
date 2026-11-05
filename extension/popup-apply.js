@@ -21,7 +21,10 @@ export function checkedJobForAccount(record, state) {
       record.account_id !== state.account_id ||
       typeof record.url !== 'string' || !record.url ||
       !record.before_visit?.visit ||
-      !Array.isArray(record.before_visit.matches)) return false
+      !Array.isArray(record.before_visit.matches) ||
+      record.apply_status === 'saved' ||
+      record.before_visit.matches.some(match =>
+        match?.confidence === 'exact' || match?.confidence === 'canonical')) return false
   return true
 }
 
