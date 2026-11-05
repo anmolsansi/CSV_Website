@@ -348,6 +348,13 @@ chrome.permissions.onRemoved?.addListener(removed => {
     const optIns = await readOptIns()
     for (const host of affected) delete optIns[host]
     await chrome.storage.local.set({ [SITE_STORAGE_KEY]: optIns })
+    for (const [tabId, observedUrl] of observedUrls) {
+      if (affected.includes(classifyObservedUrl(observedUrl))) cancelObservation(tabId)
+    }
+    for (const [tabId, warning] of tabWarnings) {
+      if (affected.includes(classifyObservedUrl(warning.url))) cancelObservation(tabId)
+    }
+    await flushWarnings()
     await syncSiteScripts()
   })().catch(() => {})
 })
@@ -466,7 +473,11 @@ async function runNavigationCheck(tabId, url, selected) {
 
 function observeTabUpdate(tabId, changes, tab) {
   if (!validId(tabId)) return
-  if (changes?.url || changes?.status === 'loading') cancelObservation(tabId)
+  if (changes?.url || changes?.status === 'loading') {
+    const hadWarning = tabWarnings.has(tabId)
+    cancelObservation(tabId)
+    if (hadWarning) void flushWarnings().catch(() => {})
+  }
   if (changes?.status !== 'complete' &&
       !(changes?.url && tab?.status === 'complete')) return
   const url = tab?.url
