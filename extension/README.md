@@ -195,3 +195,30 @@ and acceptance limitations: [EXT-37–40 popup guide](../docs/EXT37_40_POPUP_CON
 To validate locally: `cd extension && npm test`. The automated tests are
 not evidence of real Chrome permissions, OAuth, extension store acceptance or
 deployed production behavior.
+
+
+## Local Chromium integration and safety acceptance (EXT-41–44)
+
+The acceptance harness in frontend/tests/extension.spec.ts opens a disposable
+persistent Chromium profile with the development worker and the local Vite
+proxy/FastAPI server. It covers real cookie-authenticated /check, /visit and
+explicit /apply requests; first-visit versus revisit warnings; cross-account
+isolation; hostile page/postMessage attempts; keyboard-focused popup fields;
+offline errors; per-tab navigation/opt-out; and browser restart requiring a
+fresh connection. Each test uses synthetic accounts/jobs and cleans up the
+profile. Do not point it at a deployed account or production database.
+
+Start a disposable backend with TEST_AUTH=true, ENVIRONMENT=test, a test
+database and FRONTEND_URL=http://localhost:5173. From frontend/, run
+npx playwright test tests/extension.spec.ts --project=chromium.
+The test config starts Vite and its local /api proxy. Separately run
+cd extension && npm test for isolated worker/permission contracts.
+
+The harness changes only its *temporary* copied manifest to pregrant
+localhost and a synthetic Lever origin. The committed manifests are
+unchanged. This does **not** establish normal Chrome optional permission
+prompts, real installed-popup/tab behavior, a true service-worker suspension,
+real grant revocation, deployed OAuth or a screen-reader audit. Those gates
+are still open. Uninstall the development extension to stop testing. Saved
+server history is unaffected by uninstalling it. No release or store
+distribution is implied by a passing automated run.
