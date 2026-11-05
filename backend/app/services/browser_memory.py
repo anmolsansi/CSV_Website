@@ -70,14 +70,11 @@ class BrowserVisitResult:
     matching_rows_marked: int = 0
 
     def as_response(self) -> dict:
-        first = self.first_visited_at
-        if first.tzinfo is None:
-            first = first.replace(tzinfo=timezone.utc)
         return {
             "protocol_version": 1,
             "account_id": self.account_id,
             "created": self.created,
-            "first_visited_at": first.isoformat().replace("+00:00", "Z"),
+            "first_visited_at": utc_z(self.first_visited_at),
         }
 
 
