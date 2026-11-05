@@ -4283,8 +4283,10 @@ Nearest-rank warm p95 must be <= 2,000 ms on the recorded fixture, old
 definite application matches cannot disappear, result sets remain <= 20,
 and a second account cannot read the first account's visits. The test
 prints only aggregate timing/action/outcome/dialect/count, never request
-URLs, account labels, cookies, company or title. Measured CI values must
-be recorded from real run evidence, not predicted from the code.
+URLs, account labels, cookies, company or title. Measured 2026-11-05 PostgreSQL CI fixture: **10,000 visits**, **30 warm
+lookups**, **14.0 ms warm p95**, **21.6 ms separate cold lookup**, and
+**index plan**; see https://github.com/anmolsansi/CSV_Website/actions/runs/41991907712 .
+This is backend timing only, not real Chrome/worker cold-start timing.
 The development worker has a distinct 8,000 ms transport timeout;
 a real Chrome cold start must be inspected manually.
 
