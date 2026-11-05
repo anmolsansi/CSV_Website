@@ -4378,3 +4378,36 @@ isolation, OAuth success or the contents of the installed extension. Record
 all four separately. The inactive ZIP cannot execute the connect/check/visit/
 apply pilot journey. Promoting development code to a production manifest is
 an additional activation decision, not a documentation or packaging step.
+
+### Controlled Chrome/OAuth walkthrough (EXT-48.02)
+
+Public unauthenticated reads of the production frontend `/api/health` and
+`/api/crm/browser-memory/session` on 2026-11-05 each timed out after 30 seconds
+without a response in this execution environment; the web-fetch fallback
+could not access them either. This is an inconclusive reachability result,
+not a 401, an OAuth pass, or proof of a provider outage. Vercel metadata is
+recorded separately above. No deployed login, application write or rollback
+was performed.
+
+Before execution, record a disposable target, exact frontend/backend source
+SHAs, database/storage identity, active artifact hash, operator, Chrome version
+and controlled accounts A/B. Establish that C-09/C-10 prerequisites hold. Keep
+session cookies, provider tokens, backups and account data outside public
+GitHub evidence. Do not turn on TEST_AUTH at the deployed target.
+
+| Step | Expected observation | Current result |
+|---|---|---|
+| Load approved active artifact in a disposable normal Chrome profile | No broad install grants; grant only exact JobGrid origin after gesture | NOT RUN; shipped ZIP is inactive |
+| Log in through the real provider as controlled A | Correct account from `/api/crm/browser-memory/session`; secure cookie remains browser-owned | NOT RUN; controlled identities/target missing |
+| Connect one signed-in tab and grant an ATS host, then separately opt in | Only that supported top-frame job-detail route is observed | NOT RUN |
+| Check unseen synthetic URL, revisit and explicitly confirm applied | Visit/apply remain distinct; original applied time and one receipt survive same-key retry | NOT RUN |
+| Switch to B, log out, close/reopen app tab, revoke host permission | No wrong-owner writes, stale result, hidden reconnect or collection after revocation | NOT RUN |
+| Restart browser/backend; remove source CSV in disposable account | Durable visits/applications remain; browser session connection is re-established deliberately | NOT RUN |
+| Measure cold start separately, then 30 warm checks | Record actual environment/errors/timeouts; warm p95 <=2s; check deadline 8s | NOT RUN; local/CI measurements are not deployed timing |
+
+A successful synthetic local dev-login test cannot replace any real-provider
+row in this table. The optional-host browser UI, actual MV3 suspension and
+screen-reader gaps from EXT-02/05/41–44 must also be accepted on the chosen
+active candidate. A new release manifest/package is required before the
+inactive ZIP can be called a functioning pilot; do not edit the production
+manifest as a side effect of this walkthrough.
