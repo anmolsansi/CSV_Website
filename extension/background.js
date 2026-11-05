@@ -556,6 +556,10 @@ function cancelObservation(tabId) {
   checkedPages.delete(tabId)
   tabWarnings.delete(tabId)
   dropPendingTab(tabId)
+  // A changed or closed job tab invalidates even a confirmed recovery key.
+  void readUnresolvedApply().then(item => {
+    if (item?.tab_id === tabId) return clearUnresolvedApply()
+  }).catch(() => {})
   clearTabBadge(tabId)
 }
 
