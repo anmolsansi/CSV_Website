@@ -303,3 +303,73 @@ test('EXT-41 local API: first visit is not previous; explicit apply is durable a
     expect(canonical.matches[0].applied_at).toBe(applied.matches[0].applied_at)
   })
 })
+
+
+test('EXT-42 foreign account and hostile page cannot reuse selected extension memory or issue writes', async () => {
+  test.setTimeout(150_000)
+  await withRealExtension(async ({ context, app, popup }) => {
+    const a = 'ext42-a-' + crypto.randomUUID() + '@example.test'
+    const b = 'ext42-b-' + crypto.randomUUID() + '@example.test'
+    const ownerA = await signIn(app, a)
+    await connectRealExtension(popup, app, ownerA)
+    const url = 'https://jobs.lever.co/acmelabs/' + crypto.randomUUID().replaceAll('-', '')
+    const { job, jobTab } = await openObservedJob(context, popup, url)
+    const prior = await checkedVisit(app, url)
+    expect(prior.account_id).toBe(ownerA)
+    expect(prior.visit.visited).toBe(true)
+    expect(prior.matches).toEqual([])
+
+    // Page-world and subframe postMessage traffic is not a privileged popup
+    // sender. No page DOM, storage or message receiver ever receives matches.
+    const pageState = await job.evaluate(async () => {
+      const message = {
+        type: 'ext39:submit-pending', version: 1, request_id: crypto.randomUUID(),
+        tab_id: 1, account_id: 1, payload: { confirmed: true },
+      }
+      const received: unknown[] = []
+      const listener = (event: MessageEvent) => {
+        if (event.source === window) received.push(event.data)
+      }
+      window.addEventListener('message', listener)
+      window.postMessage(message, '*')
+      const frame = document.createElement('iframe')
+      frame.srcdoc = '<script>parent.postMessage({type:"ext26:command",kind:"apply"}, "*")<\/script>'
+      document.body.append(frame)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      window.removeEventListener('message', listener)
+      return {
+        messages: received,
+        body: document.body.innerText,
+        localKeys: Object.keys(localStorage),
+        sessionKeys: Object.keys(sessionStorage),
+        hasExtensionRuntime: typeof (window as any).chrome?.runtime?.sendMessage === 'function',
+      }
+    })
+    expect(pageState.messages.some((value: any) => value?.ok === true ||
+      value?.data?.matches)).toBe(false)
+    expect(pageState.body).not.toContain('JobGrid account')
+    expect(pageState.body).not.toContain('Applied to this company')
+    expect(pageState.localKeys.filter((key: string) => /jobgrid/i.test(key))).toEqual([])
+    expect(pageState.sessionKeys.filter((key: string) => /jobgrid/i.test(key))).toEqual([])
+    expect(pageState.hasExtensionRuntime).toBe(false)
+
+    const draft = await extCommand(popup, 'ext34:stage-apply', {
+      tab_id: jobTab, company: 'Acme Labs', title: 'Platform Engineer',
+    })
+    expect(draft.ok).toBe(true)
+    const ownerB = await signIn(app, b)
+    expect(ownerB).not.toBe(ownerA)
+    await job.bringToFront()
+    const rejected = await extCommand(popup, 'ext39:submit-pending', { tab_id: jobTab })
+    expect(rejected.ok).toBe(false)
+    expect(['account_changed', 'not_connected', 'no_check', 'unavailable']).toContain(rejected.error.code)
+    const foreign = await checkedVisit(app, url)
+    expect(foreign.account_id).toBe(ownerB)
+    expect(foreign.visit).toEqual({ visited: false, first_visited_at: null })
+    expect(foreign.matches).toEqual([])
+    await signIn(app, a)
+    const restoredA = await checkedVisit(app, url)
+    expect(restoredA.visit.first_visited_at).toBe(prior.visit.first_visited_at)
+    expect(restoredA.matches).toEqual([])
+  })
+})
