@@ -109,7 +109,7 @@ warnings are bounded and kept only in trusted chrome.storage.session, then
 cleared on disconnect/reconnect. The worker does not restore a signed-in
 connection after suspension. The development manifest now opens popup.dev.html for connection, pause,
 manual checking and read-only warnings. The release popup remains inert, and
-full opt-in/apply/forget confirmation UX remains EXT-37–40; until they exist, this path is exercisable only by a trusted
+the EXT-37–40 confirmation UI is available only in this development popup. Permission pilots remain separate; the auto-observation path was first exercised by a trusted
 development harness, not by a regular installed end user.
 
 Run cd extension && npm test for isolated candidate privacy, permission,
@@ -173,3 +173,25 @@ suspension and screen-reader interaction are separate pilot acceptance gates,
 not established by these VM tests. Unload the dev extension or revert the
 feature branch to roll back. No migration, new service or paid resource is
 required.
+
+## Development popup: EXT-37–40
+
+The development popup now renders distinct partial, offline, authorization,
+rate-limited, timeout and unsupported states. No failed check is shown as a
+definite absence of applications. Editable employer/title fields require
+account, URL and explicit confirmation before any application is saved. The
+worker retains a stable 15-minute pending UUID for safe **user-triggered**
+lost-response retries without automatic reposting. The successful server
+receipt is displayed without modifying the original pre-visit warning.
+
+Pause and disconnect require confirmation; the typed `FORGET VISITS` action
+deletes only the selected cookie-account's external visit records, never
+applications or CSV clicks. Open JobGrid is a fixed-origin
+`/applications` link. The release manifest remains inert.
+
+Full user steps, field/transport contracts, privacy effects, tests, rollback
+and acceptance limitations: [EXT-37–40 popup guide](../docs/EXT37_40_POPUP_CONFIRMATION.md).
+
+To validate locally: `cd extension && npm test`. The automated tests are
+not evidence of real Chrome permissions, OAuth, extension store acceptance or
+deployed production behavior.
