@@ -443,3 +443,87 @@ test('EXT-34 never accepts a job-page sender or reuses a draft after navigation'
   assert.equal(noCheck.error.code, 'no_check')
   assert.equal(w.calls.filter(([, m]) => m.kind === 'apply').length, 0)
 })
+
+test('EXT-39 only explicit staged confirmation submits and concurrent clicks share one backend write', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const pending = await w.send(packet('ext34:stage-apply', {
+    tab_id: 2, company: '  Acme  ', title: ' Engineer ',
+  }))
+  assert.equal(pending.ok, true)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'apply').length, 0)
+  const [one, two] = await Promise.all([
+    w.send(packet('ext39:submit-pending', { tab_id: 2 })),
+    w.send(packet('ext39:submit-pending', { tab_id: 2 })),
+  ])
+  assert.equal(one.ok, true)
+  assert.equal(two.ok, true)
+  assert.equal(one.data.saved, true)
+  const writes = w.calls.filter(([, m]) => m.kind === 'apply')
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0][1].payload.idempotency_key, pending.data.idempotency_key)
+  assert.equal(writes[0][1].payload.company, 'Acme')
+  assert.equal(writes[0][1].payload.title, 'Engineer')
+  assert.equal(writes[0][1].payload.url, JOB)
+  assert.equal(writes[0][1].payload.confirmed, true)
+  const status = await w.send(packet('ext32:tab-status', { tab_id: 2 }))
+  assert.equal(status.data.apply_status, 'saved')
+  assert.equal(status.data.before_visit.visit.visited, false)
+  assert.equal(w.badges.get(2), 'A')
+  assert.equal(w.storageSession.jobgridPendingApply?.['2'], undefined)
+  assert.equal((await w.send(packet('ext39:submit-pending', { tab_id: 2 }))).error.code, 'no_check')
+})
+
+test('EXT-39 ambiguous timeout is not success and explicit retry preserves the original UUID and payload', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const draft = await w.send(packet('ext34:stage-apply', {
+    tab_id: 2, company: 'Acme', title: 'Engineer',
+  }))
+  w.behavior.applyFailureOnce = true
+  const first = await w.send(packet('ext39:submit-pending', { tab_id: 2 }))
+  assert.equal(first.ok, false)
+  assert.equal(first.error.code, 'save_unknown')
+  assert.equal(w.storageSession.jobgridPendingApply['2'].idempotency_key, draft.data.idempotency_key)
+  const retry = await w.send(packet('ext39:submit-pending', { tab_id: 2 }))
+  assert.equal(retry.ok, true)
+  const writes = w.calls.filter(([, m]) => m.kind === 'apply').map(([, m]) => m.payload)
+  assert.equal(writes.length, 2)
+  assert.deepEqual(JSON.parse(JSON.stringify(writes[0])), JSON.parse(JSON.stringify(writes[1])))
+})
+
+test('EXT-39 fails closed for forged sender, stale tab, switched account and expired draft', async () => {
+  const a = createWorker()
+  await optIntoLever(a)
+  a.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  await a.send(packet('ext34:stage-apply', { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  assert.equal((await a.send(packet('ext39:submit-pending', { tab_id: 2 }),
+    { ...POPUP, url: JOB })).ok, false)
+  assert.equal(a.calls.filter(([, m]) => m.kind === 'apply').length, 0)
+  a.emitUpdated(2, { url: 'https://jobs.lever.co/acme/other', status: 'loading' })
+  await sleep(25)
+  assert.equal((await a.send(packet('ext39:submit-pending', { tab_id: 2 }))).error.code, 'no_check')
+
+  const b = createWorker()
+  await optIntoLever(b)
+  b.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  await b.send(packet('ext34:stage-apply', { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  b.setAccount(202)
+  assert.equal((await b.send(packet('ext39:submit-pending', { tab_id: 2 }))).ok, false)
+  assert.equal(b.calls.filter(([, m]) => m.kind === 'apply').length, 0)
+
+  const c = createWorker()
+  await optIntoLever(c)
+  c.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  await c.send(packet('ext34:stage-apply', { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  c.storageSession.jobgridPendingApply['2'].created_at = Date.now() - 16 * 60 * 1000
+  assert.equal((await c.send(packet('ext39:submit-pending', { tab_id: 2 }))).error.code, 'no_check')
+  assert.equal(c.calls.filter(([, m]) => m.kind === 'apply').length, 0)
+})
