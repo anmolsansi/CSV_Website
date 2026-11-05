@@ -111,9 +111,13 @@
       response = await fetch(`${TRUSTED_ORIGIN}${API_ROOT}${route.path}`, options)
       if (response.redirected) return unavailable()
     } catch {
-      return signal.aborted ? fail('timeout', 'Couldn’t check · Retry') : unavailable()
+      return signal.aborted
+        ? fail('timeout', 'Request timed out')
+        : typeof navigator !== 'undefined' && navigator.onLine === false
+          ? fail('offline', 'You appear to be offline') : unavailable()
     }
     if (response.status === 401) return fail('not_authenticated', 'Sign in to JobGrid')
+    if (response.status === 403) return fail('forbidden', 'JobGrid denied this request')
     if (response.status === 429) {
       const value = Number(response.headers.get('Retry-After'))
       const retryAfter = Number.isSafeInteger(value) && value >= 0 && value <= 3600 ? value : undefined
