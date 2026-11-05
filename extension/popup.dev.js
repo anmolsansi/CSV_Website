@@ -1,5 +1,6 @@
 import { APP_ORIGIN } from './config.js'
 import { safeMatchText, summarizeWarning, summarizeFailure } from './popup-state.js'
+import { normalizeApplicationFields, checkedJobForAccount, sameStagedIntent } from './popup-apply.js'
 
 const byId = id => document.getElementById(id)
 const el = {
@@ -7,9 +8,55 @@ const el = {
   check: byId('check'), connection: byId('connection'), feedback: byId('feedback'),
   title: byId('result-title'), detail: byId('result-detail'),
   save: byId('result-save'), lookup: byId('result-lookup'), matches: byId('matches'),
+  applySection: byId('apply-section'), applyAccount: byId('apply-account'),
+  applyUrl: byId('apply-url'), draftForm: byId('draft-form'),
+  company: byId('apply-company'), jobTitle: byId('apply-title'),
+  draftError: byId('draft-error'), stage: byId('stage'),
+  approval: byId('approval'), confirmApply: byId('confirm-apply'),
+  submitApply: byId('submit-apply'),
 }
 let state = { connected: false, paused: false }
 let busy = false
+let checkedJob = null
+let checkedTabId = null
+let stagedIntent = null
+
+function resetStage() {
+  stagedIntent = null
+  el.approval.hidden = true
+  el.confirmApply.checked = false
+}
+function hideApplication() {
+  resetStage()
+  checkedJob = null
+  checkedTabId = null
+  el.applySection.hidden = true
+  el.company.value = ''
+  el.jobTitle.value = ''
+  el.draftError.textContent = ''
+}
+function showApplication(record, tabId) {
+  if (!checkedJobForAccount(record, state) || !Number.isSafeInteger(tabId) ||
+      record.apply_status === 'saved') {
+    hideApplication()
+    return
+  }
+  const switched = !checkedJob || checkedJob.url !== record.url ||
+    checkedJob.account_id !== record.account_id || checkedTabId !== tabId
+  if (switched) {
+    resetStage()
+    el.company.value = ''
+    el.jobTitle.value = ''
+    el.draftError.textContent = ''
+  }
+  checkedJob = record
+  checkedTabId = tabId
+  el.applySection.hidden = false
+  el.applyAccount.textContent = 'Selected JobGrid account: ' +
+    (state.account_label || 'Account') + ' (ID ' + state.account_id + ')'
+  el.applyUrl.textContent = 'Checked job URL: ' + record.url
+  controls()
+}
 
 async function send(type, extra = {}) {
   const id = crypto.randomUUID()
@@ -33,9 +80,13 @@ function controls() {
   el.disconnect.disabled = busy || !state.connected
   el.check.disabled = busy || !state.connected || state.paused
   el.pause.textContent = state.paused ? 'Resume checks' : 'Pause checks'
+  el.stage.disabled = busy || !checkedJob || !state.connected || state.paused
+  el.submitApply.disabled = busy || !stagedIntent || !el.confirmApply.checked ||
+    !checkedJobForAccount(checkedJob, state)
 }
 function feedback(message) { el.feedback.textContent = message }
 function render(record) {
+  if (!record?.before_visit) hideApplication()
   const view = summarizeWarning(record)
   el.title.textContent = view.title
   el.detail.textContent = view.detail
@@ -54,6 +105,7 @@ function render(record) {
   }
 }
 function showFailure(problem, action = 'check') {
+  if (action !== 'apply') hideApplication()
   const view = summarizeFailure(problem, action)
   el.title.textContent = view.title
   el.detail.textContent = view.detail
@@ -80,6 +132,7 @@ async function refresh() {
   const connection = await send('ext35:status')
   if (!connection.ok) {
     state = { connected: false, paused: false }
+    hideApplication()
     showConnection()
     showFailure(connection.error, 'connect')
     return
@@ -87,6 +140,7 @@ async function refresh() {
   state = connection.data
   showConnection()
   if (!state.connected || state.paused) {
+    hideApplication()
     render(null)
     return
   }
@@ -99,6 +153,7 @@ async function refresh() {
     const checked = await send('ext32:tab-status', { tab_id: active[0].id })
     if (checked.ok) {
       render(checked.data)
+      showApplication(checked.data, active[0].id)
       feedback('Showing the latest check for this tab.')
     } else if (checked.error?.code === 'no_check') {
       render(null)
@@ -156,8 +211,56 @@ el.check.addEventListener('click', () => run(async () => {
     return
   }
   render(result.data)
+  try {
+    const active = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (active.length === 1 && active[0].url === result.data.url)
+      showApplication(result.data, active[0].id)
+  } catch { hideApplication() }
   feedback('Check complete. Manual checks do not save a visit.')
 }))
 
 controls()
 void refresh()
+
+for (const input of [el.company, el.jobTitle]) {
+  input.addEventListener('input', () => {
+    resetStage()
+    el.draftError.textContent = 'Review again after changing the details.'
+    controls()
+  })
+}
+
+el.confirmApply.addEventListener('change', controls)
+
+el.draftForm.addEventListener('submit', event => {
+  event.preventDefault()
+  void run(async () => {
+    if (!checkedJobForAccount(checkedJob, state) || !Number.isSafeInteger(checkedTabId)) {
+      showFailure({ code: 'account_changed' })
+      return
+    }
+    const values = normalizeApplicationFields(el.company.value, el.jobTitle.value)
+    if (!values.ok) {
+      el.draftError.textContent = values.message
+      return
+    }
+    resetStage()
+    el.draftError.textContent = 'Reviewing the selected account and checked URL…'
+    const prepared = await send('ext34:stage-apply', {
+      tab_id: checkedTabId, company: values.company, title: values.title,
+    })
+    if (!prepared.ok) {
+      showFailure(prepared.error, 'apply')
+      return
+    }
+    if (!sameStagedIntent(checkedJob, state, prepared.data, values)) {
+      showFailure({ code: 'account_changed' })
+      return
+    }
+    stagedIntent = prepared.data
+    el.draftError.textContent = 'Review the employer, role, account and URL before saving.'
+    el.approval.hidden = false
+    el.confirmApply.checked = false
+    controls()
+  })
+})
