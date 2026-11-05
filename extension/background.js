@@ -254,8 +254,11 @@ async function connect(tabId) {
 }
 
 async function forgetSelectedVisits() {
-  if (!connection) return error('not_connected', 'Connect JobGrid first')
+  const selected = connection
+  if (!selected) return error('not_connected', 'Connect JobGrid first')
   if (paused) return error('paused', 'Tracking is paused')
+  if (!await verifiedAccount(selected))
+    return error('account_changed', 'Reconnect your JobGrid account')
   const result = await dispatch('forget_visits', {})
   if (!result.ok) return result
   // Old visit badges and checks cannot remain authoritative after deletion.
