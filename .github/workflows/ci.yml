@@ -28,6 +28,33 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  extension-node:
+    name: Extension Node contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run extension contract and permission assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extension/ci-artifacts
+          node --test --test-reporter=junit extension/tests/*.test.mjs > extension/ci-artifacts/extension-node.xml
+          python3 scripts/verify_junit.py extension/ci-artifacts/extension-node.xml \
+            --label "EXT-46 Node contracts" --min-tests 1 --max-skips 0
+
+      - name: Upload extension Node test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-node-contracts-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: extension/ci-artifacts/extension-node.xml
+
   frontend-e2e:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
