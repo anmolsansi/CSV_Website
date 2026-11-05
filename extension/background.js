@@ -555,6 +555,33 @@ async function recordTabWarning(tabId, url, selected, beforeVisit, saveState) {
   await flushWarnings()
 }
 
+// Only a trusted popup gesture may check an otherwise unsupported public URL.
+async function manualCheckCurrentTab() {
+  const selected = connection
+  if (!selected) return error('not_connected', 'Connect JobGrid first')
+  let tab
+  try {
+    const active = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (active.length !== 1 || !validId(active[0]?.id)) return unavailable()
+    tab = await chrome.tabs.get(active[0].id)
+  } catch { return unavailable() }
+  const url = safeManualJobUrl(tab.url)
+  if (!url) return error('unsupported', 'Only public HTTPS job pages can be checked')
+  const result = await dispatch('check', { url, company: null, title: null })
+  if (!result.ok) return result
+  if (!validCheckFacts(result.data) || connection !== selected) return unavailable()
+  try {
+    const current = await chrome.tabs.get(tab.id)
+    if (current.url !== tab.url || connection !== selected) return unavailable()
+    // A manual check never records a visit or stages an application.
+    await recordTabWarning(tab.id, tab.url, selected, result.data, 'manual_only')
+  } catch { return unavailable() }
+  return { ok: true, data: {
+    protocol_version: VERSION, account_id: selected.accountId,
+    url: tab.url, before_visit: result.data, save_state: 'manual_only',
+  } }
+}
+
 async function readTabStatus(tabId) {
   if (!connection) return error('not_connected', 'Open JobGrid to connect')
   const state = tabWarnings.get(tabId)
