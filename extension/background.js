@@ -159,6 +159,7 @@ async function setPaused(next) {
     clearObservationTimers()
     await warningWrites
     await clearAllPending()
+    await clearUnresolvedApply()
     await chrome.storage.session.remove('jobgridTabChecks')
   }
   return lifecycleStatus()
@@ -171,6 +172,7 @@ async function clearConnection() {
   clearObservationTimers()
   await warningWrites
   await clearAllPending()
+  await clearUnresolvedApply()
   await chrome.storage.session.remove(['jobgridConnection', 'jobgridTabChecks', 'jobgridPaused'])
 }
 
@@ -241,6 +243,9 @@ async function connect(tabId) {
   if (!result.ok) return result
   const current = await checkedTab(tabId)
   if (epoch !== generation || !current || current.url !== tab.url) return unavailable()
+  const unresolved = await readUnresolvedApply()
+  if (unresolved && unresolved.account_id !== result.data.account_id)
+    await clearUnresolvedApply()
   connection = { tabId, accountId: result.data.account_id, generation: epoch,
     tabUrl: tab.url, documentId, accountLabel: result.data.account_label,
     lastSessionCheckAt: Date.now() }
