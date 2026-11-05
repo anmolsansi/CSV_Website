@@ -4411,3 +4411,60 @@ screen-reader gaps from EXT-02/05/41–44 must also be accepted on the chosen
 active candidate. A new release manifest/package is required before the
 inactive ZIP can be called a functioning pilot; do not edit the production
 manifest as a side effect of this walkthrough.
+
+### Local backup and code-rollback rehearsal (EXT-48.03)
+
+**PASS, local disposable rehearsal only — 2026-11-05.** PostgreSQL 16,
+Python 3.12.12, UTC; dedicated database `jobgrid_ext48_rehearsal_test` and
+private temporary filesystem storage. TEST_AUTH was used only locally. No
+production database, object store or provider was modified.
+
+The candidate backend (`569835c`) created one synthetic owner with one CSV
+row, visit, explicitly applied track, first-applied event, apply receipt and
+uploaded synthetic PDF. Same-key apply replay returned the original response.
+A complete ZIP export contained the PDF bytes. A canonical row-content hash
+was captured from each of the six nonempty owner tables using ordered
+`to_jsonb(row)::text` values, not screenshots or only counts.
+
+The previous compatible source `0c42e99` was extracted with `git archive` to
+a temporary directory and started in a **separate Python process** using the
+same disposable migrated database and document directory. It authenticated
+the synthetic account, read the original visit/application and kept schema
+019 plus all six source hashes unchanged. The current candidate then started
+in another process; the same hashes still matched. No schema downgrade,
+table drop, data rewrite or production rollback was performed. Backend runtime
+and migration files are identical across these two revisions: this proves
+that bounded rollback pair, not compatibility with pre-019 applications.
+
+A second disposable account first rejected the source account expectation
+with 409. It then verified, restored and replayed the ZIP. Restored visit and
+applied timestamps matched source values; exactly one visit, track and document
+version remained; apply receipts were not imported. Downloaded PDF bytes matched
+SHA-256 `4fe69afb9154f31e4a69888bc5af8db01b84fe496290033e5c7e855f336949d1`.
+The source account's six full-content hashes remained unchanged after restore.
+
+| Source table | Nonempty count | Hash before, on previous code, and after return/restore |
+|---|---:|---|
+| `csv_rows` | 1 | `f66986b35b40776ff7d59742b15a72af3b8dcef3d130a4472820fa5863b1db31` |
+| `job_tracks` | 1 | `e21277c772e576df2e95619d4070dad3e7250830b25317944cb32ba6c83f2ad7` |
+| `job_visits` | 1 | `92333822f7f2c2262f9052ca76dc8a216386359839eb1c67267d857367cc9d8e` |
+| `browser_apply_receipts` | 1 | `03fd716ba506fbe982d9b0a4b69bc05afa799a771c19b370db6157df95ae410a` |
+| `job_lifecycle_events` | 1 | `29432573995bf62093fa0c6662bc2d208efa64e2cb10669451fb832cd932dc98` |
+| `document_versions` | 1 | `0aed7b54b717d93c3d0df664016a88d67c91b468855fb65025b8587ced6d4cbf` |
+
+Rehearsal sequence: create a dedicated disposable PostgreSQL database and
+private document directory; configure its role/process timezone to UTC;
+start the candidate with local dev auth and explicit localhost frontend/CORS;
+seed via `/upload`, browser-memory visit/apply and `/crm/documents`; export
+`/crm/backup/export/bundle`; hash the owner rows above; stop the process;
+start archived previous backend with the same disposable resources; compare;
+stop it and return to the candidate; `verify_only`, `merge_missing`, then repeat
+`merge_missing` into a second disposable account; download/hash its document;
+compare source hashes again. Keep JWT cookies and ZIP contents private.
+
+Existing reproducible fixture regressions cover the same recovery boundaries:
+`test_complete_backup.py`, `test_document_backup.py`, `test_browser_visits.py`
+and `test_browser_memory_apply.py`. Never point pytest at a live database.
+A real selected-environment database/object backup, operator recovery objectives,
+deployed OAuth, browser/backend replacement and 48h observation are **not proven**
+by this local exercise and still block deployed EXT-48 acceptance.
