@@ -857,6 +857,9 @@ async function submitPendingApplyOnce(tabId) {
   if (!result.ok) {
     if (['timeout', 'unavailable', 'protocol_error', 'account_changed',
       'not_authenticated'].includes(result.error?.code)) {
+      if (connection === selected && pendingByTab.get(tabId) === pending) {
+        try { await preserveUnresolvedApply(pending) } catch { /* no automatic retry */ }
+      }
       return error('save_unknown', 'Save may have succeeded. Check JobGrid before retrying')
     }
     return result
@@ -883,6 +886,9 @@ async function submitPendingApplyOnce(tabId) {
       void chrome.action.setBadgeText({ tabId, text: 'A' }).catch(() => {})
     }
   }
+  const unresolved = await readUnresolvedApply()
+  if (unresolved?.idempotency_key === pending.idempotency_key)
+    await clearUnresolvedApply()
   await clearPendingTab(tabId)
   return { ok: true, data: {
     protocol_version: VERSION, account_id: selected.accountId,
