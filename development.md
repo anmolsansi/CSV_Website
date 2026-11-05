@@ -10097,7 +10097,7 @@ Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command
 
 #### EXT-45 — Measure bounded lookup performance and safe diagnostics
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** IMPLEMENTED on PR #197; continuation validation in progress; external Chrome acceptance remains pending.\
 **Priority:** P1\
 **Type:** Performance acceptance\
 **Execution position:** 45/50; band 9/10 — Integration acceptance; group step 5/5.
@@ -10154,6 +10154,7 @@ Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrac
 | Exact repository-relative path | Planning snapshot state | Intended role |
 |---|---|---|
 | `backend/tests/test_browser_memory_matches.py` | PROPOSED; supplied by EXT-12 before use | Task-owned regression/fixture |
+| `frontend/tests/extension.spec.ts` | EXISTS on current branch | Real eight-second timeout and sanitized browser diagnostics fixture |
 | `extension/README.md` | PROPOSED; supplied by EXT-01 before use | Current-system documentation for this task only |
 | `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
 
@@ -10247,13 +10248,13 @@ Document ID: `EXT-45`; title: **Measure bounded lookup performance and safe diag
 
 Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
 
-**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
 
 <a id="ext-46"></a>
 
 #### EXT-46 — Add reproducible extension checks to existing CI
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** IMPLEMENTED on PR #197; continuation validation in progress; external Chrome acceptance remains pending.\
 **Priority:** P1\
 **Type:** CI\
 **Execution position:** 46/50; band 10/10 — Delivery and handover; group step 1/5.
@@ -10404,13 +10405,13 @@ Document ID: `EXT-46`; title: **Add reproducible extension checks to existing CI
 
 Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
 
-**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
 
 <a id="ext-47"></a>
 
 #### EXT-47 — Package a reproducible unpacked pilot artifact
 
-**Status:** PLANNED / not implemented; validation not run.\
+**Status:** IMPLEMENTED on PR #197; continuation validation in progress; external Chrome acceptance remains pending.\
 **Priority:** P1\
 **Type:** Packaging\
 **Execution position:** 47/50; band 10/10 — Delivery and handover; group step 2/5.
@@ -10472,6 +10473,8 @@ Preserve: visited/imported/saved/applied are different facts; CsvRow and JobTrac
 | `extension/README.md` | PROPOSED; supplied by EXT-01 before use | Current-system documentation for this task only |
 | `extension/package.mjs` | PROPOSED NEW in EXT-47 | Task-owned implementation/configuration boundary |
 | `extension/tests/package.test.mjs` | PROPOSED NEW in EXT-47 | Task-owned regression/fixture |
+| `frontend/tests/extension.spec.ts` | EXISTS on current branch | Unmodified ZIP unpack/load smoke in disposable Chromium |
+| `.github/workflows/ci.yml` | EXISTS on current branch | Enforce nonempty release-artifact browser acceptance |
 | `docs/JOBGRID_BUILD_GUIDE.md` | EXISTS at planning baseline | Current-system documentation for this task only |
 
 Paths are relative to `/Users/mac/Documents/Projects/CSV_Website`. A read-only inspection path is not an allowed edit. Evidence/checklist notes may update this ticket’s status/evidence lines in `development.md`; no other packet is silently changed. New runtime/test scaffolding not in this list requires an explicit packet correction before editing.
@@ -10567,7 +10570,7 @@ Document ID: `EXT-47`; title: **Package a reproducible unpacked pilot artifact**
 
 Evidence fields: baseline/implementation SHA; owner/reviewer; exact test command/runner/database/browser versions; fixture; expected/actual values; sanitized durable artifact or CI URL; docs delta; micro-commit/PR; local/CI/deployed/store/production status separately; unresolved blockers. All values currently **not recorded**.
 
-**Ticket intake result:** WRITTEN / NOT DISPATCHED. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
+**Ticket intake result:** CONTINUATION ACCEPTED. Scope corrected on 2026-11-05 to verify the existing implementation; no runtime activation or public contract change. Bundled Chromium load evidence is distinct from manual normal-Chrome acceptance. Current-source and dependency acceptance must be rechecked; missing external proof remains scoped to its owning gate. This document adds executable detail, not implementation evidence.
 
 <a id="ext-48"></a>
 
