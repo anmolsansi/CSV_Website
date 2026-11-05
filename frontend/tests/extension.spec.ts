@@ -145,3 +145,161 @@ test('EXT-05 real tab bridge follows account switch and fails closed on logout/t
     await fs.rm(workspace, { recursive: true, force: true })
   }
 })
+
+
+// EXT-41–44: only disposable Chromium profiles and a local authenticated API.
+// These tests deliberately pregrant optional hosts in the *copied* manifest,
+// never the shipped development or release manifests.
+async function withRealExtension(
+  callback: (env: { context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+    app: Page, popup: Page, extensionId: string,
+    restart: () => Promise<Awaited<ReturnType<typeof chromium.launchPersistentContext>>> }) => Promise<void>,
+) {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'jobgrid-ext-acceptance-'))
+  const extensionPath = path.join(workspace, 'extension')
+  const profile = path.join(workspace, 'profile')
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined
+  const launch = () => chromium.launchPersistentContext(profile, {
+    headless: true, channel: 'chromium',
+    args: ['--disable-extensions-except=' + extensionPath, '--load-extension=' + extensionPath],
+  })
+  try {
+    await fs.cp(SOURCE, extensionPath, { recursive: true })
+    const manifest = JSON.parse(await fs.readFile(path.join(extensionPath, 'manifest.dev.json'), 'utf8'))
+    const hosts = ['http://localhost:5173/*', 'https://jobs.lever.co/*']
+    for (const host of hosts) expect(manifest.optional_host_permissions).toContain(host)
+    manifest.host_permissions = hosts
+    manifest.optional_host_permissions = manifest.optional_host_permissions
+      .filter((host: string) => !hosts.includes(host))
+    await fs.writeFile(path.join(extensionPath, 'manifest.json'), JSON.stringify(manifest))
+    await overlayOrigin(path.join(extensionPath, 'config.js'),
+      "parseTrustedOrigin('" + RELEASE_ORIGIN + "')",
+      "parseTrustedOrigin('" + ORIGIN + "', { allowLocal: true })")
+    await overlayOrigin(path.join(extensionPath, 'jobgrid-bridge.js'),
+      "const TRUSTED_ORIGIN = '" + RELEASE_ORIGIN + "'",
+      "const TRUSTED_ORIGIN = '" + ORIGIN + "'")
+    await overlayOrigin(path.join(extensionPath, 'background.js'),
+      "const APP_ORIGIN = '" + RELEASE_ORIGIN + "'",
+      "const APP_ORIGIN = '" + ORIGIN + "'")
+    context = await launch()
+    const worker = context.serviceWorkers()[0] ||
+      await context.waitForEvent('serviceworker', { timeout: 15000 })
+    const extensionId = new URL(worker.url()).hostname
+    const app = await context.newPage()
+    await app.goto(ORIGIN)
+    const popup = await context.newPage()
+    await popup.goto('chrome-extension://' + extensionId + '/popup.dev.html')
+    await callback({ context, app, popup, extensionId, restart: async () => {
+      await context?.close()
+      context = await launch()
+      return context
+    } })
+  } finally {
+    await context?.close()
+    await fs.rm(workspace, { recursive: true, force: true })
+  }
+}
+
+async function extCommand(popup: Page, type: string, extra: Record<string, unknown> = {}) {
+  return popup.evaluate(async ({ type, extra }) => {
+    const request_id = crypto.randomUUID()
+    const response = await (globalThis as any).chrome.runtime.sendMessage({
+      type, version: 1, request_id, ...extra,
+    })
+    if (response?.request_id !== request_id || response?.version !== 1)
+      throw Error('Extension command response envelope mismatch')
+    return response
+  }, { type, extra })
+}
+
+async function tabIdFor(popup: Page, url: string): Promise<number> {
+  return popup.evaluate(async value => {
+    const tabs = await (globalThis as any).chrome.tabs.query({})
+    const matches = tabs.filter((t: any) => t.url === value)
+    if (matches.length !== 1) throw Error('Expected exactly one matching tab')
+    return matches[0].id as number
+  }, url)
+}
+
+async function connectRealExtension(popup: Page, app: Page, owner: number) {
+  const tab_id = await tabIdFor(popup, app.url())
+  const result = await extCommand(popup, 'ext26:connect', { tab_id })
+  expect(result.ok, JSON.stringify(result.error)).toBe(true)
+  expect(result.data.account_id).toBe(owner)
+}
+
+async function checkedVisit(app: Page, url: string) {
+  const response = await app.evaluate(async value => {
+    const res = await fetch('/api/crm/browser-memory/check', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: value, company: 'Acme Labs', title: 'Platform Engineer' }),
+    })
+    return { status: res.status, data: await res.json() }
+  }, url)
+  expect(response.status).toBe(200)
+  return response.data
+}
+
+async function openObservedJob(
+  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  popup: Page, url: string,
+) {
+  await context.route('https://jobs.lever.co/**', route => route.fulfill({
+    contentType: 'text/html',
+    body: '<!doctype html><html><body><div class="posting-headline">' +
+      '<h2>Platform Engineer</h2><span class="company">Acme Labs</span></div>' +
+      '<form><input name="secret" value="private-form-value"></form></body></html>',
+  }))
+  const permission = await extCommand(popup, 'ext30:site-opt-in',
+    { host: 'jobs.lever.co', enabled: true })
+  expect(permission.ok, JSON.stringify(permission.error)).toBe(true)
+  const job = await context.newPage()
+  await job.goto(url)
+  const jobTab = await tabIdFor(popup, url)
+  await expect.poll(async () => {
+    const state = await extCommand(popup, 'ext32:tab-status', { tab_id: jobTab })
+    return state.ok ? state.data.save_state : null
+  }, { timeout: 20000 }).toBe('saved')
+  return { job, jobTab }
+}
+
+test('EXT-41 local API: first visit is not previous; explicit apply is durable and canonical revisit preserves timestamps', async () => {
+  test.setTimeout(150_000)
+  await withRealExtension(async ({ context, app, popup }) => {
+    const owner = await signIn(app, 'ext41-' + crypto.randomUUID() + '@example.test')
+    await connectRealExtension(popup, app, owner)
+    const url = 'https://jobs.lever.co/acmelabs/' + crypto.randomUUID().replaceAll('-', '')
+    const { job, jobTab } = await openObservedJob(context, popup, url)
+    const first = await extCommand(popup, 'ext32:tab-status', { tab_id: jobTab })
+    expect(first.ok).toBe(true)
+    expect(first.data.account_id).toBe(owner)
+    expect(first.data.before_visit.visit).toEqual({ visited: false, first_visited_at: null })
+    expect(first.data.save_state).toBe('saved')
+    const visited = await checkedVisit(app, url)
+    expect(visited.visit.visited).toBe(true)
+    expect(visited.visit.first_visited_at).toMatch(/Z$/)
+    expect(visited.matches).toEqual([])
+    const staged = await extCommand(popup, 'ext34:stage-apply', {
+      tab_id: jobTab, company: 'Acme Labs', title: 'Platform Engineer',
+    })
+    expect(staged.ok, JSON.stringify(staged.error)).toBe(true)
+    await job.bringToFront()
+    const saved = await extCommand(popup, 'ext39:submit-pending', { tab_id: jobTab })
+    expect(saved.ok, JSON.stringify(saved.error)).toBe(true)
+    expect(saved.data).toMatchObject({ saved: true, account_id: owner, url })
+    const applied = await checkedVisit(app, url)
+    expect(applied.matches).toHaveLength(1)
+    expect(applied.matches[0].confidence).toBe('exact')
+    await job.reload()
+    await expect.poll(async () => {
+      const state = await extCommand(popup, 'ext32:tab-status', { tab_id: jobTab })
+      return state.ok && state.data.before_visit.visit.visited === true &&
+        state.data.before_visit.matches[0]?.confidence === 'exact'
+    }, { timeout: 20000 }).toBe(true)
+    const canonical = await checkedVisit(app, url + '?utm_source=synthetic')
+    expect(canonical.visit.first_visited_at).toBe(visited.visit.first_visited_at)
+    expect(canonical.matches[0].track_id).toBe(applied.matches[0].track_id)
+    expect(canonical.matches[0].applied_at).toBe(applied.matches[0].applied_at)
+  })
+})
