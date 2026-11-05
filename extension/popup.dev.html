@@ -34,6 +34,18 @@
       <button type="button" id="connect">Connect one JobGrid tab</button>
       <button type="button" id="pause" disabled>Pause checks</button>
       <button type="button" id="disconnect" disabled>Disconnect</button>
+      <button type="button" id="forget" disabled>Forget saved visits…</button>
+      <div id="forget-confirmation" hidden>
+        <p id="forget-account"></p>
+        <p class="muted">Delete only saved external job visits for this JobGrid account.
+          Applications, CSV clicks, imported rows and application receipts remain.</p>
+        <label for="forget-phrase">Type FORGET VISITS to confirm</label>
+        <input type="text" id="forget-phrase" autocomplete="off" spellcheck="false">
+        <button type="button" id="forget-final" disabled>Delete saved visits</button>
+        <button type="button" id="forget-cancel">Cancel</button>
+      </div>
+      <p><a id="open-jobgrid" href="https://csv-website-steel.vercel.app/applications"
+        target="_blank" rel="noopener noreferrer">Open applications in JobGrid</a></p>
     </section>
     <section aria-labelledby="check-heading">
       <h2 id="check-heading">Current job page</h2>
