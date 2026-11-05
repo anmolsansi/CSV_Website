@@ -19,6 +19,7 @@ export function createWorker() {
   const requested = []
   const storageLocal = {}
   const storageSession = {}
+  const badges = new Map()
   const tabs = new Map([
     [1, { id: 1, url: APP + '/dashboard', status: 'complete' }],
     [2, { id: 2, url: JOB, status: 'complete' }],
@@ -29,6 +30,7 @@ export function createWorker() {
   const calls = []
   const scriptOperations = []
   const chrome = {
+    action: { setBadgeText: async ({ tabId, text }) => { badges.set(tabId, text) } },
     runtime: {
       id: 'ext-test', getURL: path => 'chrome-extension://ext-test/' + path,
       onMessage: { addListener: fn => { listener = fn } },
@@ -64,7 +66,7 @@ export function createWorker() {
         if (!tabs.has(id)) throw Error('missing tab')
         return tabs.get(id)
       },
-      query: async () => [tabs.get(1)],
+      query: async (filter = {}) => filter.active ? [tabs.get(2)] : [tabs.get(1)],
       sendMessage: async (tabId, message) => {
         calls.push([tabId, message])
         if (message.type === 'ext29:extract') {
@@ -114,7 +116,7 @@ export function createWorker() {
     })
   }
   return {
-    send, calls, scripts, requested, scriptOperations, storageSession, storageLocal,
+    send, calls, scripts, requested, scriptOperations, storageSession, storageLocal, badges,
     permissions, tabs, packet, behavior, setAccount: id => { activeAccount = id },
     connect: () => send(packet('ext26:connect', { tab_id: 1 })),
     emitUpdated: (id, change) => { const tab = tabs.get(id); Object.assign(tab, change);
