@@ -4294,7 +4294,9 @@ main CI adds a Node 22 extension job running all source contract,
 permission and packaging tests. It also runs the real loaded-extension
 persistent Chromium test independently in the existing local Vite/FastAPI
 E2E job, then runs the full browser suite. Both extension JUnit reports
-use scripts/verify_junit.py and fail for empty, failed or skipped results.
+fail for empty, failed or skipped results. The Node 22 report directly
+contains testcase entries and is checked for a nonzero count and failures;
+the Playwright report uses scripts/verify_junit.py.
 Their XML is retained only as short-lived sanitized CI evidence. The
 browser setup uses disposable synthetic accounts, fixture-pregranted
 localhost/Lever hosts and bundled Playwright Chromium, not a production
