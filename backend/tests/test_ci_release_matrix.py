@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -69,6 +70,30 @@ def test_sqlite_release_job_is_nonempty_and_rejects_runtime_skips():
         "test_today_postgres_query_plans_use_owner_due_indexes",
     ):
         assert postgres_only in workflow
+
+
+
+def test_postgres_only_visit_restore_has_release_marker():
+    # Both parametrizations require PostgreSQL session timezone behavior.
+    # They must be deselected before SQLite execution, not runtime-skipped.
+    source = ROOT / "backend" / "tests" / "test_complete_backup.py"
+    tree = ast.parse(_text(source))
+    matches = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "test_visit_restore_preserves_instant_in_non_utc_postgres"
+    ]
+    assert len(matches) == 1, "PostgreSQL timezone restore regression must exist"
+    test = matches[0]
+    assert any(
+        isinstance(decorator, ast.Attribute)
+        and decorator.attr == "postgresql"
+        and isinstance(decorator.value, ast.Attribute)
+        and decorator.value.attr == "mark"
+        and isinstance(decorator.value.value, ast.Name)
+        and decorator.value.value.id == "pytest"
+        for decorator in test.decorator_list
+    ), "Mark PostgreSQL-only timezone restore test to keep SQLite release skip-free"
 
 
 def test_timezone_release_job_covers_all_declared_zones_and_evidence():
