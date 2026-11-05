@@ -366,3 +366,29 @@ test('EXT-33 rejects local, credential-bearing and non-HTTPS manual URLs', async
   assert.equal(w.calls.filter(([, m]) => m.kind === 'check').length, 0)
   assert.equal(w.calls.filter(([, m]) => m.kind === 'visit').length, 0)
 })
+
+
+test('EXT-34 keeps stable pending UUID for identical drafts, clears changed and switched accounts', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const draft = packet('ext34:stage-apply', {
+    tab_id: 2, company: 'Acme', title: 'Engineer',
+  })
+  const first = await w.send(draft)
+  assert.equal(first.ok, true)
+  assert.equal(first.data.pending, true)
+  assert.ok(first.data.idempotency_key)
+  const same = await w.send(draft)
+  assert.equal(same.data.idempotency_key, first.data.idempotency_key)
+  assert.equal(w.storageSession.jobgridPendingApply['2'].company, 'Acme')
+  const changed = await w.send({ ...draft, title: 'Senior Engineer' })
+  assert.notEqual(changed.data.idempotency_key, first.data.idempotency_key)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'apply').length, 0)
+  w.setAccount(202)
+  const invalid = await w.send(packet('ext34:pending-apply', { tab_id: 2 }))
+  assert.equal(invalid.ok, false)
+  assert.equal(invalid.error.code, 'account_changed')
+  assert.equal(w.storageSession.jobgridPendingApply, undefined)
+})
