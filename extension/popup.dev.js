@@ -14,12 +14,24 @@ const el = {
   draftError: byId('draft-error'), stage: byId('stage'),
   approval: byId('approval'), confirmApply: byId('confirm-apply'),
   submitApply: byId('submit-apply'),
+  forget: byId('forget'), forgetConfirmation: byId('forget-confirmation'),
+  forgetAccount: byId('forget-account'), forgetPhrase: byId('forget-phrase'),
+  forgetFinal: byId('forget-final'), forgetCancel: byId('forget-cancel'),
+  jobgridLink: byId('open-jobgrid'),
 }
 let state = { connected: false, paused: false }
 let busy = false
 let checkedJob = null
 let checkedTabId = null
 let stagedIntent = null
+let forgetAccountId = null
+
+function hideForgetConfirmation() {
+  forgetAccountId = null
+  el.forgetConfirmation.hidden = true
+  el.forgetPhrase.value = ''
+}
+
 
 function resetStage() {
   stagedIntent = null
@@ -83,6 +95,10 @@ function controls() {
   el.stage.disabled = busy || !checkedJob || !state.connected || state.paused
   el.submitApply.disabled = busy || !stagedIntent || !el.confirmApply.checked ||
     !checkedJobForAccount(checkedJob, state)
+  el.forget.disabled = busy || !state.connected || state.paused
+  el.forgetFinal.disabled = busy || !state.connected || state.paused ||
+    forgetAccountId !== state.account_id ||
+    el.forgetPhrase.value !== 'FORGET VISITS'
 }
 function feedback(message) { el.feedback.textContent = message }
 function render(record) {
@@ -115,6 +131,8 @@ function showFailure(problem, action = 'check') {
   feedback(view.title + '. ' + view.detail)
 }
 function showConnection() {
+  if (!state.connected || state.paused || forgetAccountId !== state.account_id)
+    hideForgetConfirmation()
   el.connection.textContent = !state.connected
     ? 'Not connected. Keep a signed-in JobGrid tab open.'
     : state.paused
@@ -188,6 +206,8 @@ el.connect.addEventListener('click', () => run(async () => {
 }))
 
 el.pause.addEventListener('click', () => run(async () => {
+  if (!state.paused && !window.confirm('Pause automatic JobGrid checks? You can resume later.')) return
+  hideForgetConfirmation()
   feedback(state.paused ? 'Resuming checks…' : 'Pausing checks…')
   const result = await send('ext35:set-paused', { paused: !state.paused })
   if (!result.ok) { showFailure(result.error); return }
@@ -196,6 +216,8 @@ el.pause.addEventListener('click', () => run(async () => {
 }))
 
 el.disconnect.addEventListener('click', () => run(async () => {
+  if (!window.confirm('Disconnect this JobGrid account? Saved visits and applications will remain.')) return
+  hideForgetConfirmation()
   const result = await send('ext26:disconnect')
   if (!result.ok) { showFailure(result.error); return }
   feedback('Disconnected. Saved JobGrid visits were not deleted.')
@@ -291,5 +313,49 @@ el.submitApply.addEventListener('click', () => {
     render({ ...checkedJob, apply_status: 'saved' })
     hideApplication()
     feedback('JobGrid confirmed this application was recorded. No job-site form was submitted.')
+  })
+})
+
+el.jobgridLink.href = APP_ORIGIN + '/applications'
+
+el.forget.addEventListener('click', () => {
+  if (!state.connected || state.paused) return
+  forgetAccountId = state.account_id
+  el.forgetAccount.textContent = 'Selected account: ' +
+    (state.account_label || 'Account') + ' (ID ' + state.account_id + ')'
+  el.forgetPhrase.value = ''
+  el.forgetConfirmation.hidden = false
+  controls()
+})
+
+el.forgetPhrase.addEventListener('input', controls)
+el.forgetCancel.addEventListener('click', () => {
+  hideForgetConfirmation()
+  controls()
+})
+
+el.forgetFinal.addEventListener('click', () => {
+  void run(async () => {
+    if (!state.connected || state.paused || forgetAccountId !== state.account_id ||
+        el.forgetPhrase.value !== 'FORGET VISITS') return
+    const originalAccount = forgetAccountId
+    feedback('Deleting external visit memory for this account…')
+    const result = await send('ext26:command', {
+      kind: 'forget_visits', payload: { confirmed: true },
+    })
+    if (!result.ok) {
+      showFailure(result.error, 'forget')
+      return
+    }
+    if (result.data?.account_id !== originalAccount ||
+        !Number.isSafeInteger(result.data?.deleted) || result.data.deleted < 0) {
+      showFailure({ code: 'unavailable' }, 'forget')
+      return
+    }
+    hideForgetConfirmation()
+    hideApplication()
+    render(null)
+    await refresh()
+    feedback(result.data.deleted + ' external visit record(s) deleted from JobGrid. Applications and CSV history remain.')
   })
 })
