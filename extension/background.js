@@ -886,5 +886,6 @@ async function readTabStatus(tabId) {
     protocol_version: VERSION, account_id: state.account_id,
     url: state.url, before_visit: state.before_visit,
     save_state: state.save_state,
+    ...(state.apply_status === 'saved' ? { apply_status: 'saved' } : {}),
   } }
 }
