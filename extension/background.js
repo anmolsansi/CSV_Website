@@ -108,8 +108,25 @@ function validMessage(message) {
   return false
 }
 
+async function verifiedAccount(selected) {
+  if (!selected || connection !== selected) return false
+  const tab = await checkedTab(selected.tabId).catch(() => null)
+  if (!tab || tab.url !== selected.tabUrl) {
+    await clearConnection()
+    return false
+  }
+  const current = await bridge(selected.tabId, 'session', {}, undefined, selected.documentId)
+  if (!current.ok || current.data.account_id !== selected.accountId ||
+      connection !== selected) {
+    await clearConnection()
+    return false
+  }
+  return true
+}
+
 async function lifecycleStatus() {
   await pausedReady
+  if (connection && !await verifiedAccount(connection)) return lifecycleStatus()
   return { ok: true, data: {
     protocol_version: VERSION, connected: connection !== null, paused,
     ...(connection ? { account_id: connection.accountId,
@@ -716,6 +733,7 @@ async function stagePendingApply(tabId, company, title) {
   const selected = connection
   if (!selected) return error('not_connected', 'Connect JobGrid first')
   if (paused) return error('paused', 'Tracking is paused')
+  if (!await verifiedAccount(selected)) return error('account_changed', 'Reconnect your JobGrid account')
   const checked = tabWarnings.get(tabId)
   if (!checked || checked.account_id !== selected.accountId) {
     return error('no_check', 'Check this job before preparing an application')
@@ -748,6 +766,7 @@ async function stagePendingApply(tabId, company, title) {
 
 async function pendingApplyStatus(tabId) {
   if (!connection) return error('not_connected', 'Connect JobGrid first')
+  if (!await verifiedAccount(connection)) return error('account_changed', 'Reconnect your JobGrid account')
   purgeExpiredPending()
   const item = pendingByTab.get(tabId)
   if (!item || item.account_id !== connection.accountId) {
@@ -775,6 +794,7 @@ async function clearPendingTab(tabId) {
 
 async function readTabStatus(tabId) {
   if (!connection) return error('not_connected', 'Open JobGrid to connect')
+  if (!await verifiedAccount(connection)) return error('account_changed', 'Reconnect your JobGrid account')
   const state = tabWarnings.get(tabId)
   if (!state || state.account_id !== connection.accountId) {
     return error('no_check', 'No checked job is available for this tab')
