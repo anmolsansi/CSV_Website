@@ -769,6 +769,80 @@ async function stagePendingApply(tabId, company, title) {
     pending: true, ...next } }
 }
 
+// An explicit popup confirmation is the sole path used by the EXT-39 UI.
+// Replays use the exact pending payload and request UUID; no automatic retry.
+async function submitPendingApplyOnce(tabId) {
+  const selected = connection
+  if (!selected) return error('not_connected', 'Connect JobGrid first')
+  if (paused) return error('paused', 'Tracking is paused')
+  if (!await verifiedAccount(selected)) {
+    return error('account_changed', 'Reconnect your JobGrid account')
+  }
+  purgeExpiredPending()
+  const pending = pendingByTab.get(tabId)
+  const checked = tabWarnings.get(tabId)
+  if (!pending || !checked || pending.account_id !== selected.accountId ||
+      checked.account_id !== selected.accountId || checked.url !== pending.url) {
+    return error('no_check', 'Review this checked job before saving')
+  }
+  try {
+    const active = await chrome.tabs.query({ active: true, currentWindow: true })
+    const current = await chrome.tabs.get(tabId)
+    if (active.length !== 1 || active[0]?.id !== tabId ||
+        current.url !== pending.url) {
+      return error('stale_tab', 'The selected job page changed. Check it again')
+    }
+  } catch { return unavailable() }
+  const frozen = {
+    url: pending.url, company: pending.company, title: pending.title,
+    confirmed: true, idempotency_key: pending.idempotency_key,
+  }
+  const result = await dispatch('apply', frozen)
+  if (!result.ok) {
+    if (['timeout', 'unavailable', 'protocol_error', 'account_changed',
+      'not_authenticated'].includes(result.error?.code)) {
+      return error('save_unknown', 'Save may have succeeded. Check JobGrid before retrying')
+    }
+    return result
+  }
+  // A successful server receipt is authoritative only for the original
+  // selected account, checked URL and immutable staged intent.
+  if (connection !== selected || pendingByTab.get(tabId) !== pending) {
+    return error('save_unknown', 'Save completed but tab context changed. Verify in JobGrid')
+  }
+  try {
+    const current = await chrome.tabs.get(tabId)
+    if (current.url !== pending.url) {
+      return error('save_unknown', 'Page changed during save. Verify in JobGrid')
+    }
+  } catch {
+    return error('save_unknown', 'Tab closed during save. Verify in JobGrid')
+  }
+  const warning = tabWarnings.get(tabId)
+  if (warning === checked && warning.url === pending.url) {
+    warning.apply_status = 'saved' // Never rewrite the immutable pre-write match facts.
+    await flushWarnings().catch(() => {})
+    if (chrome.action?.setBadgeText) {
+      tabBadges.add(tabId)
+      void chrome.action.setBadgeText({ tabId, text: 'A' }).catch(() => {})
+    }
+  }
+  await clearPendingTab(tabId)
+  return { ok: true, data: {
+    protocol_version: VERSION, account_id: selected.accountId,
+    saved: true, url: pending.url,
+  } }
+}
+
+async function submitPendingApply(tabId) {
+  if (applyInFlight.has(tabId)) return applyInFlight.get(tabId)
+  const task = submitPendingApplyOnce(tabId)
+  applyInFlight.set(tabId, task)
+  try { return await task } finally {
+    if (applyInFlight.get(tabId) === task) applyInFlight.delete(tabId)
+  }
+}
+
 async function pendingApplyStatus(tabId) {
   if (!connection) return error('not_connected', 'Connect JobGrid first')
   if (!await verifiedAccount(connection)) return error('account_changed', 'Reconnect your JobGrid account')
