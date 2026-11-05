@@ -11,6 +11,9 @@ const SITE_OPT = 'ext30:site-opt-in'
 const SITE_STATUS = 'ext30:site-status'
 const TAB_STATUS = 'ext32:tab-status'
 const MANUAL_CHECK = 'ext33:current-tab-check'
+const STAGE_APPLY = 'ext34:stage-apply'
+const PENDING_APPLY = 'ext34:pending-apply'
+const CLEAR_PENDING = 'ext34:clear-pending'
 const MAX_BYTES = 8192
 const TIMEOUT_MS = 8000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -80,6 +83,12 @@ function validMessage(message) {
   if (message.type === SITE_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'host']) && Object.hasOwn(ATS_ORIGINS, message.host)
   if (message.type === MANUAL_CHECK) return Object.keys(message).length === 3
+  if (message.type === STAGE_APPLY) return keysOnly(message,
+    ['type', 'version', 'request_id', 'tab_id', 'company', 'title']) &&
+    validId(message.tab_id) && validText(message.company, 320, true) &&
+    validText(message.title, 500, true)
+  if (message.type === PENDING_APPLY || message.type === CLEAR_PENDING) return keysOnly(message,
+    ['type', 'version', 'request_id', 'tab_id']) && validId(message.tab_id)
   if (message.type === TAB_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'tab_id']) && validId(message.tab_id)
   if (message.type === COMMAND) return keysOnly(message,
@@ -233,7 +242,8 @@ chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS, MANUAL_CHECK].includes(message?.type)) return false
+  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS, MANUAL_CHECK,
+    STAGE_APPLY, PENDING_APPLY, CLEAR_PENDING].includes(message?.type)) return false
   const requestId = validUUID(message?.request_id) ? message.request_id : null
   if (!popupSender(sender) || !validMessage(message) && message.type !== PROBE) {
     sendResponse(answer(requestId, error('forbidden_sender', 'Unsupported request')))
