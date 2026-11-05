@@ -182,6 +182,17 @@ jobs:
             node --input-type=module -e "import { chromium } from 'playwright'; const browser = await chromium.launch({ headless: true }); console.log(browser.version()); await browser.close();"
           } > ci-artifacts/jg023-browser-release-evidence.txt
 
+      - name: Run real-loaded extension E2E and reject empty reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          # The existing test server uses a disposable DB and local Vite /api proxy.
+          # Real Chromium loads a copied development extension with test-only grants.
+          npx playwright test tests/extension.spec.ts --project=chromium --reporter=junit > ci-artifacts/ext-chromium.xml
+          python ../scripts/verify_junit.py ci-artifacts/ext-chromium.xml \
+            --label "EXT-46 persistent-profile Chromium" --min-tests 6 --max-skips 0
+
       - name: Run tab-helper safety regressions
         run: node --test unit/*.test.mjs
 
@@ -231,6 +242,7 @@ jobs:
             frontend/ci-artifacts/jg023-playwright-focused.txt
             frontend/ci-artifacts/playwright-collection.txt
             frontend/ci-artifacts/c07-e2e-runtime.txt
+            frontend/ci-artifacts/ext-chromium.xml
 
       - name: Sanitize backend logs on failure
         if: failure()
