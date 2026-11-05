@@ -430,3 +430,62 @@ test('EXT-43 development popup exposes labels, live feedback and keyboard focus 
     expect(await popup.locator('[role="status"]').count()).toBeGreaterThan(0)
   })
 })
+
+
+test('EXT-44 offline failure, navigation, opt-out and full profile restart fail closed', async () => {
+  test.setTimeout(150_000)
+  await withRealExtension(async ({ context, app, popup, extensionId, restart }) => {
+    const owner = await signIn(app, 'ext44-' + crypto.randomUUID() + '@example.test')
+    await connectRealExtension(popup, app, owner)
+    const url = 'https://jobs.lever.co/acmelabs/' + crypto.randomUUID().replaceAll('-', '')
+    const { job, jobTab } = await openObservedJob(context, popup, url)
+    const stored = await checkedVisit(app, url)
+    expect(stored.visit.visited).toBe(true)
+    await job.bringToFront()
+    await context.setOffline(true)
+    const offline = await extCommand(popup, 'ext33:current-tab-check')
+    expect(offline.ok).toBe(false)
+    expect(['unavailable', 'timeout', 'protocol_error', 'not_authenticated',
+      'account_changed']).toContain(offline.error.code)
+    // An offline failure cannot fabricate "no recorded application" or a
+    // successful second visit. Existing server history is checked after recovery.
+    await context.setOffline(false)
+    const durable = await checkedVisit(app, url)
+    expect(durable.visit.first_visited_at).toBe(stored.visit.first_visited_at)
+
+    await job.goto('https://jobs.lever.co/acmelabs')
+    const stale = await extCommand(popup, 'ext32:tab-status', { tab_id: jobTab })
+    expect(stale.ok).toBe(false)
+    expect(['no_check', 'stale_tab', 'not_connected']).toContain(stale.error.code)
+    const disabled = await extCommand(popup, 'ext30:site-opt-in',
+      { host: 'jobs.lever.co', enabled: false })
+    expect(disabled.ok).toBe(true)
+    expect(disabled.data.opted_in).toBe(false)
+    await job.goto(url)
+    await job.waitForTimeout(850)
+    const silent = await extCommand(popup, 'ext32:tab-status', { tab_id: jobTab })
+    expect(silent.ok).toBe(false)
+    const unchanged = await checkedVisit(app, url)
+    expect(unchanged.visit.first_visited_at).toBe(stored.visit.first_visited_at)
+
+    // Closing the persistent profile is stronger than a worker wake-up:
+    // no private result, active account binding or staged command may be
+    // replayed by the newly created extension service worker.
+    const fresh = await restart()
+    const serviceWorker = fresh.serviceWorkers()[0] ||
+      await fresh.waitForEvent('serviceworker', { timeout: 15000 })
+    expect(new URL(serviceWorker.url()).hostname).toBe(extensionId)
+    const freshPopup = await fresh.newPage()
+    await freshPopup.goto('chrome-extension://' + extensionId + '/popup.dev.html')
+    const disconnected = await extCommand(freshPopup, 'ext35:status')
+    expect(disconnected.ok).toBe(true)
+    expect(disconnected.data.connected).toBe(false)
+    const storage = await freshPopup.evaluate(async () =>
+      (globalThis as any).chrome.storage.session.get(['jobgridTabChecks', 'jobgridConnection']))
+    expect(storage.jobgridTabChecks).toBeUndefined()
+    expect(storage.jobgridConnection).toBeUndefined()
+    const unauthorised = await extCommand(freshPopup, 'ext39:submit-pending', { tab_id: jobTab })
+    expect(unauthorised.ok).toBe(false)
+    expect(['not_connected', 'no_check']).toContain(unauthorised.error.code)
+  })
+})
