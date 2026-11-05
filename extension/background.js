@@ -102,6 +102,7 @@ async function clearConnection() {
   connection = null
   clearObservationTimers()
   await warningWrites
+  await clearAllPending()
   await chrome.storage.session.remove(['jobgridConnection', 'jobgridTabChecks'])
 }
 
@@ -161,6 +162,7 @@ async function connect(tabId) {
   connection = null
   clearObservationTimers()
   await warningWrites
+  await clearAllPending()
   await chrome.storage.session.remove('jobgridTabChecks')
   const tab = await checkedTab(tabId)
   if (!tab) return unavailable()
@@ -265,6 +267,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === SITE_STATUS) return readSiteStatus(message.host)
     if (message.type === TAB_STATUS) return readTabStatus(message.tab_id)
     if (message.type === MANUAL_CHECK) return manualCheckCurrentTab()
+    if (message.type === STAGE_APPLY) return stagePendingApply(message.tab_id, message.company, message.title)
+    if (message.type === PENDING_APPLY) return pendingApplyStatus(message.tab_id)
+    if (message.type === CLEAR_PENDING) return clearPendingTab(message.tab_id)
     if (message.type === DISCONNECT) {
       await clearConnection()
       return { ok: true, data: { protocol_version: VERSION, disconnected: true } }
@@ -434,6 +439,7 @@ function cancelObservation(tabId) {
   observedUrls.delete(tabId)
   checkedPages.delete(tabId)
   tabWarnings.delete(tabId)
+  dropPendingTab(tabId)
 }
 
 function clearObservationTimers() {
