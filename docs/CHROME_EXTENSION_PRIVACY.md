@@ -120,3 +120,39 @@ approved support URL/contact and operator retention/access terms are **not
 provided**. These are required decisions, not placeholder production identities.
 Do not submit this draft, invent contact details or claim that store review has
 approved it. Store preparation details are in the [extension README](../extension/README.md).
+
+## Permission and host review for the distribution owner
+
+| Manifest permission | Development purpose | Current inactive ZIP use |
+|---|---|---|
+| `storage` | Persist opt-in/pause preferences and bounded trusted session context | Not exercised |
+| `activeTab` | Deliberate current-tab check/mark-applied gesture | Not exercised |
+| `scripting` | Inject fixed bridge into selected app tab; register public metadata reader for granted/opted-in sites | Not exercised |
+| Optional Greenhouse/Lever origins listed above | Read public metadata only on supported enabled detail pages | No grant requested; no script |
+| Optional `https://csv-website-steel.vercel.app/*` | Communicate only through the selected signed-in app tab/proxy | No grant requested; no connection |
+
+The release manifest requests no `tabs`, `history`, `cookies`, `<all_urls>`,
+external messaging, arbitrary API host or localhost scope. A requested capability
+still needs an honest necessity explanation: the inactive artifact does not
+currently use the three required permissions. Do not certify them as necessary
+for a functioning shipped feature or expand them to make a test pass. A changed
+active candidate needs permission-minimization review, new package/hash and
+actual Chrome/account acceptance before its listing answers can be finalized.
+
+| Distribution field | Current verified status |
+|---|---|
+| Publisher legal/distribution identity and authorized submitter | NOT PROVIDED |
+| Stable store item / extension ID | NOT PROVIDED; do not use a temporary unpacked-profile ID |
+| Approved publicly accessible policy location | NOT PROVIDED; this repository draft is not an approved endpoint |
+| Approved support/contact location | NOT PROVIDED; no contact mailbox or response promise is invented |
+| Retention, backups, operator access and data-sharing commitments | Owner confirmation required for selected deployment |
+| Store submission / review / approval | NOT PERFORMED / NOT CLAIMED |
+
+### Review references
+
+Reviewed 2026-11-05: Chrome's [privacy-fields guidance](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy)
+asks for a clear purpose, justification of declared permissions, remote-code
+answers and accurate data-use disclosures. Its [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq)
+includes local processing in data handling and describes collection/use/sharing
+and access/deletion/retention disclosures. These sources guide review; they do
+not approve this draft or establish private operator practices.
