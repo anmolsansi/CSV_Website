@@ -623,3 +623,55 @@ test('EXT-47 unmodified release ZIP loads with its recorded version and no grant
     await fs.rm(workspace, { recursive: true, force: true })
   }
 })
+
+
+test('EXT-45 real worker check times out at eight seconds without retry, writes or payload diagnostics', async () => {
+  test.setTimeout(60_000)
+  await withRealExtension(async ({ context, app, popup }) => {
+    const owner = await signIn(app, 'ext45-timeout-' + crypto.randomUUID() + '@example.test')
+    await connectRealExtension(popup, app, owner)
+    const diagnostics: string[] = []
+    context.on('console', message => diagnostics.push(message.text()))
+    context.on('weberror', error => diagnostics.push(error.error().message))
+    const writes: string[] = []
+    context.on('request', request => {
+      if (/\/browser-memory\/(visit|apply|visits)(?:\?|$)/.test(request.url())) {
+        writes.push(new URL(request.url()).pathname)
+      }
+    })
+    let checks = 0
+    let release: () => void = () => {}
+    const stalled = new Promise<void>(resolve => { release = resolve })
+    await context.route('**/api/crm/browser-memory/check', async route => {
+      checks += 1
+      await stalled
+      await route.abort().catch(() => {})
+    })
+    const payload = {
+      url: 'https://jobs.lever.co/acme/ext45-private-path?req=ext45-private-query',
+      company: 'EXT45 Private Company', title: 'EXT45 Private Title',
+    }
+    try {
+      const started = performance.now()
+      const result = await extCommand(popup, 'ext26:command', { kind: 'check', payload })
+      const elapsed = performance.now() - started
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('timeout')
+      expect(result.data).toBeUndefined()
+      // Real timers may run late on a busy runner; never accept an early expiry.
+      expect(elapsed).toBeGreaterThanOrEqual(7_900)
+      expect(elapsed).toBeLessThan(12_000)
+      expect(checks).toBe(1)
+      expect(writes).toEqual([])
+      const cookieValues = (await context.cookies()).map(cookie => cookie.value).filter(Boolean)
+      for (const secret of [...Object.values(payload), 'ext45-private-query', 'session_token', ...cookieValues]) {
+        expect(diagnostics.join('\n')).not.toContain(secret)
+      }
+      console.log('EXT-45 bridge-timeout browser=' + context.browser()?.version() +
+        ' elapsed_ms=' + Math.round(elapsed) + ' checks=' + checks +
+        ' writes=0 outcome=timeout diagnostic_count=' + diagnostics.length)
+    } finally {
+      release()
+    }
+  })
+})
