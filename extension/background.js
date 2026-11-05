@@ -13,6 +13,7 @@ const TAB_STATUS = 'ext32:tab-status'
 const MANUAL_CHECK = 'ext33:current-tab-check'
 const STAGE_APPLY = 'ext34:stage-apply'
 const PENDING_APPLY = 'ext34:pending-apply'
+const SUBMIT_PENDING = 'ext39:submit-pending'
 const CLEAR_PENDING = 'ext34:clear-pending'
 const SET_PAUSED = 'ext35:set-paused'
 const LIFECYCLE_STATUS = 'ext35:status'
@@ -98,7 +99,8 @@ function validMessage(message) {
     ['type', 'version', 'request_id', 'tab_id', 'company', 'title']) &&
     validId(message.tab_id) && validText(message.company, 320, true) &&
     validText(message.title, 500, true)
-  if (message.type === PENDING_APPLY || message.type === CLEAR_PENDING) return keysOnly(message,
+  if (message.type === PENDING_APPLY || message.type === CLEAR_PENDING ||
+      message.type === SUBMIT_PENDING) return keysOnly(message,
     ['type', 'version', 'request_id', 'tab_id']) && validId(message.tab_id)
   if (message.type === TAB_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'tab_id']) && validId(message.tab_id)
@@ -314,7 +316,7 @@ chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS, MANUAL_CHECK,
-    STAGE_APPLY, PENDING_APPLY, CLEAR_PENDING, SET_PAUSED,
+    STAGE_APPLY, PENDING_APPLY, CLEAR_PENDING, SUBMIT_PENDING, SET_PAUSED,
     LIFECYCLE_STATUS].includes(message?.type)) return false
   const requestId = validUUID(message?.request_id) ? message.request_id : null
   if (!popupSender(sender) || !validMessage(message) && message.type !== PROBE) {
@@ -341,6 +343,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === MANUAL_CHECK) return manualCheckCurrentTab()
     if (message.type === STAGE_APPLY) return stagePendingApply(message.tab_id, message.company, message.title)
     if (message.type === PENDING_APPLY) return pendingApplyStatus(message.tab_id)
+    if (message.type === SUBMIT_PENDING) return submitPendingApply(message.tab_id)
     if (message.type === CLEAR_PENDING) return clearPendingTab(message.tab_id)
     if (message.type === DISCONNECT) {
       await clearConnection()
@@ -637,6 +640,7 @@ const PENDING_STORAGE_KEY = 'jobgridPendingApply'
 const MAX_PENDING_APPLY = 20
 const PENDING_APPLY_TTL_MS = 15 * 60 * 1000
 const pendingByTab = new Map()
+const applyInFlight = new Map()
 let pendingWrites = Promise.resolve()
 
 function purgeExpiredPending() {
@@ -733,6 +737,7 @@ async function stagePendingApply(tabId, company, title) {
   const selected = connection
   if (!selected) return error('not_connected', 'Connect JobGrid first')
   if (paused) return error('paused', 'Tracking is paused')
+  if (applyInFlight.has(tabId)) return error('busy', 'Application save is in progress')
   if (!await verifiedAccount(selected)) return error('account_changed', 'Reconnect your JobGrid account')
   const checked = tabWarnings.get(tabId)
   if (!checked || checked.account_id !== selected.accountId) {
