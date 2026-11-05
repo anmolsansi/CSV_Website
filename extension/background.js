@@ -656,6 +656,34 @@ const MAX_TAB_WARNINGS = 40
 const PENDING_STORAGE_KEY = 'jobgridPendingApply'
 const MAX_PENDING_APPLY = 20
 const PENDING_APPLY_TTL_MS = 15 * 60 * 1000
+const UNRESOLVED_APPLY_KEY = 'jobgridUnresolvedApply'
+const UNRESOLVED_TTL_MS = 24 * 60 * 60 * 1000
+// Only a confirmed write with an unknown response is eligible for a later
+// deliberate same-key recovery. Never auto-replay it after a worker restart.
+async function readUnresolvedApply() {
+  const item = (await chrome.storage.session.get(UNRESOLVED_APPLY_KEY))?.[UNRESOLVED_APPLY_KEY]
+  if (!plain(item)) return null
+  if (!validId(item.account_id) || !validId(item.tab_id) ||
+      !validUUID(item.idempotency_key) || !safeManualJobUrl(item.url) ||
+      !validText(item.company, 320, true) || !validText(item.title, 500, true) ||
+      !Number.isSafeInteger(item.created_at) || item.created_at > Date.now() ||
+      Date.now() - item.created_at > UNRESOLVED_TTL_MS) {
+    await chrome.storage.session.remove(UNRESOLVED_APPLY_KEY)
+    return null
+  }
+  return item
+}
+async function clearUnresolvedApply() {
+  await chrome.storage.session.remove(UNRESOLVED_APPLY_KEY)
+}
+async function preserveUnresolvedApply(pending) {
+  const current = await readUnresolvedApply()
+  const frozen = current?.account_id === pending.account_id &&
+    current?.url === pending.url && current?.company === pending.company &&
+    current?.title === pending.title &&
+    current?.idempotency_key === pending.idempotency_key ? current : pending
+  await chrome.storage.session.set({ [UNRESOLVED_APPLY_KEY]: frozen })
+}
 const pendingByTab = new Map()
 const applyInFlight = new Map()
 let pendingWrites = Promise.resolve()
