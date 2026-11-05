@@ -21,6 +21,9 @@ const el = {
 }
 let state = { connected: false, paused: false }
 let busy = false
+let retryUntil = 0
+let retryTimer = null
+let checkNeedsRetry = false
 let checkedJob = null
 let checkedTabId = null
 let stagedIntent = null
@@ -90,7 +93,8 @@ function controls() {
   el.connect.disabled = busy
   el.pause.disabled = busy || !state.connected
   el.disconnect.disabled = busy || !state.connected
-  el.check.disabled = busy || !state.connected || state.paused
+  el.check.disabled = busy || !state.connected || state.paused || Date.now() < retryUntil
+  el.check.textContent = checkNeedsRetry ? 'Retry check' : 'Check current tab'
   el.pause.textContent = state.paused ? 'Resume checks' : 'Pause checks'
   el.stage.disabled = busy || !checkedJob || !state.connected || state.paused
   el.submitApply.disabled = busy || !stagedIntent || !el.confirmApply.checked ||
@@ -121,6 +125,19 @@ function render(record) {
   }
 }
 function showFailure(problem, action = 'check') {
+  if (action === 'check') {
+    checkNeedsRetry = true
+    if (problem?.code === 'rate_limited') {
+      const seconds = Number.isSafeInteger(problem.retry_after) &&
+        problem.retry_after >= 0 && problem.retry_after <= 3600
+        ? problem.retry_after : 60
+      retryUntil = Math.max(retryUntil, Date.now() + seconds * 1000)
+      if (retryTimer !== null) clearTimeout(retryTimer)
+      retryTimer = setTimeout(() => { retryTimer = null; controls() },
+        Math.max(0, retryUntil - Date.now()) + 10)
+    }
+    controls()
+  }
   if (action !== 'apply') hideApplication()
   const view = summarizeFailure(problem, action)
   el.title.textContent = view.title
@@ -225,6 +242,7 @@ el.disconnect.addEventListener('click', () => run(async () => {
 }))
 
 el.check.addEventListener('click', () => run(async () => {
+  if (Date.now() < retryUntil) return
   feedback('Checking current tab…')
   render(null)
   const result = await send('ext33:current-tab-check')
@@ -232,6 +250,8 @@ el.check.addEventListener('click', () => run(async () => {
     showFailure(result.error)
     return
   }
+  checkNeedsRetry = false
+  retryUntil = 0
   render(result.data)
   try {
     const active = await chrome.tabs.query({ active: true, currentWindow: true })
