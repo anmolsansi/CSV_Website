@@ -264,3 +264,32 @@ el.draftForm.addEventListener('submit', event => {
     controls()
   })
 })
+
+el.submitApply.addEventListener('click', () => {
+  void run(async () => {
+    const values = normalizeApplicationFields(el.company.value, el.jobTitle.value)
+    if (!el.confirmApply.checked || !values.ok ||
+        !sameStagedIntent(checkedJob, state, stagedIntent, values) ||
+        !Number.isSafeInteger(checkedTabId)) {
+      resetStage()
+      el.draftError.textContent = 'Review the exact account, URL and details again.'
+      return
+    }
+    feedback('Saving to the selected JobGrid account…')
+    const result = await send('ext39:submit-pending', { tab_id: checkedTabId })
+    if (!result.ok) {
+      showFailure(result.error, 'apply')
+      if (['stale_tab', 'no_check', 'account_changed', 'not_authenticated'].includes(result.error?.code))
+        hideApplication()
+      return
+    }
+    if (result.data?.saved !== true || result.data.account_id !== state.account_id ||
+        result.data.url !== checkedJob.url) {
+      showFailure({ code: 'save_unknown' }, 'apply')
+      return
+    }
+    render({ ...checkedJob, apply_status: 'saved' })
+    hideApplication()
+    feedback('JobGrid confirmed this application was recorded. No job-site form was submitted.')
+  })
+})
