@@ -196,10 +196,18 @@ jobs:
           set -euo pipefail
           mkdir -p ci-artifacts
           # The existing test server uses a disposable DB and local Vite /api proxy.
-          # Real Chromium loads a copied development extension with test-only grants.
+          # Development cases use test-only grants; the ZIP smoke loads unmodified release bytes.
           npx playwright test tests/extension.spec.ts --project=chromium --reporter=junit > ci-artifacts/ext-chromium.xml
           python ../scripts/verify_junit.py ci-artifacts/ext-chromium.xml \
-            --label "EXT-46 persistent-profile Chromium" --min-tests 6 --max-skips 0
+            --label "EXT-46 persistent-profile Chromium" --min-tests 9 --max-skips 0
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("ci-artifacts/ext-chromium.xml").getroot()
+          names = [case.get("name", "") for case in root.iter("testcase")]
+          for prefix in ("EXT-45 real worker check ", "EXT-47 unmodified release ZIP "):
+              if not any(name.startswith(prefix) for name in names):
+                  raise SystemExit("Missing required extension acceptance: " + prefix)
+          PY
 
       - name: Run tab-helper safety regressions
         run: node --test unit/*.test.mjs
