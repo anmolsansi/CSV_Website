@@ -203,9 +203,18 @@ async function withRealExtension(
 async function extCommand(popup: Page, type: string, extra: Record<string, unknown> = {}) {
   return popup.evaluate(async ({ type, extra }) => {
     const request_id = crypto.randomUUID()
-    const response = await (globalThis as any).chrome.runtime.sendMessage({
-      type, version: 1, request_id, ...extra,
-    })
+    let response: any
+    try {
+      response = await (globalThis as any).chrome.runtime.sendMessage({
+        type, version: 1, request_id, ...extra,
+      })
+    } catch {
+      // Chrome can fail to wake or reach an MV3 worker while offline.
+      // A lost response is unavailable, never an empty check or saved result.
+      return { version: 1, request_id, ok: false, error: { code: 'unavailable' } }
+    }
+    if (response === undefined)
+      return { version: 1, request_id, ok: false, error: { code: 'unavailable' } }
     if (response?.request_id !== request_id || response?.version !== 1)
       throw Error('Extension command response envelope mismatch')
     return response
