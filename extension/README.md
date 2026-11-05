@@ -1,6 +1,6 @@
 # JobGrid Chrome extension, foundation pilot
 
-This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, and EXT-26–28 account-bound worker and ATS route classifier for the 50-step roadmap in `development.md` §9. **It is not a functioning history tracker yet.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Full onboarding, page observation, confirmation UI and Chrome/OAuth pilot remain future work.
+This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, EXT-26–28 account-bound worker/ATS route classifier, and EXT-29–32 development-only page observation for the 50-step roadmap in `development.md` §9. **The release extension is not yet a functioning history tracker.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Full onboarding, page observation, confirmation UI and Chrome/OAuth pilot remain future work.
 
 ## Environment and trust
 
@@ -8,7 +8,7 @@ This directory includes the EXT-01–03 foundation, EXT-05 disposable session pr
 - **Live Chrome/OAuth acceptance: NOT VERIFIED.** No controlled real-user session or extension bridge handshake has been demonstrated by EXT-01–03. The `/crm/browser-memory/session` route is now implemented, but its real Chrome/production OAuth handshake still requires acceptance.
 - **Local disposable frontend/API pair:** `http://localhost:5173` (Vite with `/api` proxy configured for the test backend, if needed) and `http://localhost:8000` (FastAPI with a disposable SQLite/test database and `TEST_AUTH=true` only for local development). These are **development fixtures**, not approved remote sites or release settings. Do not use production accounts or data.
 - **Account expectation:** One explicitly selected, signed-in JobGrid tab for one server-resolved account. Keep a JobGrid tab open. Switching users, missing tab or logout suspends future tracking until a deliberate reconnect. Neither the extension nor tests store auth tokens or session cookies.
-- **Supported optional ATS hosts:** `boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`. The future automatic check only applies to exact supported job-detail routes, never arbitrary browsing. No site is enabled at installation.
+- **Supported optional ATS hosts:** `boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`. The future automatic check only applies to exact supported job-detail routes, never arbitrary browsing. No site is enabled at installation. The development worker supports an explicit per-host opt-in command, but the release popup does not expose it yet.
 - **Trust invariant:** `extension/config.js` owns the exact configured release HTTPS frontend origin. Both the release manifest and isolated bridge must agree with it. The manifest requests no host access at install. The popup cannot enter arbitrary API servers. No write comes from the page or from a session read.
 
 ## Install the shell
@@ -67,3 +67,55 @@ The EXT-26 worker requires a packaged popup sender and an explicitly selected, e
 `site-rules.js` recognizes only exact HTTPS Greenhouse and Lever job-detail paths and treats unknown/listing/apply/token-bearing URLs as manual-only. It never identifies a company from the ATS slug or fetches pages. User-visible UI, automatic visit tracking and ATS observation remain EXT-29–40 scope.
 
 Validate with `node --test extension/tests/*.test.mjs` and disposable backend tests documented in `docs/JOBGRID_BUILD_GUIDE.md`. These fixtures do not replace manual Chrome permission or live OAuth acceptance.
+
+
+## Development-only public ATS observation (EXT-29–32)
+
+The release manifest.json remains **inert**, with no background worker or
+registered content scripts. The development worker offers an internal,
+**popup-sender-only** protocol for later onboarding and disposable tests:
+
+- ext30:site-status: {type,version:1,request_id:UUID,host} returns
+  opted_in and permission_granted for one of the three exact ATS hosts.
+- ext30:site-opt-in: the same envelope plus enabled:boolean. Enabling
+  requires an existing selected JobGrid account and Chrome's explicit optional
+  host-permission approval. Revoking/disabling unregisters that host's
+  dynamic script. No grant is requested on install, restart, navigation,
+  or from a job page.
+- ext32:tab-status: {type,version:1,request_id:UUID,tab_id} returns the
+  selected account's *prior check* and save_state only for the same live URL.
+  It is not a public page API.
+
+For enabled hosts, job-candidates.js is registered with an exact HTTPS
+origin, allFrames:false and persistAcrossSessions:false. It is passive
+until the worker asks it to extract **public, visible headings** on an exact
+Greenhouse or Lever job-detail URL. It never reads form fields, entered
+answers, applicant identities, page body text, cookies or credentials. Title
+and employer are bounded, untrusted **editable candidates**, not guaranteed
+company identity, and can be null. No ATS tenant slug is an employer.
+
+On a supported, opted-in top-level navigation the development worker waits
+500 ms, validates the URL and selected account, extracts public candidates
+and sends one authenticated /check through the existing isolated JobGrid
+tab bridge. It retains the complete pre-write result before attempting
+/visit. The idempotent visit endpoint safely replays existing visits without resetting their first timestamp; an earlier CSV click alone does not prove a durable external visit. A failed/ambiguous visit is
+reported as save_unknown, **never** as successfully saved. The original
+visited/applied/company match warning is preserved for future UI rendering.
+Stale tab, revoked permission, disconnected account and failed checks cause
+**no** automatic visit write. No automatic apply is ever performed.
+
+Per-host opt-in persists in chrome.storage.local. Current-tab check
+warnings are bounded and kept only in trusted chrome.storage.session, then
+cleared on disconnect/reconnect. The worker does not restore a signed-in
+connection after suspension. The packaged popup still has no connection,
+permission or warning controls. Those user-visible controls belong to
+EXT-35–40; until they exist, this path is exercisable only by a trusted
+development harness, not by a regular installed end user.
+
+Run cd extension && npm test for isolated candidate privacy, permission,
+navigation and check-before-write regressions. Tests use synthetic pages and
+accounts. They do **not** establish real Chrome optional-permission UX,
+deployed OAuth, end-to-end app availability, accessible warning UI or store
+readiness. Disable the development extension to stop observation. No backend
+schema migration, API contract, paid service or production rollout is part
+of EXT-29–32.
