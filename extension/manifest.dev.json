@@ -5,7 +5,7 @@
   "description": "Disposable local test shell only. Do not package for release.",
   "action": {
     "default_title": "JobGrid memory (local test, not connected)",
-    "default_popup": "popup.html"
+    "default_popup": "popup.dev.html"
   },
   "background": { "service_worker": "background.js" },
   "permissions": ["storage", "activeTab", "scripting"],
