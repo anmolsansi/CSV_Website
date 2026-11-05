@@ -254,6 +254,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === SITE_OPT) return changeSiteOptIn(message.host, message.enabled)
     if (message.type === SITE_STATUS) return readSiteStatus(message.host)
     if (message.type === TAB_STATUS) return readTabStatus(message.tab_id)
+    if (message.type === MANUAL_CHECK) return manualCheckCurrentTab()
     if (message.type === DISCONNECT) {
       await clearConnection()
       return { ok: true, data: { protocol_version: VERSION, disconnected: true } }
