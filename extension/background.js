@@ -65,7 +65,7 @@ function validCommand(message) {
 
 function validMessage(message) {
   if (!plain(message) || !keysOnly(message, ['type', 'version', 'request_id',
-    'tab_id', 'kind', 'payload'])) return false
+    'tab_id', 'kind', 'payload', 'host', 'enabled'])) return false
   try {
     if (new TextEncoder().encode(JSON.stringify(message)).length > MAX_BYTES) return false
   } catch { return false }
