@@ -368,6 +368,28 @@ if (chrome.storage.local?.get) void syncSiteScripts().catch(() => {})
 
 // EXT-31: a single read-only check after a supported top-level navigation.
 // This is worker-owned; job pages cannot issue API requests or writes.
+// EXT-33 is an explicit current-tab gesture, not an auto-allowlist extension.
+const MANUAL_SECRET_KEYS = new Set(['token', 'access_token', 'auth',
+  'authorization', 'code', 'password', 'session', 'session_token'])
+function safeManualJobUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048 ||
+      value.trim() !== value || /[\\u0000-\\u001f\\u007f]/.test(value)) return null
+  try {
+    const parsed = new URL(value)
+    const host = parsed.hostname
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
+        parsed.port || parsed.hash || host.endsWith('.') ||
+        host === new URL(APP_ORIGIN).hostname || host === 'localhost' ||
+        /\\.(local|localhost|internal)$/.test(host) || host.includes(':') ||
+        /^\\d+(?:\\.\\d+)*$/.test(host) ||
+        !/^[a-z0-9-]+(?:\\.[a-z0-9-]+)+$/.test(host)) return null
+    for (const key of parsed.searchParams.keys()) {
+      if (MANUAL_SECRET_KEYS.has(key.toLowerCase())) return null
+    }
+    return value
+  } catch { return null }
+}
+
 const OBSERVE_DELAY_MS = 500
 const observationTimers = new Map()
 const observedUrls = new Map()
