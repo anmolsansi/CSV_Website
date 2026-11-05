@@ -18,6 +18,7 @@ from ..browser_memory_backup_schemas import (
     validate_visit_extension,
 )
 from ..models import JobVisit
+from ..time_utils import normalize_utc_instant
 from .backup_sessions import atomic_restore, snapshot_export
 from .import_backups import (
     _check_record_limit, export_backup_v2_with_import_mappings,
@@ -68,7 +69,7 @@ def export_backup_v2_with_browser_visits(db: Session, user_id: int) -> dict[str,
 
 
 def _parse_utc_timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc).replace(tzinfo=None)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 @atomic_restore
@@ -140,9 +141,7 @@ def restore_backup_payload_with_browser_visits(
                 first_visited_at=observed,
             ))
         else:
-            old = found.first_visited_at
-            if old.tzinfo is not None:
-                old = old.astimezone(timezone.utc).replace(tzinfo=None)
+            old = normalize_utc_instant(found.first_visited_at)
             if observed < old:
                 found.first_visited_at = observed
     db.flush()
