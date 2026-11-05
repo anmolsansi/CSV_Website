@@ -267,15 +267,18 @@ test('EXT-32 never writes when check fails, and marks failed writes unknown', as
   assert.equal(unknown.data.before_visit.visit.visited, false)
 })
 
-test('EXT-32 existing visits need no duplicate write; stale account cannot create a visit', async () => {
+test('EXT-32 pre-existing clicked/opened evidence still receives an idempotent visit write; stale account cannot write', async () => {
   const a = createWorker()
   await optIntoLever(a)
   a.behavior.alreadyVisited = true
   a.emitUpdated(2, { status: 'complete' })
   await sleep(650)
-  assert.equal(a.calls.filter(([, msg]) => msg.kind === 'visit').length, 0)
-  assert.equal((await a.send(packet('ext32:tab-status', { tab_id: 2 }))).data.save_state,
-    'already_visited')
+  assert.equal(a.calls.filter(([, msg]) => msg.kind === 'visit').length, 1,
+    'a prior CSV click may exist without a durable browser visit')
+  const previously = await a.send(packet('ext32:tab-status', { tab_id: 2 }))
+  assert.equal(previously.data.save_state, 'saved')
+  assert.equal(previously.data.before_visit.visit.visited, true,
+    'the warning remains exactly as it was before the idempotent write')
 
   const b = createWorker()
   await optIntoLever(b)
