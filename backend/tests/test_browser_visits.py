@@ -1,5 +1,6 @@
 """EXT-06: owner-scoped visits, receipts and reversible disposable migration."""
 import importlib.util
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -238,8 +239,17 @@ from hashlib import sha256
 from app.services.browser_memory import (
     MAX_BROWSER_VISITS_PER_OWNER,
     BrowserVisitConflict,
+    BrowserVisitResult,
     save_browser_visit,
 )
+
+
+@pytest.mark.parametrize("offset", [None, timezone.utc, timezone(timedelta(hours=-5))])
+def test_visit_response_normalizes_utc(offset):
+    instant = datetime(2026, 11, 5, 12, 30, 0, 123456, tzinfo=timezone.utc)
+    stored = instant.replace(tzinfo=None) if offset is None else instant.astimezone(offset)
+    result = BrowserVisitResult(account_id=1, created=True, first_visited_at=stored)
+    assert result.as_response()["first_visited_at"] == "2026-11-05T12:30:00.123456Z"
 
 
 def test_ext_08_first_visit_and_replay_preserve_timestamp_and_owner(db_session):

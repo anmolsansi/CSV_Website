@@ -136,6 +136,7 @@ def test_concurrent_commit_no_lost_updates(db_session, engine):
     # Both previews intentionally describe the same original destination state.
     second.destination_fingerprint = first.destination_fingerprint
     db_session.commit()
+    user_id = user.id
 
     barrier = Barrier(2)
     Session = sessionmaker(bind=engine)
@@ -154,7 +155,7 @@ def test_concurrent_commit_no_lost_updates(db_session, engine):
             try:
                 result, replayed = commit_import_preview(
                     session,
-                    user_id=user.id,
+                    user_id=user_id,
                     preview_id=preview_id,
                     payload=payload,
                 )
@@ -179,7 +180,7 @@ def test_concurrent_commit_no_lost_updates(db_session, engine):
 
     db_session.expire_all()
     stored = db_session.query(CsvRow).filter(
-        CsvRow.user_id == user.id,
+        CsvRow.user_id == user_id,
         CsvRow.url.in_([
             "https://example.test/concurrent/a",
             "https://example.test/concurrent/b",

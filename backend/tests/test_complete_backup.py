@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
 from app.backup_schemas import BackupContractError
@@ -212,6 +212,31 @@ def _read_visits(db, owner):
             )
             for visit in fresh.query(JobVisit).filter(JobVisit.user_id == owner).all()
         ]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_visit_restore_preserves_instant_in_non_utc_postgres(db_session, complete_backup, existing):
+    if db_session.get_bind().dialect.name != "postgresql":
+        pytest.skip("Requires PostgreSQL session timezone semantics")
+    source, target, _ = complete_backup
+    engine = create_engine(
+        db_session.get_bind().url,
+        connect_args={"options": "-c timezone=America/New_York"},
+    )
+    instant = datetime(2026, 11, 2, 7, 0, 0, 123456, tzinfo=timezone.utc)
+    url = "https://example.test/jobs/timezone"
+    try:
+        with Session(engine) as session:
+            _add_visit(session, source, url, instant)
+            if existing:
+                _add_visit(session, target, url, datetime(2026, 11, 4, tzinfo=timezone.utc))
+            payload = _visit_backup(session, source)
+            _visit_restore(session, target, payload, "merge_missing")
+            assert _read_visits(session, target) == [(url, instant.replace(tzinfo=None))]
+            _visit_restore(session, target, payload, "merge_missing")
+            assert _read_visits(session, target) == [(url, instant.replace(tzinfo=None))]
+    finally:
+        engine.dispose()
 
 
 def test_ext_23_json_and_zip_have_equal_owner_visit_facts(db_session, complete_backup, tmp_path, monkeypatch):
