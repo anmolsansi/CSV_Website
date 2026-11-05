@@ -344,3 +344,25 @@ test('EXT-33 manually checks an unsupported public tab but never writes a visit'
   assert.equal(w.calls.filter(([, m]) => m.type === 'ext29:extract').length, 0)
   assert.equal(w.requested.length, 0, 'activeTab fallback never asks for host access')
 })
+
+
+test('EXT-33 rejects local, credential-bearing and non-HTTPS manual URLs', async () => {
+  const w = createWorker()
+  await w.connect()
+  for (const url of [
+    'http://careers.example.org/jobs/1',
+    'https://localhost/jobs/1',
+    'https://127.0.0.1/jobs/1',
+    'https://user:pass@careers.example.org/jobs/1',
+    'https://careers.example.org/jobs/1?token=secret',
+    'https://careers.example.org/jobs/1#secret',
+    'https://csv-website-steel.vercel.app/dashboard',
+  ]) {
+    w.tabs.set(2, { id: 2, url, status: 'complete' })
+    const result = await w.send(packet('ext33:current-tab-check'))
+    assert.equal(result.ok, false, url)
+    assert.equal(result.error.code, 'unsupported')
+  }
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'check').length, 0)
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'visit').length, 0)
+})
