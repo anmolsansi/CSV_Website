@@ -6,7 +6,6 @@
  */
 import { chromium, expect, test, type Page } from '@playwright/test'
 import fs from 'node:fs/promises'
-import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { buildPilot } from '../../extension/package.mjs'
 import os from 'node:os'
@@ -593,14 +592,14 @@ test('EXT-47 unmodified release ZIP loads with its recorded version and no grant
     const extensionPath = path.join(workspace, 'unpacked')
     execFileSync('unzip', ['-q', artifact.file, '-d', extensionPath])
     const manifest = JSON.parse(await fs.readFile(path.join(extensionPath, 'manifest.json'), 'utf8'))
-    // Chromium derives an unpacked extension's ID from its absolute path.
-    const extensionId = createHash('sha256').update(await fs.realpath(extensionPath))
-      .digest('hex').slice(0, 32).replace(/[0-9a-f]/g, digit =>
-        String.fromCharCode('a'.charCodeAt(0) + parseInt(digit, 16)))
     context = await chromium.launchPersistentContext(path.join(workspace, 'profile'), {
-      headless: true, channel: 'chromium',
-      args: ['--disable-extensions-except=' + extensionPath, '--load-extension=' + extensionPath],
+      headless: true, channel: process.env.JOBGRID_PILOT_CHROME === '1' ? 'chrome' : 'chromium',
+      ignoreDefaultArgs: ['--disable-extensions'],
+      args: ['--enable-unsafe-extension-debugging'],
     })
+    // Chrome no longer supports the old load-extension flag; use its testing API.
+    const cdp = await context.browser()!.newBrowserCDPSession()
+    const { id: extensionId } = await cdp.send('Extensions.loadUnpacked', { path: extensionPath })
     const popup = await context.newPage()
     const errors: string[] = []
     popup.on('pageerror', error => errors.push(error.message))
@@ -616,8 +615,9 @@ test('EXT-47 unmodified release ZIP loads with its recorded version and no grant
     expect(loaded.grants.origins || []).toEqual([])
     expect(context.serviceWorkers()).toHaveLength(0)
     expect(errors).toEqual([])
+    await cdp.send('Extensions.uninstall', { id: extensionId })
     console.log('EXT-47 archive-load browser=' + context.browser()?.version() +
-      ' version=' + artifact.version + ' sha256=' + artifact.sha256 + ' outcome=ok')
+      ' version=' + artifact.version + ' sha256=' + artifact.sha256 + ' uninstall=ok outcome=ok')
   } finally {
     await context?.close()
     await fs.rm(workspace, { recursive: true, force: true })

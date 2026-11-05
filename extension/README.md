@@ -370,10 +370,19 @@ to a fresh directory, open chrome://extensions, enable Developer mode,
 choose Load unpacked, and select the folder with manifest.json. The
 popup must show Not connected yet and No browsing is tracked by this
 shell. There should be no host-permission or account prompt on install.
-This proves only that the inactive package loads. An automated attempt in
-installed Google Chrome 157.0.8103.38 with a disposable profile returned
-`ERR_BLOCKED_BY_CLIENT`; it is not normal-Chrome acceptance. Run these manual
-steps in an unrestricted disposable profile before closing that gate.
+This proves only that the inactive package loads. The automated archive
+load/uninstall smoke also passed in installed Google Chrome **157.0.8103.38**
+with zero granted hosts/workers and the same SHA-256 as Chromium. It uses
+Chrome's [Extensions testing API](https://chromedevtools.github.io/devtools-protocol/tot/Extensions/)
+and a disposable profile, with Playwright's extension-disabling default removed.
+The old command-line load attempt returned ERR_BLOCKED_BY_CLIENT; the tested
+API path loads the artifact successfully. From frontend/, reproduce with:
+
+    JOBGRID_PILOT_CHROME=1 npm run test:extension -- --no-deps --grep EXT-47
+
+The normal CI command still uses bundled Chromium. This smoke verifies the
+release shell, not browser-owned optional-grant prompts, deployed OAuth,
+manual toolbar interactions or active development-worker acceptance.
 
 For an update, disable/remove the previous test installation, unpack
 a separately verified version into a new folder, load that new folder,

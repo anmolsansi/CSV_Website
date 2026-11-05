@@ -4335,12 +4335,15 @@ account-owned Forget visits instructions. The distributed ZIP has no
 background worker and cannot check, visit or apply; it is only an
 inspectable, versioned shell. The active development popup and worker
 remain outside the release artifact. Uninstalling the shell has no
-server-side history effect. An actual Chrome installation smoke test,
-optional grant/revocation, deployed OAuth, MV3 suspension, accessibility
+server-side history effect. Optional grant/revocation, deployed OAuth, MV3 suspension, accessibility
 and production release are pending external gates, not marked as passed
-by Node, pytest, headless Chromium or packaging. Installed Google Chrome
-157.0.8103.38 returned ERR_BLOCKED_BY_CLIENT in the automated disposable-profile
-ZIP attempt; normal-Chrome acceptance remains pending.
+by Node, pytest, headless Chromium or packaging. The unmodified ZIP also passed load/popup/version/zero-host/zero-worker/uninstall
+acceptance in installed Google Chrome **157.0.8103.38**, using a disposable
+profile and Chrome's documented Extensions.loadUnpacked/uninstall testing API.
+The earlier command-line load failure was not evidence of an invalid package.
+Reproduce from frontend/ with `JOBGRID_PILOT_CHROME=1 npm run test:extension --
+--no-deps --grep EXT-47` (one shell command). This does not verify normal Chrome
+permission-dialog, manual toolbar, live-account or OAuth acceptance.
 
 For local PostgreSQL acceptance, use an explicitly disposable database with its
 session timezone and test-process TZ set to UTC, matching CI. A local cluster
