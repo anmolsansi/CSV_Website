@@ -491,8 +491,11 @@ test('EXT-39 ambiguous timeout is not success and explicit retry preserves the o
   assert.equal(first.ok, false)
   assert.equal(first.error.code, 'save_unknown')
   assert.equal(w.storageSession.jobgridPendingApply['2'].idempotency_key, draft.data.idempotency_key)
+  assert.equal(w.storageSession.jobgridUnresolvedApply.idempotency_key,
+    draft.data.idempotency_key)
   const retry = await w.send(packet('ext39:submit-pending', { tab_id: 2 }))
   assert.equal(retry.ok, true)
+  assert.equal(w.storageSession.jobgridUnresolvedApply, undefined)
   const writes = w.calls.filter(([, m]) => m.kind === 'apply').map(([, m]) => m.payload)
   assert.equal(writes.length, 2)
   assert.deepEqual(JSON.parse(JSON.stringify(writes[0])), JSON.parse(JSON.stringify(writes[1])))
@@ -574,4 +577,46 @@ test('EXT-40 privacy controls use literal copy and a trusted fixed JobGrid desti
   assert.match(js, /forgetPhrase.value !== 'FORGET VISITS'/)
   assert.match(js, /APP_ORIGIN \+ '\/applications'/)
   assert.doesNotMatch(js, /innerHTML|insertAdjacentHTML|document\.write/)
+})
+
+test('EXT-39 a confirmed unknown response survives draft TTL but changes invalidate the retry key', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const first = await w.send(packet('ext34:stage-apply',
+    { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  w.behavior.applyFailureOnce = true
+  assert.equal((await w.send(packet('ext39:submit-pending', { tab_id: 2 }))).error.code, 'save_unknown')
+  assert.equal(w.storageSession.jobgridUnresolvedApply.idempotency_key, first.data.idempotency_key)
+  // Expire the ordinary 15-minute draft, while the confirmed unknown stays
+  // under the separate bounded 24-hour recovery key.
+  w.storageSession.jobgridPendingApply['2'].created_at = Date.now() - 16 * 60 * 1000
+  const refreshed = await w.send(packet('ext34:stage-apply',
+    { tab_id: 2, company: 'Acme', title: 'Engineer' }))
+  assert.equal(refreshed.data.idempotency_key, first.data.idempotency_key)
+  const changed = await w.send(packet('ext34:stage-apply',
+    { tab_id: 2, company: 'Acme', title: 'Senior Engineer' }))
+  assert.notEqual(changed.data.idempotency_key, first.data.idempotency_key)
+  assert.equal(w.storageSession.jobgridUnresolvedApply, undefined)
+  await w.send(packet('ext26:disconnect'))
+  assert.equal(w.storageSession.jobgridUnresolvedApply, undefined)
+})
+
+test('EXT-38 blocks known applied URL but permits user-reviewed possible/company matches', async () => {
+  const { checkedJobForAccount } = await import('../popup-apply.js')
+  const selected = { connected: true, paused: false, account_id: 101 }
+  const snapshot = {
+    account_id: 101, url: JOB, before_visit: {
+      visit: { visited: false, first_visited_at: null }, matches: [],
+    },
+  }
+  assert.equal(checkedJobForAccount(snapshot, selected), true)
+  assert.equal(checkedJobForAccount({ ...snapshot, before_visit: {
+    ...snapshot.before_visit, matches: [{ confidence: 'possible' }],
+  } }, selected), true)
+  assert.equal(checkedJobForAccount({ ...snapshot, before_visit: {
+    ...snapshot.before_visit, matches: [{ confidence: 'canonical' }],
+  } }, selected), false)
+  assert.equal(checkedJobForAccount({ ...snapshot, apply_status: 'saved' }, selected), false)
 })
