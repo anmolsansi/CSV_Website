@@ -106,10 +106,11 @@ function validMessage(message) {
 async function clearConnection() {
   generation++
   connection = null
+  paused = false
   clearObservationTimers()
   await warningWrites
   await clearAllPending()
-  await chrome.storage.session.remove(['jobgridConnection', 'jobgridTabChecks'])
+  await chrome.storage.session.remove(['jobgridConnection', 'jobgridTabChecks', 'jobgridPaused'])
 }
 
 async function bridge(tabId, kind, payload = {}, accountId, documentId = null) {
@@ -179,7 +180,8 @@ async function connect(tabId) {
   const current = await checkedTab(tabId)
   if (epoch !== generation || !current || current.url !== tab.url) return unavailable()
   connection = { tabId, accountId: result.data.account_id, generation: epoch,
-    tabUrl: tab.url, documentId, lastSessionCheckAt: Date.now() }
+    tabUrl: tab.url, documentId, accountLabel: result.data.account_label,
+    lastSessionCheckAt: Date.now() }
   await chrome.storage.session.set({
     jobgridConnection: { tabId, accountId: result.data.account_id },
   })
@@ -192,6 +194,7 @@ async function connect(tabId) {
 async function dispatch(kind, payload) {
   const selected = connection
   if (!selected) return error('not_connected', 'Open JobGrid to connect')
+  if (paused && kind !== 'session') return error('paused', 'Tracking is paused')
   const firstTab = await checkedTab(selected.tabId)
   if (!firstTab || firstTab.url !== selected.tabUrl) {
     await clearConnection()
@@ -457,7 +460,7 @@ function clearObservationTimers() {
 }
 
 async function observationStillAllowed(tabId, url, selected) {
-  if (!connection || connection !== selected || !classifyObservedUrl(url)) return false
+  if (paused || !connection || connection !== selected || !classifyObservedUrl(url)) return false
   try {
     const host = classifyObservedUrl(url)
     const optIns = await readOptIns()
@@ -529,7 +532,7 @@ function observeTabUpdate(tabId, changes, tab) {
       !(changes?.url && tab?.status === 'complete')) return
   const url = tab?.url
   const selected = connection
-  if (!selected || !classifyObservedUrl(url) || observedUrls.get(tabId) === url) return
+  if (paused || !selected || !classifyObservedUrl(url) || observedUrls.get(tabId) === url) return
   observedUrls.set(tabId, url)
   const timer = setTimeout(() => {
     observationTimers.delete(tabId)
@@ -618,6 +621,7 @@ async function recordTabWarning(tabId, url, selected, beforeVisit, saveState) {
 async function manualCheckCurrentTab() {
   const selected = connection
   if (!selected) return error('not_connected', 'Connect JobGrid first')
+  if (paused) return error('paused', 'Tracking is paused')
   let tab
   try {
     const active = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -644,6 +648,7 @@ async function manualCheckCurrentTab() {
 async function stagePendingApply(tabId, company, title) {
   const selected = connection
   if (!selected) return error('not_connected', 'Connect JobGrid first')
+  if (paused) return error('paused', 'Tracking is paused')
   const checked = tabWarnings.get(tabId)
   if (!checked || checked.account_id !== selected.accountId) {
     return error('no_check', 'Check this job before preparing an application')
