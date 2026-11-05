@@ -666,6 +666,7 @@ const UNRESOLVED_TTL_MS = 24 * 60 * 60 * 1000
 // Only a confirmed write with an unknown response is eligible for a later
 // deliberate same-key recovery. Never auto-replay it after a worker restart.
 async function readUnresolvedApply() {
+  if (!chrome.storage.session.get) return null
   const item = (await chrome.storage.session.get(UNRESOLVED_APPLY_KEY))?.[UNRESOLVED_APPLY_KEY]
   if (!plain(item)) return null
   if (!validId(item.account_id) || !validId(item.tab_id) ||
