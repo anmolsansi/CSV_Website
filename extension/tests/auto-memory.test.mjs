@@ -228,3 +228,74 @@ test('EXT-31 does not check when candidate extraction fails or permission is rev
   await sleep(630)
   assert.equal(b.calls.filter(([, message]) => message.kind === 'check').length, 0)
 })
+
+
+test('EXT-32 stores the original warning before the visit and preserves it after success', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const status = await w.send(packet('ext32:tab-status', { tab_id: 2 }))
+  assert.equal(status.ok, true)
+  assert.equal(status.data.account_id, 101)
+  assert.equal(status.data.save_state, 'saved')
+  assert.equal(status.data.before_visit.visit.visited, false,
+    'visit response must not rewrite pre-write warning')
+  assert.deepEqual(JSON.parse(JSON.stringify(status.data.before_visit.matches)), [])
+  assert.equal(w.storageSession.jobgridTabChecks['2'].before_visit.visit.visited, false)
+  const kinds = w.calls.map(([, msg]) => msg.kind).filter(Boolean)
+  assert.ok(kinds.indexOf('check') >= 0 && kinds.indexOf('visit') > kinds.indexOf('check'))
+})
+
+test('EXT-32 never writes when check fails, and marks failed writes unknown', async () => {
+  const a = createWorker()
+  await optIntoLever(a)
+  a.behavior.checkFailure = true
+  a.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal(a.calls.filter(([, msg]) => msg.kind === 'visit').length, 0)
+  assert.equal((await a.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
+
+  const b = createWorker()
+  await optIntoLever(b)
+  b.behavior.visitFailure = true
+  b.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const unknown = await b.send(packet('ext32:tab-status', { tab_id: 2 }))
+  assert.equal(unknown.ok, true)
+  assert.equal(unknown.data.save_state, 'save_unknown')
+  assert.equal(unknown.data.before_visit.visit.visited, false)
+})
+
+test('EXT-32 existing visits need no duplicate write; stale account cannot create a visit', async () => {
+  const a = createWorker()
+  await optIntoLever(a)
+  a.behavior.alreadyVisited = true
+  a.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal(a.calls.filter(([, msg]) => msg.kind === 'visit').length, 0)
+  assert.equal((await a.send(packet('ext32:tab-status', { tab_id: 2 }))).data.save_state,
+    'already_visited')
+
+  const b = createWorker()
+  await optIntoLever(b)
+  b.setAccount(202)
+  b.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  assert.equal(b.calls.filter(([, msg]) => msg.kind === 'visit').length, 0)
+  assert.equal((await b.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
+})
+
+test('EXT-32 disconnect erases private warning state and blocks tab-status sender spoofing', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const forged = await w.send(packet('ext32:tab-status', { tab_id: 2 }), {
+    ...POPUP, url: JOB,
+  })
+  assert.equal(forged.ok, false)
+  assert.equal((await w.send(packet('ext26:disconnect'))).ok, true)
+  assert.equal(w.storageSession.jobgridTabChecks, undefined)
+  assert.equal((await w.send(packet('ext32:tab-status', { tab_id: 2 }))).ok, false)
+})
