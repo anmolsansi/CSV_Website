@@ -1,12 +1,12 @@
 import { APP_ORIGIN } from './config.js'
-import { safeMatchText, summarizeWarning } from './popup-state.js'
+import { safeMatchText, summarizeWarning, summarizeFailure } from './popup-state.js'
 
 const byId = id => document.getElementById(id)
 const el = {
   connect: byId('connect'), pause: byId('pause'), disconnect: byId('disconnect'),
   check: byId('check'), connection: byId('connection'), feedback: byId('feedback'),
   title: byId('result-title'), detail: byId('result-detail'),
-  save: byId('result-save'), matches: byId('matches'),
+  save: byId('result-save'), lookup: byId('result-lookup'), matches: byId('matches'),
 }
 let state = { connected: false, paused: false }
 let busy = false
@@ -40,6 +40,7 @@ function render(record) {
   el.title.textContent = view.title
   el.detail.textContent = view.detail
   el.save.textContent = view.save
+  if (el.lookup) el.lookup.textContent = view.lookup || ''
   el.matches.replaceChildren()
   for (const match of (record?.before_visit?.matches || []).slice(0, 5)) {
     const li = document.createElement('li')
@@ -51,6 +52,15 @@ function render(record) {
     more.textContent = 'Additional matches are available in JobGrid.'
     el.matches.append(more)
   }
+}
+function showFailure(problem, action = 'check') {
+  const view = summarizeFailure(problem, action)
+  el.title.textContent = view.title
+  el.detail.textContent = view.detail
+  el.save.textContent = ''
+  if (el.lookup) el.lookup.textContent = ''
+  el.matches.replaceChildren()
+  feedback(view.title + '. ' + view.detail)
 }
 function showConnection() {
   el.connection.textContent = !state.connected
@@ -64,14 +74,14 @@ async function run(action) {
   if (busy) return
   busy = true
   controls()
-  try { await action() } finally { busy = false; controls() }
+  try { await action() } catch { showFailure({ code: 'unavailable' }) } finally { busy = false; controls() }
 }
 async function refresh() {
   const connection = await send('ext35:status')
   if (!connection.ok) {
     state = { connected: false, paused: false }
     showConnection()
-    feedback('Could not load connection status. Reopen the popup.')
+    showFailure(connection.error, 'connect')
     return
   }
   state = connection.data
@@ -87,11 +97,17 @@ async function refresh() {
       return
     }
     const checked = await send('ext32:tab-status', { tab_id: active[0].id })
-    render(checked.ok ? checked.data : null)
-    if (checked.ok) feedback('Showing the latest check for this tab.')
+    if (checked.ok) {
+      render(checked.data)
+      feedback('Showing the latest check for this tab.')
+    } else if (checked.error?.code === 'no_check') {
+      render(null)
+    } else {
+      showFailure(checked.error)
+    }
   } catch {
     render(null)
-    feedback('Cannot read this tab. Try a public job page.')
+    showFailure({ code: 'unsupported' })
   }
 }
 
@@ -100,7 +116,7 @@ el.connect.addEventListener('click', () => run(async () => {
   // Chrome must see a direct user gesture for its optional host prompt.
   let granted
   try { granted = await chrome.permissions.request({ origins: [APP_ORIGIN + '/*'] }) } catch { granted = false }
-  if (!granted) { feedback('JobGrid site access was not granted.'); return }
+  if (!granted) { showFailure({ code: 'permission_denied' }, 'connect'); return }
   let tabs
   try { tabs = await chrome.tabs.query({ url: [APP_ORIGIN + '/*'] }) } catch { tabs = [] }
   const eligible = tabs.filter(tab => {
@@ -111,7 +127,7 @@ el.connect.addEventListener('click', () => run(async () => {
     return
   }
   const result = await send('ext26:connect', { tab_id: eligible[0].id })
-  if (!result.ok) { feedback(result.error?.message || 'Could not connect.'); return }
+  if (!result.ok) { showFailure(result.error, 'connect'); return }
   feedback('Connected. Check a public job page to view history.')
   await refresh()
 }))
@@ -119,14 +135,14 @@ el.connect.addEventListener('click', () => run(async () => {
 el.pause.addEventListener('click', () => run(async () => {
   feedback(state.paused ? 'Resuming checks…' : 'Pausing checks…')
   const result = await send('ext35:set-paused', { paused: !state.paused })
-  if (!result.ok) { feedback(result.error?.message || 'Could not change pause state.'); await refresh(); return }
+  if (!result.ok) { showFailure(result.error); return }
   feedback(result.data.paused ? 'Automatic checks are paused.' : 'Checks resumed.')
   await refresh()
 }))
 
 el.disconnect.addEventListener('click', () => run(async () => {
   const result = await send('ext26:disconnect')
-  if (!result.ok) { feedback('Could not disconnect.'); return }
+  if (!result.ok) { showFailure(result.error); return }
   feedback('Disconnected. Saved JobGrid visits were not deleted.')
   await refresh()
 }))
@@ -136,7 +152,7 @@ el.check.addEventListener('click', () => run(async () => {
   render(null)
   const result = await send('ext33:current-tab-check')
   if (!result.ok) {
-    feedback(result.error?.message || 'Could not check this page.')
+    showFailure(result.error)
     return
   }
   render(result.data)
