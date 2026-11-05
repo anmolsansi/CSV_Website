@@ -4468,3 +4468,41 @@ and `test_browser_memory_apply.py`. Never point pytest at a live database.
 A real selected-environment database/object backup, operator recovery objectives,
 deployed OAuth, browser/backend replacement and 48h observation are **not proven**
 by this local exercise and still block deployed EXT-48 acceptance.
+
+### Observation and rollback sign-off (EXT-48.04)
+
+**NOT STARTED.** The required 48-hour deployed observation cannot be replaced
+by CI runtime, an old deployment's age or a written runbook. Start its clock
+only after the operator approves an isolated active candidate and both real
+OAuth/account walkthroughs pass. Record dates/times with an explicit timezone.
+
+| Evidence field | Current value / required record |
+|---|---|
+| Operator and reviewer | Not supplied; identify the person authorized for the selected target |
+| Candidate frontend/backend/DB/storage identity | Incomplete; frontend metadata alone is insufficient |
+| Active installed artifact version/hash/stable identity | Not selected; inactive shell cannot exercise pilot behavior |
+| Observation start and end | NOT STARTED / NOT COMPLETED; require at least 48 hours on one candidate |
+| Cold start / reconnect | NOT RUN; record duration, expected failure state and successful deliberate reconnect |
+| Warm lookups | NOT RUN on deployed candidate; record 30 samples and p95 separately from cold timing |
+| A/B account switch, logout, revoke and suspension | NOT RUN in the deployed pilot |
+| Complete backup / disposable deployed restore | NOT RUN; local rehearsal above is narrower evidence |
+| Previous deployed backend revision and rollback procedure | Not approved/selected; local pair does not authorize provider rollback |
+| Counts, relationships, earliest timestamps and document hashes | Capture before, after rollback and after returning to candidate; compare nonempty records |
+| Critical/high findings and operator signal | No deployed observation evidence; cannot sign off “none” |
+| Release decision | NOT ACCEPTED; EXT-48 and dependent final closure remain open |
+
+Rollback triggers include wrong-owner disclosure/write, duplicate application
+or changed original applied time, lost document/history, unsafe permission
+expansion, a failed backup/hash comparison, insecure auth behavior, or a
+required dependency not recovering. On a trigger: stop checks and writes,
+disable/revoke the active extension, preserve private evidence, and let the
+authorized operator restore compatible application code while retaining additive
+tables and stored history. Do not downgrade Alembic or recreate the database/
+bucket as ordinary code rollback. Verify health/readiness, controlled account
+identity, history and document hashes before resuming.
+
+If a candidate or permission boundary changes during observation, record the
+change and re-establish the relevant acceptance; never silently combine results
+from different source or artifact versions. No recurring monitor, provider
+restart, scheduled email, deployment or store publication has been enabled by
+preparing this record.
