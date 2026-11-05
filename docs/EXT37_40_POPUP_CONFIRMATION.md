@@ -23,7 +23,9 @@ these four tickets.
    always shows an additional incomplete-search warning, even when stronger
    visited/applied evidence is present. Authentication, 403, rate-limited,
    timeout, unsupported, offline, and unavailable failures show dedicated
-   states, never a false no-match result.
+   states, never a false no-match result. On HTTP 429, the explicit
+   Retry check button is disabled through the bounded Retry-After window.
+   Expiry only reenables the button and never triggers a background request.
 5. When a verified job is available, enter the employer and title. Both are
    mandatory, trimmed, and bounded at 320 and 500 characters. The popup does
    not guess them from the ATS slug, read form answers, or read page body text.
@@ -40,12 +42,14 @@ these four tickets.
    updates the tab badge without changing `before_visit` facts.
 8. If a write response is lost, timed out or ambiguous, the popup says **Save
    result unknown**. It does not claim a successful save or automatically
-   retry. Inspect JobGrid first. While the same pending session and URL are
-   still active, another explicit click reuses the exact UUID and payload.
-   Changing employer, role or URL requires a new review and changes the key.
-   Account switch, disconnect, pause, navigation, and worker restart
-   invalidate the in-memory pending intent. A retry after reconnection cannot
-   reuse the old key and must first be verified in JobGrid.
+   retry. Inspect JobGrid first. A deliberate retry in the same pending session
+   reuses the original UUID and payload. A confirmed unknown write may also
+   retain one private recovery UUID for up to 24 hours across worker
+   suspension. Reconnect the same selected account, recheck that same public
+   URL, review identical fields, and explicitly resubmit to reuse that UUID.
+   Unconfirmed drafts still expire after 15 minutes. Changed account, fields,
+   URL, pause, disconnect, successful save or expiry clear the recovery key.
+   No automatic retry is permitted.
 
 ## Privacy controls
 
