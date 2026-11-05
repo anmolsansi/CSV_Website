@@ -42,7 +42,8 @@ const unavailable = () => error('unavailable')
 // Packaged popup.html may be opened as a top-level extension tab in E2E.
 // Trust the exact packaged URL and top-frame identity, not sender.tab absence.
 const popupSender = sender => sender?.id === chrome.runtime.id &&
-  sender.url === chrome.runtime.getURL('popup.html') &&
+  [chrome.runtime.getURL('popup.html'),
+    chrome.runtime.getURL('popup.dev.html')].includes(sender.url) &&
   (!sender.origin || sender.origin === 'chrome-extension://' + chrome.runtime.id) &&
   (sender.frameId === undefined || sender.frameId === 0)
 const exactAppTab = tab => {
