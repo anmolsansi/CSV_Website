@@ -6,6 +6,9 @@
  */
 import { chromium, expect, test, type Page } from '@playwright/test'
 import fs from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
+import { buildPilot } from '../../extension/package.mjs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -578,4 +581,45 @@ test('EXT-44 offline failure, navigation, opt-out and full profile restart fail 
     expect(unauthorised.ok).toBe(false)
     expect(['not_connected', 'no_check']).toContain(unauthorised.error.code)
   })
+})
+
+
+// EXT-47 loads the actual archive without the development fixture overlay.
+test('EXT-47 unmodified release ZIP loads with its recorded version and no granted hosts or worker', async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'jobgrid-ext47-load-'))
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined
+  try {
+    const artifact = await buildPilot({ outputDir: path.join(workspace, 'dist') })
+    const extensionPath = path.join(workspace, 'unpacked')
+    execFileSync('unzip', ['-q', artifact.file, '-d', extensionPath])
+    const manifest = JSON.parse(await fs.readFile(path.join(extensionPath, 'manifest.json'), 'utf8'))
+    // Chromium derives an unpacked extension's ID from its absolute path.
+    const extensionId = createHash('sha256').update(await fs.realpath(extensionPath))
+      .digest('hex').slice(0, 32).replace(/[0-9a-f]/g, digit =>
+        String.fromCharCode('a'.charCodeAt(0) + parseInt(digit, 16)))
+    context = await chromium.launchPersistentContext(path.join(workspace, 'profile'), {
+      headless: true, channel: 'chromium',
+      args: ['--disable-extensions-except=' + extensionPath, '--load-extension=' + extensionPath],
+    })
+    const popup = await context.newPage()
+    const errors: string[] = []
+    popup.on('pageerror', error => errors.push(error.message))
+    await popup.goto('chrome-extension://' + extensionId + '/popup.html')
+    await expect(popup.getByRole('status')).toHaveText('Not connected yet')
+    await expect(popup.getByText('No browsing is tracked by this shell.')).toBeVisible()
+    const loaded = await popup.evaluate(async () => {
+      const api = (globalThis as any).chrome
+      return { manifest: api.runtime.getManifest(), grants: await api.permissions.getAll() }
+    })
+    expect(loaded.manifest).toEqual(manifest)
+    expect(loaded.manifest.version).toBe(artifact.version)
+    expect(loaded.grants.origins || []).toEqual([])
+    expect(context.serviceWorkers()).toHaveLength(0)
+    expect(errors).toEqual([])
+    console.log('EXT-47 archive-load browser=' + context.browser()?.version() +
+      ' version=' + artifact.version + ' sha256=' + artifact.sha256 + ' outcome=ok')
+  } finally {
+    await context?.close()
+    await fs.rm(workspace, { recursive: true, force: true })
+  }
 })
