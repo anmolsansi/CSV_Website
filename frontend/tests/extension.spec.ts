@@ -373,3 +373,60 @@ test('EXT-42 foreign account and hostile page cannot reuse selected extension me
     expect(restoredA.matches).toEqual([])
   })
 })
+
+
+test('EXT-43 development popup exposes labels, live feedback and keyboard focus at 200% zoom', async () => {
+  test.setTimeout(150_000)
+  await withRealExtension(async ({ context, app, popup }) => {
+    const owner = await signIn(app, 'ext43-' + crypto.randomUUID() + '@example.test')
+    await connectRealExtension(popup, app, owner)
+    const url = 'https://jobs.lever.co/acmelabs/' + crypto.randomUUID().replaceAll('-', '')
+    const { job } = await openObservedJob(context, popup, url)
+    await popup.reload()
+    await expect(popup.locator('#check')).toBeEnabled()
+    await expect(popup.locator('#connection')).toHaveAttribute('aria-live', 'polite')
+    await expect(popup.locator('#feedback')).toHaveAttribute('aria-live', 'polite')
+    await expect(popup.locator('#result')).toHaveAttribute('aria-live', 'polite')
+    await expect(popup.getByLabel('Employer')).toHaveAttribute('required', '')
+    await expect(popup.getByLabel('Job title')).toHaveAttribute('required', '')
+    await expect(popup.locator('label[for="forget-phrase"]')).toContainText('FORGET VISITS')
+    for (const id of ['connect', 'pause', 'disconnect', 'forget', 'check', 'stage', 'submit-apply']) {
+      await expect(popup.locator('#' + id)).toHaveAttribute('type', id === 'stage' ? 'submit' : 'button')
+    }
+    // A real action-popup does not become a browser tab. For this Playwright
+    // harness the extension page is a tab, so dispatch its click while the
+    // public job tab remains the active tab for activeTab authorization.
+    await job.bringToFront()
+    await popup.evaluate(() => (document.getElementById('check') as HTMLButtonElement).click())
+    await expect(popup.locator('#apply-section')).toBeVisible({ timeout: 15000 })
+    await expect(popup.locator('#feedback')).toContainText('Check complete')
+    await expect(popup.locator('#result-detail')).not.toContainText('never applied')
+    await popup.getByLabel('Employer').fill('Acme Labs')
+    await popup.getByLabel('Job title').fill('Platform Engineer')
+    await popup.locator('#apply-company').focus()
+    await popup.keyboard.press('Tab')
+    await expect(popup.locator('#apply-title')).toBeFocused()
+    await job.bringToFront()
+    await popup.evaluate(() => (document.getElementById('draft-form') as HTMLFormElement).requestSubmit())
+    await expect(popup.locator('#approval')).toBeVisible()
+    await expect(popup.locator('#draft-error')).toContainText('Review')
+    await expect(popup.locator('#submit-apply')).toBeDisabled()
+    await popup.locator('#confirm-apply').check()
+    await expect(popup.locator('#submit-apply')).toBeEnabled()
+    await popup.locator('#confirm-apply').uncheck()
+    await expect(popup.locator('#submit-apply')).toBeDisabled()
+
+    await popup.setViewportSize({ width: 400, height: 700 })
+    await popup.evaluate(() => { document.body.style.zoom = '200%' })
+    const dimensions = await popup.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    }))
+    expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.viewport)
+    await expect(popup.locator('#apply-company')).toBeVisible()
+    await expect(popup.locator('#submit-apply')).toBeVisible()
+    await expect(popup.locator('#result-title')).not.toBeEmpty()
+    // All facts and errors are text and live-region content, never badge-only.
+    expect(await popup.locator('[role="status"]').count()).toBeGreaterThan(0)
+  })
+})
