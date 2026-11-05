@@ -4350,3 +4350,31 @@ session timezone and test-process TZ set to UTC, matching CI. A local cluster
 initialized in America/New_York otherwise produces offset/naive-time fixture
 failures. With that setup, the full local PostgreSQL suite passed **737 tests**;
 the extension Node suite passed **70**, and the frontend production build passed.
+
+## Extension release-candidate acceptance (EXT-48–50)
+
+The working release candidate is main `569835caf29f4b2623fd0e60730332b044d7e02b`
+(PR #197 merged). This section is an acceptance record, not permission to
+change a production service or close a gate without observing it.
+
+### Candidate and target identity (EXT-48.01)
+
+| Item | Recorded value / acceptance boundary |
+|---|---|
+| Source candidate | `569835caf29f4b2623fd0e60730332b044d7e02b` |
+| Previous compatible application source for local rehearsal | `0c42e999772181907d8dcd590ced2c4fa5708b84`; its backend runtime and migrations are identical to this candidate |
+| Extension artifact | `jobgrid-pilot-v0.1.0.zip`, inactive shell, `manifest.json` and `popup.html` only |
+| Artifact SHA-256 | `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1` |
+| Trusted frontend | `https://csv-website-steel.vercel.app`; exact optional-host scope only |
+| Observed frontend deployment | Vercel production `dpl_7wVcNEdGQE74XYXDDQQkJB3LsNWu`, READY, source `569835c` on 2026-11-05 |
+| Documented backend | `https://jobgrid-api.onrender.com`; current deployed source not verified in this acceptance |
+| Isolated deployed database/object store | NOT SELECTED / NOT VERIFIED; do not use the production database for a rehearsal |
+| Operator and two controlled OAuth identities | NOT PROVIDED; do not substitute a personal session or dev login for live OAuth proof |
+| Render access | Workspace identification requires user confirmation; no workspace or provider setting has been changed |
+| Earlier release prerequisites | C-09/C-10 controlled accounts, complete recovery and provider acceptance remain open in their owning records |
+
+A READY frontend deployment says nothing about backend version, database
+isolation, OAuth success or the contents of the installed extension. Record
+all four separately. The inactive ZIP cannot execute the connect/check/visit/
+apply pilot journey. Promoting development code to a production manifest is
+an additional activation decision, not a documentation or packaging step.
