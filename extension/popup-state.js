@@ -10,7 +10,11 @@ export function summarizeWarning(record) {
     match?.confidence === 'exact' || match?.confidence === 'canonical')
   const possible = facts.matches.some(match => match?.confidence === 'possible')
   let kind, title, detail
-  if (definite) {
+  if (record.apply_status === 'saved') {
+    kind = 'saved'
+    title = 'Application saved in JobGrid'
+    detail = 'JobGrid confirmed this application save. The earlier check is preserved below.'
+  } else if (definite) {
     kind = 'applied'
     title = 'Application found'
     detail = 'An application matches this job URL.'
