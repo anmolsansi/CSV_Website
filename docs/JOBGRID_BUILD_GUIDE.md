@@ -4585,3 +4585,37 @@ scan; confirmed apply uses stable receipts and keeps prior applied facts;
 restore is composed/transactional and excludes operational receipts; additive
 tables survive compatible code rollback. Existing tests exercise these seams;
 missing live proof stays identified by its owner instead of inferred from CI.
+
+### Evidence bundle and release ownership (EXT-50.02)
+
+| Evidence layer | Observed record | What it does not establish |
+|---|---|---|
+| Candidate source/merge | Main `569835c`, PR #197 merged; predecessor `0c42e99` | Installed/active extension, backend deployed revision or isolation |
+| Merged main CI | [Full CI](https://github.com/anmolsansi/CSV_Website/actions/runs/42002738031), [SQLite](https://github.com/anmolsansi/CSV_Website/actions/runs/42002738119), [timezones](https://github.com/anmolsansi/CSV_Website/actions/runs/42002738003): success on `569835c` | Live OAuth, actual provider recovery or 48h pilot |
+| Original package evidence | [PR #197 source CI/artifact](https://github.com/anmolsansi/CSV_Website/actions/runs/42000972910); deterministic inactive shell hash above | Functioning active-pilot package or store approval |
+| This local recovery exercise | 67 existing recovery tests passed; separate old/current processes preserved six nonempty table hashes; ZIP restored/replayed and PDF hash matched | Selected-environment failover or private cloud object recovery |
+| Extension contracts | 70 existing Node tests passed; package rebuilt with the same SHA-256 and two-file allowlist | Browser-owned grants, actual MV3 suspension or screen-reader verification |
+| Frontend deployment | Vercel READY deployment/source recorded in EXT-48.01 | Backend/provider state; actual health/session reads were inconclusive |
+| Public disclosures/listing | Draft privacy file and README packet prepared; official Chrome documentation compared | Owner-approved public policy/support locations or functional-package certification |
+| Feature release sign-off | NOT ACCEPTED | No earlier/later external gate is inferred complete |
+
+The source/CI links are immutable evidence of their recorded revisions. Check
+this continuation PR's own head before merging its documents; its validation
+state is recorded in the PR and parent issue #184 rather than inferred from
+the merged baseline. A full CI pass never starts or completes the observation
+clock. Public evidence contains only safe revisions, counts, hashes, outcomes
+and blockers; cookies, backups and controlled account records remain private.
+
+| Responsibility | Assigned authority / current availability |
+|---|---|
+| Code/doc preparation and local fixture evidence | This branch and traceable micro commits under #184 |
+| Deployed operator, isolated DB/storage identity and rollback window | Requires owner selection/confirmation; not supplied |
+| Two controlled real-provider identities | Requires owner availability; no personal session reuse or production TEST_AUTH |
+| Active extension promotion and compatibility approval | Requires explicit candidate decision and new package/hash; current release stays inactive |
+| 48h observation and cold/reconnect sign-off | Authorized operator/reviewer; not started |
+| Publisher identity, store item ID, public policy/support approvals | Requires distribution owner; not supplied |
+| Final release reviewer | Must review the remaining gates and exact artifact/revisions; not assigned by this document |
+
+No merge, provider deploy/restart, data mutation, store upload or public
+activation is authorized merely by writing the handoff. Keep EXT-48, EXT-49
+and final EXT-50 acceptance unchecked until their own criteria are observed.
