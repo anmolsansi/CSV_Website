@@ -26,7 +26,7 @@ export function createWorker() {
   ])
   let listener, updated, removed, permissionRemoved
   let activeAccount = 101
-  const behavior = { checkFailure: false, visitFailure: false, alreadyVisited: false, candidateFailure: false }
+  const behavior = { checkFailure: false, visitFailure: false, applyFailureOnce: false, alreadyVisited: false, candidateFailure: false }
   const calls = []
   const scriptOperations = []
   const chrome = {
@@ -73,6 +73,11 @@ export function createWorker() {
           if (behavior.candidateFailure) return { version: 1, request_id: message.request_id, ok: false }
           return { version: 1, request_id: message.request_id, ok: true, url: JOB,
             company: 'Acme', title: 'Engineer' }
+        }
+        if (message.kind === 'apply' && behavior.applyFailureOnce) {
+          behavior.applyFailureOnce = false
+          return { version: 1, request_id: message.request_id, ok: false,
+            error: { code: 'timeout', message: 'Save status unknown' } }
         }
         if ((message.kind === 'check' && behavior.checkFailure) ||
             (message.kind === 'visit' && behavior.visitFailure)) {
