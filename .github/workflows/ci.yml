@@ -422,6 +422,16 @@ jobs:
           python ../scripts/verify_junit.py ci-artifacts/c07-backend-regressions.xml \
             --label "C-07 backend regressions" --min-tests 1 --max-skips 0
 
+      - name: Record EXT-45 bounded warm lookup benchmark (synthetic accounts only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          pytest tests/test_browser_memory_matches.py::test_ext_45_case_01_02_warm_lookup_with_ten_thousand_visits \
+            -q -s | tee ci-artifacts/ext45-benchmark.txt
+          grep -Eq '^EXT-45 benchmark action=check outcome=ok .*visits=10000 samples=30 .*warm_p95_ms=' \
+            ci-artifacts/ext45-benchmark.txt
+
       - name: Verify backend test collection is nonempty
         shell: bash
         run: |
@@ -456,6 +466,7 @@ jobs:
             backend/ci-artifacts/c07-backend-regressions.xml
             backend/ci-artifacts/pytest-collection.txt
             backend/ci-artifacts/pytest.xml
+            backend/ci-artifacts/ext45-benchmark.txt
 
       - name: Upload backend failure artifacts
         if: failure()
