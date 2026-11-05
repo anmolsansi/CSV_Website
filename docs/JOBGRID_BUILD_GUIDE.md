@@ -4067,3 +4067,63 @@ site access. This stops new checks/writes without changing existing account
 visits. To forget persisted visit data, use the existing authenticated
 DELETE /crm/browser-memory/visits explicit-confirmation flow once its popup
 UX is implemented. Do not roll back migrations or delete CRM applications.
+
+
+### Development popup, manual checks and session safety (EXT-33–36)
+
+The released extension remains inactive: `extension/manifest.json` has no
+worker or content scripts, and `extension/popup.html` contains no script.
+Only `extension/manifest.dev.json` loads the background worker and
+`extension/popup.dev.html` / `popup.dev.js` interface. This is a
+development pilot, not a deployed product or permission/OAuth acceptance.
+
+**Current-tab fallback:** `ext33:current-tab-check` accepts only an exact
+internal popup message containing protocol version and request UUID. The worker
+looks up the active tab using Chrome's existing activeTab gesture, validates
+a public HTTPS URL (no local or IP hosts, credentials, credential-like query,
+fragments or app-origin URL), checks the currently selected JobGrid account and
+calls only the existing /check route via the isolated bridge. It does not
+extract form data, ask for an additional site grant, save an external visit
+or mark an application applied. It records `manual_only` check evidence in
+`chrome.storage.session` with the pre-write result.
+
+**Pending apply without submission:** A trusted popup can call
+`ext34:stage-apply` with `tab_id`, `company` (1–320 characters) and
+`title` (1–500 characters). The worker derives the URL from an already checked
+tab for the selected account. Pending intent contains account ID, tab ID, URL,
+trimmed employer/title, UUID and timestamp. At most 20 pending records are
+kept for 15 minutes in extension session storage. Repeated identical staging
+preserves the same UUID. Edits create a new one. `pending-apply` returns
+only current-account/current-tab intent, and `clear-pending` drops one.
+Account changes, tab changes, reconnect, pause and disconnect erase stale
+intent. This state has **no** server-side write. Explicit editable confirmation,
+retry/recovery and /apply are separate EXT-38–39 requirements.
+
+**Lifecycle and badges:** `ext35:set-paused` requires a trusted popup and
+boolean `paused`. Pausing stops automation and manual checks, removes
+warnings/drafts and clears tab badges. Resuming verifies the selected
+server-owned account before checks may run. Disconnect clears the connection,
+warnings, drafts, pause choice and badges but leaves previously saved visits
+and applications untouched. Badge A identifies a definite applied URL,
+V identifies a prior visit, and ? identifies possible/company evidence.
+Badges are invalidated on navigation, permission revocation and tab closure.
+No badge means no current evidence, **not** a confirmed no-application state.
+
+**Popup warning contract:** `extension/popup-state.js` is a pure view model:
+definite applied (exact/canonical) takes priority over possible, visited,
+employer-history and incomplete lookups. `popup.dev.js` renders labels and
+job/employer text only through DOM textContent and safely limits list output.
+Loading, unavailable and unchecked states never claim the user has not
+applied. A manual check explicitly says its visit was not saved. A failed
+visit continues to report `save_unknown`.
+
+**Verification:** Run `cd extension && npm test`, including
+`tests/auto-memory.test.mjs` and `tests/popup-state.test.mjs`. The tests
+simulate account changes, unsafe public URLs, unchanged/edited draft UUIDs,
+pause and badge cleanup, and hostile text. Also run the existing CI,
+SQLite-release and browser-timezone suites before merging. A real unpacked
+Chrome account/optional-permission flow, UX accessibility audit, navigation
+under worker suspension, deployed OAuth and store approval remain independent
+EXT-41–50 gates. Roll back by disabling the development extension or reverting
+the feature branch. No backend API, database migration, production setting,
+new dependency or paid service changes.
