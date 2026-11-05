@@ -418,3 +418,23 @@ test('EXT-35 pause blocks observations, clears warnings/badges and resume rechec
   assert.equal((await w.send(packet('ext35:status'))).data.connected, false)
   assert.equal(w.storageSession.jobgridPaused, undefined)
 })
+
+
+test('EXT-34 never accepts a job-page sender or reuses a draft after navigation', async () => {
+  const w = createWorker()
+  await optIntoLever(w)
+  w.emitUpdated(2, { status: 'complete' })
+  await sleep(650)
+  const stage = packet('ext34:stage-apply', { tab_id: 2, company: 'Acme', title: 'Engineer' })
+  const forged = await w.send(stage, { ...POPUP, url: JOB })
+  assert.equal(forged.ok, false)
+  assert.equal(w.storageSession.jobgridPendingApply, undefined)
+  const good = await w.send(stage)
+  assert.equal(good.ok, true)
+  w.emitUpdated(2, { url: 'https://jobs.lever.co/acme/different', status: 'loading' })
+  await sleep(30)
+  assert.equal(w.storageSession.jobgridPendingApply?.['2'], undefined)
+  const noCheck = await w.send(stage)
+  assert.equal(noCheck.error.code, 'no_check')
+  assert.equal(w.calls.filter(([, m]) => m.kind === 'apply').length, 0)
+})
