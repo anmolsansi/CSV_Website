@@ -10,6 +10,7 @@ const DISCONNECT = 'ext26:disconnect'
 const SITE_OPT = 'ext30:site-opt-in'
 const SITE_STATUS = 'ext30:site-status'
 const TAB_STATUS = 'ext32:tab-status'
+const MANUAL_CHECK = 'ext33:current-tab-check'
 const MAX_BYTES = 8192
 const TIMEOUT_MS = 8000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -78,6 +79,7 @@ function validMessage(message) {
     Object.hasOwn(ATS_ORIGINS, message.host) && typeof message.enabled === 'boolean'
   if (message.type === SITE_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'host']) && Object.hasOwn(ATS_ORIGINS, message.host)
+  if (message.type === MANUAL_CHECK) return Object.keys(message).length === 3
   if (message.type === TAB_STATUS) return keysOnly(message,
     ['type', 'version', 'request_id', 'tab_id']) && validId(message.tab_id)
   if (message.type === COMMAND) return keysOnly(message,
@@ -231,7 +233,7 @@ chrome.tabs.onUpdated?.addListener((tabId, changes, tab) => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS].includes(message?.type)) return false
+  if (![PROBE, CONNECT, COMMAND, DISCONNECT, SITE_OPT, SITE_STATUS, TAB_STATUS, MANUAL_CHECK].includes(message?.type)) return false
   const requestId = validUUID(message?.request_id) ? message.request_id : null
   if (!popupSender(sender) || !validMessage(message) && message.type !== PROBE) {
     sendResponse(answer(requestId, error('forbidden_sender', 'Unsupported request')))
