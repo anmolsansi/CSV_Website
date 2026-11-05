@@ -402,3 +402,75 @@ job applications or production backend data during these checks.
 A production extension activation, store submission or rollout is
 explicitly outside this ZIP. Unproven Chrome permissions, worker
 suspension, accessibility and OAuth gates remain open.
+
+## Store preparation packet (EXT-49) — draft, not submitted
+
+The [privacy disclosure draft](../docs/CHROME_EXTENSION_PRIVACY.md) describes
+what the inactive ZIP actually does and separately explains the development
+implementation. The publisher must approve the policy/contact locations and
+operator commitments before this packet can be submitted. EXT-48 deployed
+pilot acceptance has not been established. Do not upload the inactive shell
+as a functioning job-memory extension.
+
+### Proposed listing text for owner review
+
+- **Existing package name:** JobGrid Job Memory (Pilot).
+- **Artifact description:** Inactive engineering shell for a future opt-in JobGrid job-memory companion.
+- **Language:** English; other locales have not been prepared or reviewed.
+- **Current behavior:** This build displays a disconnected status. It does not
+  connect an account, track visits, check history, mark applications or request
+  site access. Account connection and job-memory controls are in the separate
+  development implementation and are not included in this ZIP.
+- **Future active single purpose, not a current release claim:** Help the
+  selected JobGrid account distinguish recorded visits, prior applications and
+  possible employer history while reviewing a job. Explicitly confirming an
+  application records a fact in JobGrid; it does not submit a job application.
+- **Category/distribution audience/regions:** Await publisher selection for an
+  accepted functioning candidate; no public availability is implied.
+
+This is engineering review copy, not publication-ready marketing. All active
+feature claims must be rechecked against the exact active package, normal
+Chrome permissions, deployed account transport and operator-approved policy.
+
+### Candidate package and review handoff
+
+| Item | Prepared evidence / remaining requirement |
+|---|---|
+| Package | `jobgrid-pilot-v0.1.0.zip`; explicit members `manifest.json`, `popup.html` |
+| SHA-256 | `1c4e2cc5d428cec9d33596464da0c324e14deaf891be8f8f7049cd5eb4c566d1` |
+| Existing accepted package CI | [PR #197 source CI](https://github.com/anmolsansi/CSV_Website/actions/runs/42000972910); published source `9123064`, merged as `569835c` |
+| Chrome package load | Unmodified ZIP version/popup/zero-host/zero-worker/uninstall checks passed on installed Chrome 157.0.8103.38; no active function implied |
+| Publisher and stable store ID | NOT PROVIDED; unpacked IDs are path-specific and unsuitable |
+| Public policy/support links | NOT PROVIDED / NOT APPROVED; do not substitute invented or placeholder production URLs |
+| Store icon and screenshots | Not prepared for an accepted active package; use only synthetic, accurately represented UI |
+| Submission/review status | NOT SUBMITTED / NOT APPROVED |
+
+Build and independently check the candidate before handoff:
+
+```sh
+node extension/package.mjs
+(cd extension/dist && shasum -a 256 -c jobgrid-pilot-v0.1.0.zip.sha256 && unzip -t jobgrid-pilot-v0.1.0.zip)
+```
+
+These checksum commands use macOS `shasum`; Linux CI uses `sha256sum -c`.
+Keep the ZIP and sidecar together. A changed source/version is a new candidate,
+requiring new checksums, privacy/permission review and acceptance; never reuse
+the recorded hash for a promoted development build. A signing key, browser
+profile, test manifest, account record, cookie, .env or private backup is never
+a store input. The package tests independently decode the archive and verify
+its explicit member allowlist, deterministic bytes and negative boundaries.
+
+### Install, remove, restore and support
+
+Use the earlier checksum/unpacked-install instructions and a disposable profile.
+The shell should show “Not connected yet,” request no site access and leave
+server history untouched. To stop it, disable/remove it in Chrome. Removing a
+development install clears browser extension state, not previously saved visits
+or applications. Its confirmed Forget visits removes only external visit memory;
+restoring an older backup can bring it back. Do not describe uninstall as erasing
+all server data or private backup copies.
+
+Before public distribution, the owner must supply a reachable approved support
+location and identify who handles account/deletion/recovery questions. No email
+was sent, support account created, store record uploaded, listing published or
+production extension enabled by preparing this packet.
