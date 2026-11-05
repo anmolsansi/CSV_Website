@@ -1,6 +1,6 @@
 # JobGrid Chrome extension, foundation pilot
 
-This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, EXT-26–28 account-bound worker/ATS route classifier, and EXT-29–32 development-only page observation for the 50-step roadmap in `development.md` §9. **The release extension is not yet a functioning history tracker.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Full onboarding, page observation, confirmation UI and Chrome/OAuth pilot remain future work.
+This directory includes the EXT-01–03 foundation, EXT-05 disposable session probe, EXT-26–28 account-bound worker/ATS route classifier, EXT-29–32 development-only page observation, and EXT-33–36 current-tab and popup flows for the 50-step roadmap in `development.md` §9. **The release extension is not yet a functioning history tracker.** The release shell does not request host permissions, install content scripts, make network calls, track navigation or save visits. The bridge is injected only by the development worker after an explicit trusted tab connection. The backend supports session/check/visit/apply/forget, but the packaged release popup is inert, so no automatic tracking or application submission is enabled. Full onboarding, page observation, confirmation UI and Chrome/OAuth pilot remain future work.
 
 ## Environment and trust
 
@@ -107,9 +107,9 @@ Stale tab, revoked permission, disconnected account and failed checks cause
 Per-host opt-in persists in chrome.storage.local. Current-tab check
 warnings are bounded and kept only in trusted chrome.storage.session, then
 cleared on disconnect/reconnect. The worker does not restore a signed-in
-connection after suspension. The packaged popup still has no connection,
-permission or warning controls. Those user-visible controls belong to
-EXT-35–40; until they exist, this path is exercisable only by a trusted
+connection after suspension. The development manifest now opens popup.dev.html for connection, pause,
+manual checking and read-only warnings. The release popup remains inert, and
+full opt-in/apply/forget confirmation UX remains EXT-37–40; until they exist, this path is exercisable only by a trusted
 development harness, not by a regular installed end user.
 
 Run cd extension && npm test for isolated candidate privacy, permission,
@@ -119,3 +119,57 @@ deployed OAuth, end-to-end app availability, accessible warning UI or store
 readiness. Disable the development extension to stop observation. No backend
 schema migration, API contract, paid service or production rollout is part
 of EXT-29–32.
+
+
+## Development-only popup and session lifecycle (EXT-33–36)
+
+Load a disposable copy of extension/ with manifest.dev.json as manifest.json.
+Open one signed-in JobGrid tab. Use **Connect one JobGrid tab** in the dev
+popup to approve only the exact JobGrid frontend origin and connect to the
+server-resolved account. Keep exactly one matching JobGrid tab open. The
+release manifest still opens the no-script popup.html and has no worker.
+
+- **Check current tab** is an explicit, read-only activeTab gesture for a public
+  HTTPS page, including unsupported job sites. It rejects local/private hosts,
+  IP hosts, userinfo, credential-like query keys and fragment URLs, never
+  injects a content script on the page, does not grant the page API access and
+  does not record a visit. The worker rechecks the selected account before
+  showing the original check result. The popup cannot select an arbitrary API
+  origin.
+- The worker-only ext34:stage-apply and ext34:pending-apply commands maintain
+  at most 20 session-only, 15-minute pending drafts. An unchanged draft reuses
+  its UUID. Any changed employer, title or URL gets a new UUID; account
+  revalidation, reconnect, disconnect and tab navigation clear stale drafts.
+  These are not application submissions. The dev popup does **not** expose
+  an Apply button. Editable confirmation and real submission are EXT-38–39.
+- **Pause checks** stops automatic ATS checks and manual checking, clears
+  current-tab warnings, pending drafts and badge evidence. Resume rechecks the
+  selected server account. **Disconnect** clears session-only state and badges
+  without deleting previously saved JobGrid visits or applications.
+- Badges mean **A** = definite applied URL, **V** = previously visited, and
+  **?** = possible application or employer-history evidence. Badges are scoped
+  to tabs and removed on navigation, pause, permission revocation and
+  disconnect. They are warnings, not a verified saved-visit receipt.
+- popup-state.js derives separate definite applied, possible, visited,
+  company-history, incomplete-search and no-match warnings from the
+  **pre-write** /check facts. popup.dev.js adds untrusted titles/employers only
+  with textContent, never HTML. Missing or failed results are not interpreted
+  as "not applied". The manual-check state is labeled "not saved".
+
+### Message contracts and verification
+
+All commands require the exact packaged popup sender, protocol v1 and a UUID
+request_id. ext33:current-tab-check takes no payload. ext34:stage-apply takes
+tab_id, company and title, and derives the checked URL inside the worker.
+ext34:pending-apply and ext34:clear-pending take tab_id. ext35:set-paused
+takes paused:boolean; ext35:status takes no payload. All are internal
+extension messages, never page messages, new backend routes or public APIs.
+
+Run cd extension && npm test. The relevant regressions are in
+tests/auto-memory.test.mjs and tests/popup-state.test.mjs. They simulate
+tab navigation, session changes, badges, public URLs and hostile text.
+Manual Chrome optional permissions, production OAuth, service-worker
+suspension and screen-reader interaction are separate pilot acceptance gates,
+not established by these VM tests. Unload the dev extension or revert the
+feature branch to roll back. No migration, new service or paid resource is
+required.
