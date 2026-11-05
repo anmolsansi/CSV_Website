@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>JobGrid Memory, Development</title>
+  <style>
+    :root { font: 14px/1.45 system-ui, sans-serif; color-scheme: light dark; }
+    body { width: 340px; max-width: 100%; margin: 0; padding: 16px; box-sizing: border-box; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    h2 { font-size: 15px; margin: 0 0 6px; }
+    p { margin: 6px 0 10px; overflow-wrap: anywhere; }
+    .muted { opacity: .8; }
+    button { margin: 4px 4px 4px 0; padding: 7px 10px; min-height: 34px; cursor: pointer; }
+    button:disabled { cursor: default; opacity: .5; }
+    section { border-top: 1px solid currentColor; padding-top: 10px; margin-top: 12px; }
+    ul { padding-left: 20px; max-height: 125px; overflow-y: auto; }
+    li { overflow-wrap: anywhere; margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>JobGrid Memory</h1>
+    <p class="muted">Development pilot only. No automatic application submission.</p>
+    <section aria-labelledby="account-heading">
+      <h2 id="account-heading">Account</h2>
+      <p id="connection" role="status" aria-live="polite">Loading connection status</p>
+      <button type="button" id="connect">Connect one JobGrid tab</button>
+      <button type="button" id="pause" disabled>Pause checks</button>
+      <button type="button" id="disconnect" disabled>Disconnect</button>
+    </section>
+    <section aria-labelledby="check-heading">
+      <h2 id="check-heading">Current job page</h2>
+      <button type="button" id="check" disabled>Check current tab</button>
+      <p id="feedback" role="status" aria-live="polite">No job checked yet.</p>
+      <div id="result" aria-live="polite">
+        <h2 id="result-title"></h2>
+        <p id="result-detail"></p>
+        <p id="result-save" class="muted"></p>
+        <ul id="matches" aria-label="Matching applications"></ul>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="popup.dev.js"></script>
+</body>
+</html>
