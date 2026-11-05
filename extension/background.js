@@ -103,6 +103,41 @@ function validMessage(message) {
   return false
 }
 
+async function lifecycleStatus() {
+  return { ok: true, data: {
+    protocol_version: VERSION, connected: connection !== null, paused,
+    ...(connection ? { account_id: connection.accountId,
+      account_label: connection.accountLabel } : {}),
+  } }
+}
+
+async function setPaused(next) {
+  const selected = connection
+  if (!selected) return error('not_connected', 'Connect JobGrid first')
+  if (!next) {
+    const tab = await checkedTab(selected.tabId).catch(() => null)
+    if (!tab || tab.url !== selected.tabUrl) {
+      await clearConnection()
+      return unavailable()
+    }
+    const session = await bridge(selected.tabId, 'session', {}, undefined, selected.documentId)
+    if (!session.ok || session.data.account_id !== selected.accountId) {
+      await clearConnection()
+      return error('account_changed', 'Reconnect your JobGrid account')
+    }
+  }
+  if (connection !== selected) return unavailable()
+  paused = next
+  await chrome.storage.session.set({ jobgridPaused: paused })
+  if (paused) {
+    clearObservationTimers()
+    await warningWrites
+    await clearAllPending()
+    await chrome.storage.session.remove('jobgridTabChecks')
+  }
+  return lifecycleStatus()
+}
+
 async function clearConnection() {
   generation++
   connection = null
@@ -276,6 +311,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === SITE_OPT) return changeSiteOptIn(message.host, message.enabled)
     if (message.type === SITE_STATUS) return readSiteStatus(message.host)
     if (message.type === TAB_STATUS) return readTabStatus(message.tab_id)
+    if (message.type === LIFECYCLE_STATUS) return lifecycleStatus()
+    if (message.type === SET_PAUSED) return setPaused(message.paused)
     if (message.type === MANUAL_CHECK) return manualCheckCurrentTab()
     if (message.type === STAGE_APPLY) return stagePendingApply(message.tab_id, message.company, message.title)
     if (message.type === PENDING_APPLY) return pendingApplyStatus(message.tab_id)
