@@ -1,8 +1,10 @@
-# Repo Context — JobGrid — 2026-09-28
+# Repo Context — JobGrid — 2026-11-05
 
 Baseline lineage: `2c485a2ba70edaa419ccea5cbf6f69ad7174b179` on `main` after PR #161, extended by C-04 in PR #162, C-05 in PR #163, C-06 in PR #167, C-07 in PR #169, and C-08 in PR #171.
 
 This file is the compact repository context for implementation agents. Read `development.md` for the full completion plan, while honoring newer accepted architecture decisions recorded in focused C-package evidence. Historical planning text can describe an earlier infrastructure choice; the user-selected C-09 zero-dollar constraint is recorded in `docs/C09_STAGING_OPERATIONS.md` and PR #173 and supersedes the earlier paid Render-disk assumption for C-09 implementation.
+
+Current extension source baseline: main `569835caf29f4b2623fd0e60730332b044d7e02b` after PR #197. The older C-package provider statements below remain historical evidence; EXT-48 does not claim their external closure.
 
 ## Stack and runtime
 
@@ -11,7 +13,7 @@ This file is the compact repository context for implementation agents. Read `dev
 - Database: PostgreSQL is the deployment target. SQLite is also an explicitly supported/tested runtime path.
 - Auth: server-side session cookies. Google, Microsoft, and Apple OAuth configuration lives in `backend/app/config.py`. `TEST_AUTH` exists only for test/dev flows and must be false in production.
 - Observability: FastAPI metrics middleware plus optional Sentry.
-- Main migration head: `018_bulk_undo_foundation.py`.
+- Main migration head: `019_browser_visits.py` (additive owner-owned visits/apply receipts).
 - Production document bytes: private S3-compatible object storage through `backend/app/services/document_storage.py`; current C-09 target is Supabase Storage Free. Local/dev tests may still use the filesystem adapter.
 
 Pinned dependencies live in `backend/requirements.txt` and `frontend/package-lock.json`.
@@ -202,22 +204,22 @@ A historical `COMPLETED` label is not enough to claim release completion. Use cu
 
 ## Where to start for future work
 
-### Chrome extension planning context — 2026-10-16
+### Chrome extension implementation and acceptance — 2026-11-05
 
-Focused inspection baseline: `48bf33c16c9cc541ec709988d7ca29cf084385de` on `main`. This refresh covers the extension seams only; the historical provider/release statuses above were not re-audited. The extension is specified in `development.md` section 9. EXT-01–03 foundation files are locally implemented on branch `feat/ext-01-03-extension-foundation`, with 12 Node tests passing; unpacked-Chrome, real `/session`, deployed OAuth, tracking and release acceptance remain pending.
+Current source: main `569835c`, including merged EXT-01–47 changes in PRs #185–197. The development worker/popup implements account-bound check/visit/confirmed-apply and pause/forget/disconnect flows. The version 0.1.0 release ZIP deliberately includes only an inactive manifest/popup shell. Successful package load is distinct from active-pilot and live OAuth acceptance. EXT-48–50 documentation preparation is in progress; deployed pilot, 48-hour observation and public publisher/privacy/support inputs remain unaccepted. See the fifty-task map and recovery record in `docs/JOBGRID_BUILD_GUIDE.md` and draft `docs/CHROME_EXTENSION_PRIVACY.md`.
 
 - `backend/app/auth.py::get_current_user` reads the `session_token` cookie and resolves the account server-side. Do not copy this cookie into extension storage or add a second login system.
-- `frontend/vercel.json` proxies `/api/:path*` to FastAPI. `frontend/src/api/client.js` uses Axios with credentials and a configurable API base. The extension proposal uses a trusted JobGrid tab's same-origin `/api` proxy; this must pass real Chrome/OAuth acceptance before release.
-- `backend/app/routers/crm.py::_find_application_matches` checks only tracks with non-null `applied_at`, returns exact/canonical/possible matches and alias-aware `company_history_count`. `POST /crm/application-matches` accepts `{url, company?, title?}`. Company and title limits are 320 and 500 characters. Shared matching must retain those semantics.
+- `frontend/vercel.json` proxies `/api/:path*` to FastAPI. `frontend/src/api/client.js` uses Axios with credentials and a configurable API base. The development bridge uses a trusted JobGrid tab's same-origin `/api` proxy; deployed Chrome/OAuth acceptance remains required before active release.
+- `backend/app/services/job_identity.py` owns shared legacy/browser application matching and checks only tracks with non-null `applied_at`, returns exact/canonical/possible matches and alias-aware `company_history_count`. `POST /crm/application-matches` accepts `{url, company?, title?}`. Company and title limits are 320 and 500 characters. Shared matching must retain those semantics.
 - `backend/app/services/job_identity.py::canonicalize_job_url` limits URLs to 2048 characters; removes only specified tracking parameters, default ports and fragments; preserves meaningful path/query identity. Original URLs remain separate from derived identity.
 - `backend/app/routers/capture.py` and `services/capture.py` create/replay a captured row without visiting or applying. `crm.py::bulk_create_from_rows` uses lifecycle mutations for explicit application state. Reuse services and transaction patterns; never call a committing HTTP handler from another handler.
 - `backend/app/models.py::UrlHistory` records import first-seen URLs (`routers/upload.py` writes it). It is **not visit evidence**. `CsvRow.clicked` is row visit state; `JobTrack.applied_at` is durable application evidence. Neither an imported URL nor a saved/opened track proves an application.
-- The extension foundation is merged and EXT-04–06 add a read-only cookie-authenticated `/crm/browser-memory/session` route, disposable dev-manifest session worker/browser fixture, and owner-scoped visit/receipt models. Migration head advances from 018 to `019_browser_visits.py`. Chrome/deployed OAuth acceptance remains unverified, and `/check`, `/visit`, `/apply` and `/visits` are not implemented yet.
+- `backend/app/routers/browser_memory.py` registers authenticated session/check/visit/apply/forget routes; the owning service supplies bounded owner memory, idempotency and shared rate windows. Mutation guards require exact Origin, browser header and expected account equal to the cookie owner. Migration head is 019. Visit backup metadata is composed into v2 JSON/complete ZIP; operational apply receipts are excluded. These paths are implemented and tested; current deployed backend revision, controlled OAuth and active-pilot acceptance are separate unknowns.
 - Existing regression anchors: `backend/tests/test_application_memory.py`, `test_capture_api.py`, `test_job_identity.py`, `test_backup_contract.py`, `test_complete_backup.py`; browser tests under `frontend/tests/`; native Node tests under `frontend/unit/`. Reuse pytest, Playwright and Node's test runner; no extension framework is needed.
-- Existing evidence/document/capture receipt tables are domain-specific, not a generic apply receipt store. The proposed `browser_apply_receipts` table reuses their digest/transaction pattern and must be classified as operational backup-excluded state. New write requests assert the connected account against the cookie owner on the server to prevent account-switch races.
+- Existing evidence/document/capture receipt tables are domain-specific, not a generic apply receipt store. The implemented `browser_apply_receipts` table uses owner/UUID/digest identity and is classified as operational backup-excluded state. New write requests assert the connected account against the cookie owner on the server to prevent account-switch races.
 - New private persisted data must join `backend/app/backup_schemas.py` inventory and the composed backup session boundary. Preserve legacy readers and all-or-nothing restore. Never reinterpret `url_history` as visits to avoid a migration.
 
-This context is a planning prerequisite, not a builder handoff. Before implementation, assemble one section-9 microtask with its complete contracts, current inspected source, relevant skill rules and intake checklist; do not hand a builder an isolated table row.
+This context describes implementation boundaries and preserves external release gaps; it does not certify live acceptance. Before implementation, assemble one section-9 microtask with its complete contracts, current inspected source, relevant skill rules and intake checklist; do not hand a builder an isolated table row.
 
 1. Read this file for current boundaries.
 2. Read the relevant C package plus `docs/C09_STAGING_OPERATIONS.md` for the zero-dollar infrastructure decision.
