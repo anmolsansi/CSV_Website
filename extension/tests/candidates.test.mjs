@@ -62,8 +62,9 @@ test('EXT-29 ignores form descendants, hidden headings, oversize strings and unk
     'h1': node('T'.repeat(501)),
     '.posting-company': node('C'.repeat(321)),
   })
-  assert.equal(a.send().title, null)
-  assert.equal(a.send().company, null)
+  const result = a.send()
+  assert.equal(result.title, null)
+  assert.equal(result.company, null)
   assert.equal(a.queries.length <= 6, true)
 })
 
