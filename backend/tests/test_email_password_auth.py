@@ -8,6 +8,7 @@ from app.models import EmailActionToken, PasswordCredential, User
 
 def _enable(monkeypatch):
     monkeypatch.setattr(settings, "EMAIL_PASSWORD_AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "EMAIL_AUTH_TRANSPORT", "smtp")
     monkeypatch.setattr(settings, "SMTP_HOST", "example.test")
     monkeypatch.setattr(settings, "EMAIL_FROM", "noreply@example.test")
 
@@ -122,3 +123,86 @@ def test_register_fails_closed_without_smtp(client, monkeypatch):
     assert client.post("/auth/email/register", json={
         "email": "no-smtp@example.test", "password": "a secure registration password"
     }).status_code == 503
+
+
+
+def test_brevo_transport_sends_via_https_api_and_signup_link(client, db_session, monkeypatch):
+    """Actual route uses HTTPS, with API call mocked to avoid sending real email."""
+    from types import SimpleNamespace
+    from app.services import email_transport
+    _enable(monkeypatch)
+    monkeypatch.setattr(settings, "EMAIL_AUTH_TRANSPORT", "brevo")
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "private-test-api-key")
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "verified@example.test")
+    monkeypatch.setattr(settings, "BREVO_SENDER_NAME", "JobGrid")
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return SimpleNamespace(status_code=201)
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    email = "brevo-test-registration@example.test"
+    response = client.post("/auth/email/register", json={
+        "email": email, "password": "a strong production password"
+    })
+    assert response.status_code == 202, response.text
+    assert len(calls) == 1
+    url, sent = calls[0]
+    assert url == "https://api.brevo.com/v3/smtp/email"
+    assert sent["headers"]["api-key"] == "private-test-api-key"
+    assert sent["timeout"] <= 10.0
+    assert sent["json"]["sender"] == {
+        "email": "verified@example.test", "name": "JobGrid"
+    }
+    assert sent["json"]["to"] == [{"email": email}]
+    assert "#email_action=verify&token=" in sent["json"]["htmlContent"]
+    assert "private-test-api-key" not in sent["json"]["htmlContent"]
+    assert db_session.query(User).filter_by(email=email).first() is None
+
+
+def test_brevo_missing_key_fails_closed_without_smtp_fallback(client, monkeypatch):
+    _enable(monkeypatch)
+    monkeypatch.setattr(settings, "EMAIL_AUTH_TRANSPORT", "brevo")
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "")
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "sender@example.test")
+    response = client.post("/auth/email/register", json={
+        "email": "missing-key@example.test", "password": "a strong production password"
+    })
+    assert response.status_code == 503
+
+
+def test_brevo_provider_rejection_cleans_up_token(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+    _enable(monkeypatch)
+    monkeypatch.setattr(settings, "EMAIL_AUTH_TRANSPORT", "brevo")
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "private-test-api-key")
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "verified@example.test")
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *args, **kwargs: SimpleNamespace(status_code=401, text="sensitive data"),
+    )
+    email = "brevo-provider-error@example.test"
+    response = client.post("/auth/email/register", json={
+        "email": email, "password": "a strong production password"
+    })
+    assert response.status_code == 503
+    assert "sensitive data" not in response.text
+    assert "private-test-api-key" not in response.text
+    assert db_session.query(EmailActionToken).filter_by(email=email).count() == 0
+
+
+def test_brevo_transport_network_error_does_not_leak_credentials(monkeypatch):
+    import httpx
+    import pytest
+    from app.services.email_transport import BrevoDeliveryError, send_via_brevo
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "private-test-api-key")
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "verified@example.test")
+
+    def offline(*args, **kwargs):
+        raise httpx.ConnectError("Provider unreachable", request=httpx.Request("POST", "https://api.brevo.com/v3/smtp/email"))
+
+    monkeypatch.setattr("httpx.post", offline)
+    with pytest.raises(BrevoDeliveryError) as exc:
+        send_via_brevo("recipient@example.test", "Subject", "<p>Message</p>")
+    assert "private-test-api-key" not in str(exc.value)

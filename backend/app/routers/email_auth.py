@@ -22,7 +22,7 @@ from ..auth import create_token
 from ..config import cookie_security_options, settings
 from ..database import get_db
 from ..models import EmailActionToken, EmailAuthRateLimit, PasswordCredential, User
-from ..services.email_transport import render_html_email, send_via_smtp
+from ..services.email_transport import render_html_email, send_via_brevo, send_via_smtp
 
 router = APIRouter(prefix="/auth/email", tags=["auth"])
 _hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
@@ -70,8 +70,14 @@ def _normalized_email(value: str) -> str:
 
 
 def _mail_available() -> None:
-    if not settings.SMTP_HOST or not (settings.EMAIL_FROM or settings.SMTP_USER):
-        raise HTTPException(503, "Email delivery has not been configured")
+    if settings.EMAIL_AUTH_TRANSPORT == "brevo":
+        if not settings.BREVO_API_KEY or not settings.BREVO_SENDER_EMAIL:
+            raise HTTPException(503, "Email delivery has not been configured")
+    elif settings.EMAIL_AUTH_TRANSPORT == "smtp":
+        if not settings.SMTP_HOST or not (settings.EMAIL_FROM or settings.SMTP_USER):
+            raise HTTPException(503, "Email delivery has not been configured")
+    else:
+        raise HTTPException(503, "Email delivery transport is not supported")
 
 
 def _user(db: Session, email: str) -> User | None:
@@ -118,7 +124,10 @@ def _send_link(email: str, token: str, purpose: str) -> None:
         escape(title) + "</a></p><p>If you didn't request this, ignore it. "
         "The link expires in 30 minutes.</p>"
     )
-    send_via_smtp(render_html_email(email, title, body))
+    if settings.EMAIL_AUTH_TRANSPORT == "brevo":
+        send_via_brevo(email, title, body)
+    else:
+        send_via_smtp(render_html_email(email, title, body))
 
 
 def _remember_token(db: Session, email: str, purpose: str, password_hash: str | None = None):
