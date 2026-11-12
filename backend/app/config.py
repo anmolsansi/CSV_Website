@@ -246,6 +246,13 @@ class Settings:
     # Email/password routes require verified SMTP delivery and explicit activation.
     EMAIL_PASSWORD_AUTH_ENABLED = os.getenv("EMAIL_PASSWORD_AUTH_ENABLED", "false").lower() == "true"
 
+    # Verified email/password auth transport. Free Render blocks SMTP ports,
+    # so select "brevo" for HTTPS API delivery in that environment.
+    EMAIL_AUTH_TRANSPORT = os.getenv("EMAIL_AUTH_TRANSPORT", "smtp").lower()
+    BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+    BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "")
+    BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "JobGrid")
+
     # Email / SMTP
     EMAIL_FROM = os.getenv("EMAIL_FROM", "")
     SMTP_HOST = os.getenv("SMTP_HOST", "")

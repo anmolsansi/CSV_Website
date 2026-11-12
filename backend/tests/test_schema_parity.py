@@ -33,7 +33,7 @@ from app.models import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ALEMBIC_HEAD = "020"
+ALEMBIC_HEAD = "021"
 
 
 def test_csv_columns_exist_on_model():

@@ -1,33 +1,92 @@
-# Verified email/password login
+# Free email/password login setup: Brevo HTTPS API + Render Free
 
-This is an opt-in authentication alternative to Google/Apple/Microsoft OAuth.
-Nothing changes for existing users until **both** feature flags are enabled.
+Email/password login is an opt-in alternative to the existing OAuth flow. Google remains enabled.
+Render Free blocks outbound SMTP ports 25, 465 and 587. Use Brevo's HTTPS API on port 443 instead.
 
-## Architecture and security
+## Free limits
+Brevo Free: 300 total emails per day (includes account verification and password resets).
+No credit card required for the free tier. A verified sender and transactional sending
+approval are prerequisites. Free tiers and acceptance rules may change over time.
 
-- Backend: /auth/email/register, /verify, /login, /forgot, /reset.
-- New account records are created **only after mailbox verification**. Registration for an existing email never overrides or links a password to an OAuth account.
-- Existing OAuth users may select "Forgot password?" to receive a one-time password setup link **at their already registered email address**. Their original account and data remain intact.
-- Passwords use Argon2id. Only password hashes are stored.
-- Verification/reset tokens are cryptographically random, stored as SHA-256 hashes, single-use and expire after 30 minutes.
-- Shared PostgreSQL/SQLite fixed-window counters restrict attempts per email and network peer; rate-limit responses have Retry-After. No client-side automatic retries.
-- Session cookies retain the existing HttpOnly, Secure and SameSite policy. Authentication success responses set Cache-Control: no-store.
-- Links carry tokens in URL fragments to keep secrets out of Vercel and CDN request logs.
-- JSON-only requests and explicit Origin checks limit cross-site login attempts.
+## Step-by-step setup
 
-## Enable in production
+1. **Create Brevo Free account:** https://www.brevo.com/. Complete any required verification
+   and ensure transactional API sending is activated. Do not enable any paid plan/add-on.
+2. **Verify a sender:** Brevo Settings > Senders, Domains & Dedicated IPs. A domain you own
+   is recommended for SPF/DKIM/DMARC. If using a Gmail/Yahoo address, check the actual
+   sending identity Brevo allows: free-mail senders may be rewritten/rejected.
+3. **Create API key:** Brevo > SMTP & API > API Keys > Generate a new API key. Keep it
+   secret. This is an **API key**, NOT a Brevo SMTP password.
+4. **Configure Render environment (backend jobgrid-api)**:
+   EMAIL_AUTH_TRANSPORT=brevo
+   BREVO_API_KEY=(your private Brevo API key)
+   BREVO_SENDER_EMAIL=(your Brevo-verified sender address)
+   BREVO_SENDER_NAME=JobGrid
+   EMAIL_PASSWORD_AUTH_ENABLED=false   # remain OFF until migration + send test
+   FRONTEND_URL=https://csv-website-steel.vercel.app  # check your canonical frontend
+   Never commit your API key, paste it into chat or set it as VITE_*.
+   Legacy SMTP_HOST/SMTP_* credentials are not used for this auth flow.
+5. **Database migration:** After snapshot/backup, apply Alembic migrations 020 and 021 to the
+   configured PostgreSQL DB using a trusted admin client/runner:
+   cd backend && alembic current && alembic upgrade head && alembic current
+   Check revision 021 and presence of password_credentials, email_action_tokens,
+   email_auth_rate_limits. Revision 021 enables PostgreSQL RLS and revokes
+   public/anon/authenticated access to these three sensitive tables.
+   **Render Free does not provide interactive shell**; use
+   your local machine with secure DB credentials and reachable network or an approved
+   migration runner, not a public migration endpoint. Never run downgrade on live data.
+6. **Preflight:** In Brevo's UI send a test transactional email with your sender.
+   Confirm inbox delivery, including spam folder. A 201 from Brevo means accepted,
+   not guaranteed delivered. If sending isn't activated, fix that before enabling auth.
+7. **Enable backend:** Set EMAIL_PASSWORD_AUTH_ENABLED=true on Render, deploy and
+   verify backend health and error logs. Keep TEST_AUTH=false in production.
+8. **Enable frontend:** In Vercel project > Settings > Environment Variables set
+   VITE_ENABLE_EMAIL_PASSWORD_AUTH=true for **Production**, then trigger a fresh
+   main-branch redeploy. Vite values are compiled at build time.
+9. **Acceptance tests:** Use a fresh mailbox to register, receive a verification
+   message, verify, sign in, sign out, reset password; verify wrong passwords and
+   expired tokens. Separately test existing Google account: "Forgot password?"
+   creates a password for the same user only after mailbox control. Inspect
+   login cookies and confirm no plaintext passwords, tokens or API keys in logs.
+10. **Rollback:** Disable Vercel frontend flag and redeploy; disable Render backend
+    flag. Keep additive database tables, never run a destructive downgrade.
 
-1. Review PR, run database migration to head (revision 020), and verify that the database backup/recovery plan is current. Migration is additive.
-2. Configure a working SMTP delivery service in Render using SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and EMAIL_FROM. Never commit these values to Git. Verify SPF/DKIM/DMARC and test on a synthetic mailbox. Existing reminder email flags are independent.
-3. Set EMAIL_PASSWORD_AUTH_ENABLED=true on Render **only after the migration and SMTP test**.
-4. Set VITE_ENABLE_EMAIL_PASSWORD_AUTH=true on Vercel Production and rebuild the frontend. Vite variables are build-time, not runtime.
-5. Test sign-up, verification, sign-in, wrong passwords, rate limiting, forgot/reset, pre-existing OAuth account, cookie policy and logout with controlled test accounts.
-6. Do not disable Google OAuth until controlled acceptance confirms password auth works. A 429 imposed by Vercel/Render edge security may still affect /api/auth/email/* and must be investigated independently.
+## Configuration contract
 
-## Local testing
+- EMAIL_AUTH_TRANSPORT=smtp (default): existing SMTP transport for local/non-Render.
+- EMAIL_AUTH_TRANSPORT=brevo: Brevo HTTPS API, fail closed unless BOTH BREVO_API_KEY
+  and BREVO_SENDER_EMAIL are present.
+- BREVO_SENDER_NAME defaults to JobGrid.
+- EMAIL_PASSWORD_AUTH_ENABLED defaults to false.
+- API call: POST https://api.brevo.com/v3/smtp/email, application/json, api-key header,
+  with sender, to, subject and htmlContent; accepts HTTP 201.
+- The feature deliberately does not alter digest/reminder email transports or billing.
 
-Install backend dependencies and run:
-- cd backend && pytest tests/test_email_password_auth.py tests/test_production_config.py tests/test_schema_parity.py
-- cd frontend && npm ci && npm run build
+## Tests
 
-Production rollback: turn off frontend flag first, then backend flag. Keep additive schema and existing password credentials; do not downgrade a live database.
+cd backend && pytest tests/test_email_password_auth.py tests/test_production_config.py tests/test_schema_parity.py
+cd frontend && npm ci && npm run build
+
+Do not remove Google OAuth to work around a 429; Vercel/Render edge throttling may
+also affect email authentication and needs separate investigation.
+
+## Database privacy acceptance (Supabase PostgreSQL)
+
+If using Supabase, SQLAlchemy/Alembic-created tables in the public schema can be
+available through Supabase's Data API unless restricted. Migration 021 enables
+RLS on the three credential/token/rate-limit tables and revokes privileges for
+PUBLIC, anon and authenticated; it intentionally grants no frontend access.
+
+Run this read-only audit SQL in a trusted database admin editor after migration:
+
+```sql
+SELECT tablename, rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename IN ('password_credentials','email_action_tokens','email_auth_rate_limits')
+ORDER BY tablename;
+```
+
+All three must exist and show `rowsecurity = true`. Also inspect effective grants
+for anon and authenticated. The backend database role must still be able to read
+and write; use the existing trusted server-side database role, not anon/authenticated.
