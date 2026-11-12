@@ -26,11 +26,13 @@ approval are prerequisites. Free tiers and acceptance rules may change over time
    FRONTEND_URL=https://csv-website-steel.vercel.app  # check your canonical frontend
    Never commit your API key, paste it into chat or set it as VITE_*.
    Legacy SMTP_HOST/SMTP_* credentials are not used for this auth flow.
-5. **Database migration:** After snapshot/backup, apply Alembic revision 020 to the
+5. **Database migration:** After snapshot/backup, apply Alembic migrations 020 and 021 to the
    configured PostgreSQL DB using a trusted admin client/runner:
    cd backend && alembic current && alembic upgrade head && alembic current
-   Check revision 020 and presence of password_credentials, email_action_tokens,
-   email_auth_rate_limits. **Render Free does not provide interactive shell**; use
+   Check revision 021 and presence of password_credentials, email_action_tokens,
+   email_auth_rate_limits. Revision 021 enables PostgreSQL RLS and revokes
+   public/anon/authenticated access to these three sensitive tables.
+   **Render Free does not provide interactive shell**; use
    your local machine with secure DB credentials and reachable network or an approved
    migration runner, not a public migration endpoint. Never run downgrade on live data.
 6. **Preflight:** In Brevo's UI send a test transactional email with your sender.
@@ -67,3 +69,24 @@ cd frontend && npm ci && npm run build
 
 Do not remove Google OAuth to work around a 429; Vercel/Render edge throttling may
 also affect email authentication and needs separate investigation.
+
+## Database privacy acceptance (Supabase PostgreSQL)
+
+If using Supabase, SQLAlchemy/Alembic-created tables in the public schema can be
+available through Supabase's Data API unless restricted. Migration 021 enables
+RLS on the three credential/token/rate-limit tables and revokes privileges for
+PUBLIC, anon and authenticated; it intentionally grants no frontend access.
+
+Run this read-only audit SQL in a trusted database admin editor after migration:
+
+```sql
+SELECT tablename, rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename IN ('password_credentials','email_action_tokens','email_auth_rate_limits')
+ORDER BY tablename;
+```
+
+All three must exist and show `rowsecurity = true`. Also inspect effective grants
+for anon and authenticated. The backend database role must still be able to read
+and write; use the existing trusted server-side database role, not anon/authenticated.
