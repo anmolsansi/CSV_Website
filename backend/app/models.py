@@ -228,6 +228,45 @@ class BrowserApplyReceipt(Base):
 
 
 
+
+class PasswordCredential(Base):
+    """Verified local password, stored independently of OAuth identities."""
+
+    __tablename__ = "password_credentials"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class EmailActionToken(Base):
+    """Single-use, time-limited verification or password-reset proof."""
+
+    __tablename__ = "email_action_tokens"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(320), nullable=False)
+    purpose = Column(String(16), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index("ix_email_action_tokens_email_purpose", "email", "purpose"),
+    )
+
+
+class EmailAuthRateLimit(Base):
+    """Shared, atomic per-identifier fixed-window rate limit counters."""
+
+    __tablename__ = "email_auth_rate_limits"
+
+    key_hash = Column(String(64), primary_key=True)
+    window_start = Column(DateTime, primary_key=True)
+    attempts = Column(Integer, nullable=False)
+
+
 class OAuthIdentity(Base):
     __tablename__ = "oauth_identities"
 

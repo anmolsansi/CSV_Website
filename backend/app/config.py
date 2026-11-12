@@ -243,6 +243,8 @@ class Settings:
     # retention control, because that could silently activate destructive work.
     DELETE_AFTER_DAYS = int(os.getenv("DELETE_AFTER_DAYS", "2"))
     TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
+    # Email/password routes require verified SMTP delivery and explicit activation.
+    EMAIL_PASSWORD_AUTH_ENABLED = os.getenv("EMAIL_PASSWORD_AUTH_ENABLED", "false").lower() == "true"
 
     # Email / SMTP
     EMAIL_FROM = os.getenv("EMAIL_FROM", "")
