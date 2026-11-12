@@ -97,6 +97,11 @@ export const api = {
     const safeReturn = returnTo === '/capture' ? '?return_to=%2Fcapture' : ''
     return `${API_URL}/auth/login/${provider}${safeReturn}`
   },
+  emailLogin: (email, password) => client.post('/auth/email/login', { email, password }, { skipAuthRedirect: true }).then((r) => r.data),
+  emailRegister: (email, password) => client.post('/auth/email/register', { email, password }, { skipAuthRedirect: true }).then((r) => r.data),
+  emailVerify: (token) => client.post('/auth/email/verify', { token }, { skipAuthRedirect: true }).then((r) => r.data),
+  emailForgotPassword: (email) => client.post('/auth/email/forgot', { email }, { skipAuthRedirect: true }).then((r) => r.data),
+  emailResetPassword: (token, password) => client.post('/auth/email/reset', { token, password }, { skipAuthRedirect: true }).then((r) => r.data),
   devLogin: (email = 'test@jobgrid.dev') => client.post('/auth/dev-login', { email }).then((r) => r.data),
   me: () => client.get('/auth/me', { skipAuthRedirect: true }).then((r) => r.data),
   logout: () => client.post('/auth/logout'),

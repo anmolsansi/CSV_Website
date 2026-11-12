@@ -1670,3 +1670,54 @@ textarea:focus-visible {
 @media (max-width: 800px) {
   .capture-layout { grid-template-columns: 1fr; }
 }
+
+
+/* Verified email/password login, scoped to avoid changing the existing OAuth layout. */
+.auth-email-section {
+  text-align: left;
+  margin: 20px auto;
+  max-width: 540px;
+}
+.auth-email-section h2 {
+  font-size: 22px;
+  line-height: 1.3;
+  margin-bottom: 14px;
+}
+.auth-email-form { display: grid; gap: 14px; }
+.auth-email-form label { display: grid; gap: 6px; font-size: 15px; font-weight: 600; }
+.auth-email-form .auth-input {
+  height: 54px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+.auth-email-form .auth-primary-button {
+  height: 54px;
+  font-size: 17px;
+  border-radius: 12px;
+  margin-top: 6px;
+}
+.auth-email-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+.auth-email-links button {
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  color: var(--color-accent, #1d4ed8);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 14px;
+}
+.auth-email-notice {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--color-surface-raised, #f1f5f9);
+  color: var(--color-text, #172554);
+}
+.auth-email-links button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
