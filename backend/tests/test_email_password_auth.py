@@ -156,7 +156,7 @@ def test_brevo_transport_sends_via_https_api_and_signup_link(client, db_session,
         "email": "verified@example.test", "name": "JobGrid"
     }
     assert sent["json"]["to"] == [{"email": email}]
-    assert "#email_action=verify&token=" in sent["json"]["htmlContent"]
+    assert "#email_action=verify&amp;token=" in sent["json"]["htmlContent"]
     assert "private-test-api-key" not in sent["json"]["htmlContent"]
     assert db_session.query(User).filter_by(email=email).first() is None
 
