@@ -17,6 +17,8 @@ const DEFAULT_FILTERS = {
   quickRange: '',
   dateFrom: '',
   dateTo: '',
+  dateAppliedFrom: '',
+  dateAppliedTo: '',
   minScore: '',
   maxScore: '',
   openedNotApplied: false,
