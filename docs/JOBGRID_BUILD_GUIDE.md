@@ -1,5 +1,6 @@
 # JobGrid Build Guide
 
+> **Application Ledger Phase 2 (2026-11-14, implementation branch):** [UI and verification guide](AL_PHASE2_UI_GUIDE.md) explains the Ever Applied, All Tracked, and due follow-up tabs; historical vs current-stage summary metrics; URL, saved-view and export contracts; and how to run tests. This is not hosted release evidence.\n\n
 This guide describes behavior implemented in the repository. It is not a copy of the future roadmap.
 
 ## Application Ledger Phase 1: dated submission history (AL-01–AL-06)
