@@ -457,10 +457,11 @@ export default function Applications() {
         <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
       </div>
 
-      <div className="stats-grid app-stats-grid">
-        <div className="stat-card"><span>Total</span><strong>{pagination.totalCount}</strong></div>
-        <div className="stat-card"><span>Page</span><strong>{pagination.page}</strong></div>
-        <div className="stat-card"><span>Shown</span><strong>{applications.length}</strong></div>
+      <ApplicationLedgerTabs activeTab={activeTab} onChange={selectTab} />
+      <ApplicationSummary summary={summary} loading={summaryLoading} error={summaryError} onRetry={refreshSummary} />
+      <div className="application-results-meta" aria-live="polite">
+        <div className="stat-card"><span>Total matching</span><strong>{pagination.totalCount}</strong></div>
+        <p>{pagination.totalCount === 0 ? 'No matching records' : `Showing ${(pagination.page - 1) * pagination.pageSize + 1}–${(pagination.page - 1) * pagination.pageSize + applications.length} of ${pagination.totalCount} records`}</p>
       </div>
 
       <div className="export-bar">
@@ -536,16 +537,22 @@ export default function Applications() {
         </div>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap" id="application-ledger-results" role="tabpanel" aria-label={`${activeTab === 'applied' ? 'Ever Applied' : activeTab === 'followups' ? 'Follow-ups Due' : 'All Tracked'} results`}>
         {loading ? (
           <div className="empty-state">
             <div className="loading-spinner" />
             <p>Loading applications...</p>
           </div>
+        ) : listError ? (
+          <div className="empty-state" role="alert">
+            <h3>Applications unavailable</h3>
+            <p>{listError}</p>
+            <button type="button" className="btn btn-blue" onClick={() => refresh()}>Retry applications</button>
+          </div>
         ) : applications.length === 0 ? (
           <div className="empty-state">
-            <h3>No applications yet</h3>
-            <p>Open job links from the Dashboard to start tracking applications.</p>
+            <h3>{applicationEmptyState(activeTab, Object.entries(filters).some(([key, value]) => !['appliedOnly', 'followUpDue'].includes(key) && Boolean(value))).title}</h3>
+            <p>{applicationEmptyState(activeTab, Object.entries(filters).some(([key, value]) => !['appliedOnly', 'followUpDue'].includes(key) && Boolean(value))).body}</p>
           </div>
         ) : (
           <table>
