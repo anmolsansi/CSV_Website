@@ -141,3 +141,59 @@ def test_ever_applied_excludes_opened_and_legacy_unproven_status(ledger_owner):
         "scope": "filtered", "format": "json", "applied_only": True,
     })
     assert [item["url"] for item in other_export.json()] == [foreign.url]
+
+
+def test_applied_date_bounds_sort_pages_and_export_stay_in_sync(ledger_owner):
+    client, db, owner = ledger_owner
+    early = _track(
+        db, owner, status="applied", applied_at=datetime(2026, 9, 1, 9),
+    )
+    middle = _track(
+        db, owner, status="interview", applied_at=datetime(2026, 9, 15, 9),
+    )
+    late = _track(
+        db, owner, status="offer", applied_at=datetime(2026, 10, 1, 12),
+    )
+    _track(db, owner, status="opened")
+    db.commit()
+    ordered_urls = [early.url, middle.url, late.url]
+
+    base = {"applied_only": True, "sort_by": "applied_at", "sort_dir": "asc"}
+    paged_urls = []
+    for page in (1, 2, 3):
+        response = client.get("/crm/applications", params={
+            **base, "page_size": 1, "page": page,
+        })
+        assert response.status_code == 200
+        assert response.json()["total_count"] == 3
+        paged_urls.extend(item["url"] for item in response.json()["rows"])
+    assert paged_urls == ordered_urls
+
+    bounds = {
+        **base,
+        "date_applied_from": "2026-09-15T09:00:00+00:00",
+        "date_applied_to": "2026-10-01T12:00:00Z",
+    }
+    listing = client.get("/crm/applications", params=bounds)
+    assert listing.status_code == 200
+    assert listing.json()["total_count"] == 1
+    assert [item["url"] for item in listing.json()["rows"]] == [middle.url]
+
+    for format in ("csv", "json"):
+        export = client.get("/crm/export/applications", params={
+            **bounds, "scope": "filtered", "format": format,
+        })
+        assert export.status_code == 200
+        exported = (
+            list(csv.DictReader(io.StringIO(export.text)))
+            if format == "csv"
+            else export.json()
+        )
+        assert [(item["url"], item["app_status"]) for item in exported] == [
+            (middle.url, "interview"),
+        ]
+
+    whole_export = client.get("/crm/export/applications", params={
+        **base, "scope": "filtered", "format": "json",
+    })
+    assert [item["url"] for item in whole_export.json()] == paged_urls
