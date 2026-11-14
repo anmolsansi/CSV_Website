@@ -74,6 +74,7 @@ test.describe('AL-07 to AL-12: My Applications', () => {
 
   test('AL-09/10: sortable stage, date, updated time and reusable detail survive reload', async ({ page }) => {
     await page.goto('/applications?tab=applied')
+    await expect(page.locator('.applications-table')).toBeVisible()
     const headers = await page.locator('.applications-table thead th').allTextContents()
     expect(headers.join(' ')).toContain('Last updated')
     expect(headers.join(' ')).toContain('Applied At')
