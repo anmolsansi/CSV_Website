@@ -86,6 +86,8 @@ test.describe('AL-07 to AL-12: My Applications', () => {
     await page.reload()
     await expect(page.getByTestId('application-timeline')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Correct with reason' }).first()).toBeVisible()
+    const company = page.getByRole('link', { name: 'Company history' }).first()
+    await expect(company).toHaveAttribute('href', /\/companies\?company=.*track_id=\d+/)
   })
 
   test('AL-11: saved query, filters and export use matching scope', async ({ page }) => {
