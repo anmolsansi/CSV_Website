@@ -187,4 +187,86 @@ test.describe('JG-007 browser/export query parity', () => {
     await expect(page.getByText('Export failed. No file was downloaded. Please retry.')).toBeVisible();
     await expect(page.getByText('Export downloaded')).toHaveCount(0);
   });
+
+  test('Ever applied is independent of stage and exclusive with opened-not-applied', async ({ page }) => {
+    const firstRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      const qs = new URL(request.url()).searchParams;
+      return qs.get('applied_only') === 'true' && qs.get('status') === 'interview';
+    });
+
+    await page.goto('/applications?applied_only=true&status=interview');
+    const initial = new URL((await firstRequest).url()).searchParams;
+    expect(initial.get('applied_only')).toBe('true');
+    expect(initial.get('status')).toBe('interview');
+    await expect(page.getByLabel('Ever applied (any status)')).toBeChecked();
+    await expect(page.locator('.table-controls select').first()).toHaveValue('interview');
+
+    const switchRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      return new URL(request.url()).searchParams.get('opened_not_applied') === 'true';
+    });
+    await page.getByLabel('Opened, not applied').check();
+    const switched = new URL((await switchRequest).url()).searchParams;
+    expect(switched.get('applied_only')).toBe('false');
+    await expect(page.getByLabel('Ever applied (any status)')).not.toBeChecked();
+  });
+
+  test('applied-date controls send UTC bounds separately from opened dates', async ({ page }) => {
+    await page.goto('/applications');
+    const lower = page.getByLabel('Applied from');
+    const upper = page.getByLabel('Applied before');
+    await expect(lower).toBeVisible();
+    await expect(upper).toBeVisible();
+
+    const since = '2026-09-15T09:30';
+    const fromRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      return new URL(request.url()).searchParams.has('date_applied_from');
+    });
+    await lower.fill(since);
+    const fromQuery = new URL((await fromRequest).url()).searchParams;
+    expect(fromQuery.get('date_applied_from')).toBe(new Date(since).toISOString());
+    expect(fromQuery.has('date_from')).toBeFalsy();
+
+    const before = '2026-10-01T12:00';
+    const toRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      return new URL(request.url()).searchParams.has('date_applied_to');
+    });
+    await upper.fill(before);
+    const toQuery = new URL((await toRequest).url()).searchParams;
+    expect(toQuery.get('date_applied_to')).toBe(new Date(before).toISOString());
+    expect(toQuery.get('date_applied_from')).toBe(new Date(since).toISOString());
+    await expect(page.getByLabel('Opened range')).toHaveValue('');
+  });
+
+  test('ever-applied export preserves search and applied date while removing stage restriction', async ({ page }) => {
+    await page.goto('/applications?status=interview&company=Acme&date_applied_from=2026-09-15T09%3A00%3A00.000Z');
+    await expect(page.locator('.export-bar button', { hasText: 'Download' })).toBeEnabled();
+    await page.locator('.export-bar select').nth(1).selectOption('applied');
+
+    const exportRequest = page.waitForRequest((request) => request.url().includes('/crm/export/applications?'));
+    await page.locator('.export-bar button', { hasText: 'Download' }).click();
+    const exported = new URL((await exportRequest).url()).searchParams;
+
+    expect(exported.get('scope')).toBe('filtered');
+    expect(exported.get('applied_only')).toBe('true');
+    expect(exported.get('status')).toBeNull();
+    expect(exported.get('company')).toBe('Acme');
+    expect(exported.get('date_applied_from')).toBe('2026-09-15T09:00:00.000Z');
+    expect(exported.has('page')).toBeFalsy();
+    expect(exported.has('page_size')).toBeFalsy();
+  });
+
+  test('Anmol view keeps the App Status column visible', async ({ page }) => {
+    await page.goto('/');
+    const preset = page.getByRole('button', { name: "Anmol's View" });
+    if (!await preset.isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: /Show, hide, and rearrange columns/ }).click();
+    }
+    await expect(preset).toBeVisible();
+    await preset.click();
+    await expect(page.getByRole('columnheader', { name: 'App Status' })).toBeVisible();
+  });
 });

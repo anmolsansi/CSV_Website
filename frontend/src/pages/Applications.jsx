@@ -10,12 +10,15 @@ const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'of
 
 const DEFAULT_FILTERS = {
   status: '',
+  appliedOnly: false,
   company: '',
   atsGroup: '',
   searchBucket: '',
   quickRange: '',
   dateFrom: '',
   dateTo: '',
+  dateAppliedFrom: '',
+  dateAppliedTo: '',
   minScore: '',
   maxScore: '',
   openedNotApplied: false,
@@ -133,6 +136,8 @@ export default function Applications() {
 
   const updateFilter = (key, value) => {
     const nextFilters = { ...filters, [key]: value }
+    if (key === 'appliedOnly' && value) nextFilters.openedNotApplied = false
+    if (key === 'openedNotApplied' && value) nextFilters.appliedOnly = false
     setFilters(nextFilters)
     refresh(nextFilters, sort, 1)
   }
@@ -300,7 +305,9 @@ export default function Applications() {
       params.rowIds = [...selectedIds]
     } else if (exportScope === 'applied') {
       params.scope = 'filtered'
-      Object.assign(params, { ...DEFAULT_FILTERS, status: 'applied' })
+      params.appliedOnly = true
+      params.status = ''
+      params.openedNotApplied = false
     } else if (exportScope === 'followups') {
       params.scope = 'filtered'
       Object.assign(params, { ...DEFAULT_FILTERS, followUpDue: true })
@@ -396,7 +403,7 @@ export default function Applications() {
           <option value="all">All rows</option>
           <option value="filtered">Filtered rows</option>
           <option value="selected">Selected rows</option>
-          <option value="applied">Applied only</option>
+          <option value="applied">Ever applied (matching filters)</option>
           <option value="followups">Follow-ups due</option>
         </select>
         <button className="btn btn-grey" onClick={handleExport} disabled={loading}>Download</button>
@@ -409,13 +416,16 @@ export default function Applications() {
         <div><label>Location</label><select value={filters.locationGroup} onChange={(e) => updateFilter('locationGroup', e.target.value)}><option value="">All</option>{filterOptions.location_groups?.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
         <div><label>Decision</label><select value={filters.decision} onChange={(e) => updateFilter('decision', e.target.value)}><option value="">All</option>{filterOptions.decisions?.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
         <div><label>Sponsorship</label><select value={filters.sponsorshipStatus} onChange={(e) => updateFilter('sponsorshipStatus', e.target.value)}><option value="">All</option>{filterOptions.sponsorship_statuses?.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-        <div><label>Range</label><select value={filters.quickRange} onChange={(e) => updateFilter('quickRange', e.target.value)}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
-        <div><label>Date from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
-        <div><label>Date to</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <div><label htmlFor="opened-range-filter">Opened range</label><select id="opened-range-filter" value={filters.quickRange} onChange={(e) => updateFilter('quickRange', e.target.value)}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
+        <div><label htmlFor="opened-from-filter">Opened from</label><input id="opened-from-filter" type="datetime-local" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
+        <div><label htmlFor="opened-before-filter">Opened before</label><input id="opened-before-filter" type="datetime-local" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <div><label htmlFor="applied-from-filter">Applied from</label><input id="applied-from-filter" type="datetime-local" value={localInputValue(filters.dateAppliedFrom)} onChange={(e) => updateFilter('dateAppliedFrom', inputToIso(e.target.value))} /></div>
+        <div><label htmlFor="applied-before-filter">Applied before</label><input id="applied-before-filter" type="datetime-local" value={localInputValue(filters.dateAppliedTo)} onChange={(e) => updateFilter('dateAppliedTo', inputToIso(e.target.value))} /></div>
         <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => updateFilter('minScore', e.target.value)} /></div>
         <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => updateFilter('maxScore', e.target.value)} /></div>
         <div><label>Search</label><input value={filters.q} onChange={(e) => updateFilter('q', e.target.value)} placeholder="Title, company, URL" /></div>
         <div className="checkbox-filter">
+          <label><input type="checkbox" checked={filters.appliedOnly} onChange={(e) => updateFilter('appliedOnly', e.target.checked)} /> Ever applied (any status)</label>
           <label><input type="checkbox" checked={filters.openedNotApplied} onChange={(e) => updateFilter('openedNotApplied', e.target.checked)} /> Opened, not applied</label>
           <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => updateFilter('followUpDue', e.target.checked)} /> Follow-up due</label>
           <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => updateFilter('followUpToday', e.target.checked)} /> Follow-up today</label>
