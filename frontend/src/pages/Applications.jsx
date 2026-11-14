@@ -160,12 +160,36 @@ export default function Applications() {
     }
   }
 
+  const selectTab = (tab) => {
+    if (tab === activeTab) return
+    const nextFilters = filtersForApplicationTab(filters, tab)
+    const nextSort = tab === 'applied'
+      ? { field: 'applied_at', direction: 'desc' }
+      : tab === 'followups'
+        ? { field: 'follow_up_at', direction: 'asc' }
+        : { field: 'opened_at', direction: 'desc' }
+    setActiveTab(tab)
+    setSelectedIds(new Set())
+    setFilters(nextFilters)
+    setSort(nextSort)
+    refresh(nextFilters, nextSort, 1, tab)
+  }
+
   const updateFilter = (key, value) => {
     const nextFilters = { ...filters, [key]: value }
-    if (key === 'appliedOnly' && value) nextFilters.openedNotApplied = false
+    if (key === 'appliedOnly' && value) {
+      nextFilters.openedNotApplied = false
+      nextFilters.followUpDue = false
+    }
     if (key === 'openedNotApplied' && value) nextFilters.appliedOnly = false
+    if (key === 'followUpDue' && value) nextFilters.appliedOnly = false
+    const nextTab = key === 'appliedOnly' || key === 'openedNotApplied' || key === 'followUpDue'
+      ? (nextFilters.appliedOnly ? 'applied' : nextFilters.followUpDue ? 'followups' : 'all')
+      : activeTab
+    setActiveTab(nextTab)
+    setSelectedIds(new Set())
     setFilters(nextFilters)
-    refresh(nextFilters, sort, 1)
+    refresh(nextFilters, sort, 1, nextTab)
   }
 
   const updateSort = (field) => {
@@ -176,11 +200,14 @@ export default function Applications() {
   }
 
   const clearFilters = () => {
-    setFilters(DEFAULT_FILTERS)
-    refresh(DEFAULT_FILTERS, sort, 1)
+    const nextFilters = filtersForApplicationTab(DEFAULT_FILTERS, activeTab)
+    setSelectedIds(new Set())
+    setFilters(nextFilters)
+    refresh(nextFilters, sort, 1)
   }
 
   const goToPage = (newPage) => {
+    setSelectedIds(new Set())
     refresh(filters, sort, newPage)
   }
 
