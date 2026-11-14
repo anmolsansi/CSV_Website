@@ -19,7 +19,9 @@ integration review, and approved staging verification are recorded. No
 production history was repaired or migrated.
 
 
-**Phase 2 implementation:** [tracking issue #206](https://github.com/anmolsansi/CSV_Website/issues/206) · [architecture](docs/AL_PHASE2_ARCHITECTURE.md) · [UI usage and test guide](docs/AL_PHASE2_UI_GUIDE.md). Phase 2 work is on a dedicated branch. Keep AL-07–AL-12 checklist entries unchecked until the final CI/acceptance gate is recorded. No production/staging rollout is authorized.\n\n**Goal:** Make every explicitly confirmed job application discoverable for life, independent of its current stage, source CSV, or browser session. An opened or saved job is not an applied job.
+**Phase 2 implementation:** [tracking issue #206](https://github.com/anmolsansi/CSV_Website/issues/206) · [architecture](docs/AL_PHASE2_ARCHITECTURE.md) · [UI usage and test guide](docs/AL_PHASE2_UI_GUIDE.md). Phase 2 work is on a dedicated branch. Keep AL-07–AL-12 checklist entries unchecked until the final CI/acceptance gate is recorded. No production/staging rollout is authorized.
+
+**Goal:** Make every explicitly confirmed job application discoverable for life, independent of its current stage, source CSV, or browser session. An opened or saved job is not an applied job.
 
 **Why:** JobGrid already stores `JobTrack` state, `applied_at`, first-applied lifecycle events, company history, and export data, but the Applied-only UI export filters current `status='applied'`. That omits previously submitted jobs now in Interview, Rejected, or Offer. The Dashboard's Anmol's View also hides App Status. The existing Chrome extension is not an active production submission tracker.
 
