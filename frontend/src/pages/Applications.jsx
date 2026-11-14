@@ -417,6 +417,8 @@ export default function Applications() {
         <div><label>Opened range</label><select value={filters.quickRange} onChange={(e) => updateFilter('quickRange', e.target.value)}><option value="">All time</option><option value="last_24_hours">Last 24 hours</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last_7_days">Last 7 days</option><option value="last_30_days">Last 30 days</option></select></div>
         <div><label>Opened from</label><input type="datetime-local" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} /></div>
         <div><label>Opened before</label><input type="datetime-local" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} /></div>
+        <div><label>Applied from</label><input type="datetime-local" value={localInputValue(filters.dateAppliedFrom)} onChange={(e) => updateFilter('dateAppliedFrom', inputToIso(e.target.value))} /></div>
+        <div><label>Applied before</label><input type="datetime-local" value={localInputValue(filters.dateAppliedTo)} onChange={(e) => updateFilter('dateAppliedTo', inputToIso(e.target.value))} /></div>
         <div><label>Min score</label><input type="number" value={filters.minScore} onChange={(e) => updateFilter('minScore', e.target.value)} /></div>
         <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => updateFilter('maxScore', e.target.value)} /></div>
         <div><label>Search</label><input value={filters.q} onChange={(e) => updateFilter('q', e.target.value)} placeholder="Title, company, URL" /></div>
