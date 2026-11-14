@@ -91,3 +91,53 @@ def test_ever_applied_survives_stage_changes_and_source_csv_deletion(ledger_owne
         user_id=owner.id, job_track_id=track_id, kind="first_applied",
     ).count() == 1
     assert db.get(JobTrack, track_id).applied_at is not None
+
+
+def test_ever_applied_excludes_opened_and_legacy_unproven_status(ledger_owner):
+    client, db, owner = ledger_owner
+    saved = _track(db, owner, status="opened")
+    unproven = _track(db, owner, status="applied")
+    confirmed = _track(
+        db, owner, status="rejected", applied_at=datetime(2026, 9, 15, 9),
+    )
+    outsider = User(email=f"al-outsider-{uuid.uuid4().hex}@example.test")
+    db.add(outsider)
+    db.flush()
+    foreign = _track(
+        db, outsider, status="offer", applied_at=datetime(2026, 9, 16, 9),
+    )
+    db.commit()
+
+    listing = client.get("/crm/applications", params={"applied_only": True})
+    assert listing.status_code == 200
+    assert listing.json()["total_count"] == 1
+    assert [item["id"] for item in listing.json()["rows"]] == [confirmed.id]
+
+    filtered = client.get("/crm/applications", params={
+        "applied_only": True, "status": "rejected",
+    })
+    assert [item["id"] for item in filtered.json()["rows"]] == [confirmed.id]
+    assert client.get("/crm/applications", params={
+        "applied_only": True, "status": "applied",
+    }).json()["total_count"] == 0
+
+    exported = client.get("/crm/export/applications", params={
+        "scope": "filtered", "format": "json", "applied_only": True,
+    })
+    assert exported.status_code == 200
+    assert [item["url"] for item in exported.json()] == [confirmed.url]
+    assert saved.url not in exported.text
+    assert unproven.url not in exported.text
+    assert foreign.url not in exported.text
+
+    validation = client.get("/crm/applications/validation-report")
+    assert validation.status_code == 200
+    assert validation.json()["repair_mode"] == "manual_only"
+
+    assert client.post("/auth/dev-login", json={"email": outsider.email}).status_code == 200
+    other_listing = client.get("/crm/applications", params={"applied_only": True})
+    assert [item["id"] for item in other_listing.json()["rows"]] == [foreign.id]
+    other_export = client.get("/crm/export/applications", params={
+        "scope": "filtered", "format": "json", "applied_only": True,
+    })
+    assert [item["url"] for item in other_export.json()] == [foreign.url]
