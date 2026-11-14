@@ -96,9 +96,18 @@ export default function Applications() {
   const fieldRefs = useRef({})
   const toast = useToast()
 
-  const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page) => {
+  const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page, nextTab = activeTab) => {
     const requestId = ++requestSequenceRef.current
     const query = applicationStateQuery(nextSort, nextFilters, nextPage, pagination.pageSize)
+    const currentUrl = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams()
+    const serialized = serializeApplicationQuery(query, { includePagination: true })
+    Object.entries(serialized).forEach(([key, value]) => params.set(key, String(value)))
+    params.set('tab', nextTab)
+    if (currentUrl.has('view')) params.set('view', currentUrl.get('view'))
+    if (currentUrl.has('track_id')) params.set('track_id', currentUrl.get('track_id'))
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params}`)
+    setListError('')
     setLoading(true)
     return api.getApplications(query).then((data) => {
       if (requestId !== requestSequenceRef.current) return
@@ -107,7 +116,13 @@ export default function Applications() {
       setPagination({ page: data.page || nextPage, pageSize: data.page_size || 50, totalCount: data.total_count || (data.rows || []).length, hasNext: data.has_next || false })
       settledQueryRef.current = query
     }).catch(() => {
-      if (requestId === requestSequenceRef.current) toast('Could not load applications. Please retry.', 'error')
+      if (requestId === requestSequenceRef.current) {
+        setApplications([])
+        setPagination((current) => ({ ...current, totalCount: 0, hasNext: false }))
+        settledQueryRef.current = null
+        setListError('Could not load applications. Please retry.')
+        toast('Could not load applications. Please retry.', 'error')
+      }
     }).finally(() => {
       if (requestId === requestSequenceRef.current) setLoading(false)
     })
