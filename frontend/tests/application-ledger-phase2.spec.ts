@@ -137,6 +137,30 @@ test.describe('AL-07 to AL-12: My Applications', () => {
     await expect(page.locator('.stat-card').filter({ hasText: 'Lifetime applied' }).locator('strong')).toHaveText('2')
   })
 
+  test('AL-12: a late response from the previous tab cannot overwrite current results', async ({ page }) => {
+    let allowFirstResponse: () => void = () => {}
+    let notifyFirstRequest: () => void = () => {}
+    const firstResponseGate = new Promise<void>((resolve) => { allowFirstResponse = resolve })
+    const firstRequestSeen = new Promise<void>((resolve) => { notifyFirstRequest = resolve })
+
+    await page.route('**/crm/applications?**', async (route) => {
+      const applied = new URL(route.request().url()).searchParams.get('applied_only') === 'true'
+      if (applied) {
+        notifyFirstRequest()
+        await firstResponseGate
+      }
+      await route.continue().catch(() => {}) // A tab change may cancel the previous request.
+    })
+
+    await page.goto('/applications?tab=applied')
+    await firstRequestSeen
+    await page.getByRole('tab', { name: 'All Tracked' }).click()
+    await expect(page.locator('.applications-table tbody tr')).toHaveCount(3)
+    allowFirstResponse()
+    await expect(page.getByRole('tab', { name: 'All Tracked' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.applications-table tbody tr')).toHaveCount(3)
+  })
+
   test('AL-12: arrow navigation and mobile horizontal table keep controls accessible', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 780 })
     await page.goto('/applications?tab=applied')
