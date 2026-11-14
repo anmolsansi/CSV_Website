@@ -4,6 +4,7 @@ import { applicationNavigationState, applicationStateQuery, queryValidationMessa
 import { useToast } from '../App'
 import ApplicationTimeline from '../components/ApplicationTimeline'
 import ApplicationDocuments from '../components/ApplicationDocuments'
+import ApplicationWorkspace from '../components/ApplicationWorkspace'
 import JobAvailability from '../components/JobAvailability'
 import ApplicationLedgerTabs from '../components/ApplicationLedgerTabs'
 import ApplicationSummary from '../components/ApplicationSummary'
@@ -446,6 +447,7 @@ export default function Applications() {
     ['company', 'Company'],
     ['title', 'Title'],
     ['status', 'Status'],
+    ['updated_at', 'Last updated'],
     ['ats_group', 'ATS'],
     ['search_bucket', 'Bucket'],
     ['resume_match_score', 'Score'],
@@ -592,6 +594,7 @@ export default function Applications() {
                         className="inline-input"
                         ref={(node) => { fieldRefs.current[draftKey(app.id, 'company')] = node }}
                         value={draftValue(app, 'company', app.company || '')}
+                        placeholder="Unknown company"
                         aria-invalid={Boolean(fieldErrors[app.id]?.company)}
                         aria-describedby={fieldErrors[app.id]?.company ? `app-${app.id}-company-error` : undefined}
                         disabled={pendingRows.has(app.id)}
@@ -609,7 +612,7 @@ export default function Applications() {
                       {fieldErrors[app.id]?.company && <p id={`app-${app.id}-company-error`} className="error-msg" role="alert">{fieldErrors[app.id].company}</p>}
                     </td>
                   )}
-                  {!hiddenColumns.includes('title') && <td>{app.title}</td>}
+                  {!hiddenColumns.includes('title') && <td>{app.title || 'Unknown role'}</td>}
                   {!hiddenColumns.includes('status') && (
                     <td>
                       <select
@@ -629,6 +632,7 @@ export default function Applications() {
                       {fieldErrors[app.id]?.status && <p id={`app-${app.id}-status-error`} className="error-msg" role="alert">{fieldErrors[app.id].status}</p>}
                     </td>
                   )}
+                  {!hiddenColumns.includes('updated_at') && <td>{formatDateTime(app.updated_at) || 'Not recorded'}</td>}
                   {!hiddenColumns.includes('ats_group') && <td>{app.ats_group}</td>}
                   {!hiddenColumns.includes('search_bucket') && <td>{app.search_bucket}</td>}
                   {!hiddenColumns.includes('resume_match_score') && <td>{app.resume_match_score}</td>}
