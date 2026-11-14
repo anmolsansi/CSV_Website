@@ -10,6 +10,7 @@ const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'of
 
 const DEFAULT_FILTERS = {
   status: '',
+  appliedOnly: false,
   company: '',
   atsGroup: '',
   searchBucket: '',
