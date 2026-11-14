@@ -5,6 +5,9 @@ import { useToast } from '../App'
 import ApplicationTimeline from '../components/ApplicationTimeline'
 import ApplicationDocuments from '../components/ApplicationDocuments'
 import JobAvailability from '../components/JobAvailability'
+import ApplicationLedgerTabs from '../components/ApplicationLedgerTabs'
+import ApplicationSummary from '../components/ApplicationSummary'
+import { applicationTabFromUrl, filtersForApplicationTab, applicationEmptyState } from '../utils/applicationLedgerViews'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -59,18 +62,30 @@ export default function Applications() {
     () => applicationNavigationState(window.location.search, { ...DEFAULT_FILTERS, sortBy: 'opened_at', sortDir: 'desc', page: 1, pageSize: 50 }),
     []
   )
-  const initialFilters = { ...DEFAULT_FILTERS, ...initialNavigation.filters }
+  const initialTab = applicationTabFromUrl(window.location.search, initialNavigation.filters)
+  const explicitTab = new URLSearchParams(window.location.search).has('tab')
+  const initialFilters = explicitTab
+    ? filtersForApplicationTab({ ...DEFAULT_FILTERS, ...initialNavigation.filters }, initialTab)
+    : { ...DEFAULT_FILTERS, ...initialNavigation.filters }
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [applications, setApplications] = useState([])
   const [filterOptions, setFilterOptions] = useState({ ats_groups: [], location_groups: [], decisions: [], sponsorship_statuses: [] })
   const [filters, setFilters] = useState(initialFilters)
   const [hiddenColumns, setHiddenColumns] = useState(['searchBucket'])
-  const [sort, setSort] = useState(initialNavigation.sort)
+  const [sort, setSort] = useState(() => initialTab === 'applied' && !new URLSearchParams(window.location.search).has('sort_by')
+    ? { field: 'applied_at', direction: 'desc' }
+    : initialNavigation.sort)
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [pagination, setPagination] = useState({ ...DEFAULT_PAGINATION, page: initialNavigation.page, pageSize: initialNavigation.pageSize })
   const settledQueryRef = useRef(null)
   const requestSequenceRef = useRef(0)
+  const summaryRequestSequenceRef = useRef(0)
   const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
+  const [listError, setListError] = useState('')
+  const [summary, setSummary] = useState(null)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [summaryError, setSummaryError] = useState('')
   const [drafts, setDrafts] = useState({})
   const [fieldErrors, setFieldErrors] = useState({})
   const [focusTarget, setFocusTarget] = useState(null)
@@ -85,9 +100,18 @@ export default function Applications() {
   const fieldRefs = useRef({})
   const toast = useToast()
 
-  const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page) => {
+  const refresh = (nextFilters = filters, nextSort = sort, nextPage = pagination.page, nextTab = activeTab) => {
     const requestId = ++requestSequenceRef.current
     const query = applicationStateQuery(nextSort, nextFilters, nextPage, pagination.pageSize)
+    const currentUrl = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams()
+    const serialized = serializeApplicationQuery(query, { includePagination: true })
+    Object.entries(serialized).forEach(([key, value]) => params.set(key, String(value)))
+    params.set('tab', nextTab)
+    if (currentUrl.has('view')) params.set('view', currentUrl.get('view'))
+    if (currentUrl.has('track_id')) params.set('track_id', currentUrl.get('track_id'))
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params}`)
+    setListError('')
     setLoading(true)
     return api.getApplications(query).then((data) => {
       if (requestId !== requestSequenceRef.current) return
@@ -96,14 +120,36 @@ export default function Applications() {
       setPagination({ page: data.page || nextPage, pageSize: data.page_size || 50, totalCount: data.total_count || (data.rows || []).length, hasNext: data.has_next || false })
       settledQueryRef.current = query
     }).catch(() => {
-      if (requestId === requestSequenceRef.current) toast('Could not load applications. Please retry.', 'error')
+      if (requestId === requestSequenceRef.current) {
+        setApplications([])
+        setPagination((current) => ({ ...current, totalCount: 0, hasNext: false }))
+        settledQueryRef.current = null
+        setListError('Could not load applications. Please retry.')
+        toast('Could not load applications. Please retry.', 'error')
+      }
     }).finally(() => {
       if (requestId === requestSequenceRef.current) setLoading(false)
     })
   }
 
+  const refreshSummary = () => {
+    const requestId = ++summaryRequestSequenceRef.current
+    setSummaryLoading(true)
+    setSummaryError('')
+    return api.getAnalytics().then((data) => {
+      if (requestId === summaryRequestSequenceRef.current) setSummary(data)
+    }).catch(() => {
+      if (requestId !== summaryRequestSequenceRef.current) return
+      setSummary(null)
+      setSummaryError('Could not load the account overview. Table results may still be available.')
+    }).finally(() => {
+      if (requestId === summaryRequestSequenceRef.current) setSummaryLoading(false)
+    })
+  }
+
   useEffect(() => {
     refresh()
+    refreshSummary()
   }, [])
 
   useEffect(() => {
@@ -134,12 +180,36 @@ export default function Applications() {
     }
   }
 
+  const selectTab = (tab) => {
+    if (tab === activeTab) return
+    const nextFilters = filtersForApplicationTab(filters, tab)
+    const nextSort = tab === 'applied'
+      ? { field: 'applied_at', direction: 'desc' }
+      : tab === 'followups'
+        ? { field: 'follow_up_at', direction: 'asc' }
+        : { field: 'opened_at', direction: 'desc' }
+    setActiveTab(tab)
+    setSelectedIds(new Set())
+    setFilters(nextFilters)
+    setSort(nextSort)
+    refresh(nextFilters, nextSort, 1, tab)
+  }
+
   const updateFilter = (key, value) => {
     const nextFilters = { ...filters, [key]: value }
-    if (key === 'appliedOnly' && value) nextFilters.openedNotApplied = false
+    if (key === 'appliedOnly' && value) {
+      nextFilters.openedNotApplied = false
+      nextFilters.followUpDue = false
+    }
     if (key === 'openedNotApplied' && value) nextFilters.appliedOnly = false
+    if (key === 'followUpDue' && value) nextFilters.appliedOnly = false
+    const nextTab = key === 'appliedOnly' || key === 'openedNotApplied' || key === 'followUpDue'
+      ? (nextFilters.appliedOnly ? 'applied' : nextFilters.followUpDue ? 'followups' : 'all')
+      : activeTab
+    setActiveTab(nextTab)
+    setSelectedIds(new Set())
     setFilters(nextFilters)
-    refresh(nextFilters, sort, 1)
+    refresh(nextFilters, sort, 1, nextTab)
   }
 
   const updateSort = (field) => {
@@ -150,11 +220,14 @@ export default function Applications() {
   }
 
   const clearFilters = () => {
-    setFilters(DEFAULT_FILTERS)
-    refresh(DEFAULT_FILTERS, sort, 1)
+    const nextFilters = filtersForApplicationTab(DEFAULT_FILTERS, activeTab)
+    setSelectedIds(new Set())
+    setFilters(nextFilters)
+    refresh(nextFilters, sort, 1)
   }
 
   const goToPage = (newPage) => {
+    setSelectedIds(new Set())
     refresh(filters, sort, newPage)
   }
 
@@ -215,6 +288,7 @@ export default function Applications() {
       )
       clearDraftFields(itemId, draftFields)
       await refresh()
+      refreshSummary()
       return updated
     } catch (error) {
       const formatted = formatApiError(error, 'Could not save this application. Correct the highlighted fields and retry.')
@@ -246,7 +320,7 @@ export default function Applications() {
     const message = 'Use History & evidence to correct an existing applied date with a reason.'
     setFieldErrors((prev) => ({ ...prev, [app.id]: { ...(prev[app.id] || {}), applied_at: message } }))
     setFocusTarget({ itemId: app.id, field: 'applied_at' })
-    setExpandedTrackId(app.id)
+    if (expandedTrackId !== app.id) toggleDetails(app.id)
     return null
   }
 
@@ -277,6 +351,7 @@ export default function Applications() {
       toast(`Marked ${selectedIds.size} as applied`, 'success')
       setSelectedIds(new Set())
       await refresh()
+      refreshSummary()
     } catch (error) {
       toast(formatApiError(error, 'Could not update the selected applications. Please retry.').message, 'error')
     } finally {
@@ -356,16 +431,27 @@ export default function Applications() {
   const clearNavigationError = () => {
     window.history.replaceState({}, '', window.location.pathname)
     setQueryError('')
+    setActiveTab('all')
     setSort({ field: 'opened_at', direction: 'desc' })
     setFilters(DEFAULT_FILTERS)
     setPagination(DEFAULT_PAGINATION)
-    refresh(DEFAULT_FILTERS, { field: 'opened_at', direction: 'desc' }, 1)
+    refresh(DEFAULT_FILTERS, { field: 'opened_at', direction: 'desc' }, 1, 'all')
+  }
+
+  const toggleDetails = (itemId) => {
+    const nextId = expandedTrackId === itemId ? null : itemId
+    const params = new URLSearchParams(window.location.search)
+    if (nextId) params.set('track_id', String(nextId))
+    else params.delete('track_id')
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params}`)
+    setExpandedTrackId(nextId)
   }
 
   const columns = [
     ['company', 'Company'],
     ['title', 'Title'],
     ['status', 'Status'],
+    ['updated_at', 'Last updated'],
     ['ats_group', 'ATS'],
     ['search_bucket', 'Bucket'],
     ['resume_match_score', 'Score'],
@@ -382,15 +468,16 @@ export default function Applications() {
       <div className="page-header-row">
         <div>
           <h2>Applications</h2>
-          <p>Track opened jobs, applied dates, follow-ups, notes, and statuses.</p>
+          <p>Track opened jobs, applied dates, follow-ups, notes, and statuses. My Applications separates confirmed submissions from saved links.</p>
         </div>
         <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
       </div>
 
-      <div className="stats-grid app-stats-grid">
-        <div className="stat-card"><span>Total</span><strong>{pagination.totalCount}</strong></div>
-        <div className="stat-card"><span>Page</span><strong>{pagination.page}</strong></div>
-        <div className="stat-card"><span>Shown</span><strong>{applications.length}</strong></div>
+      <ApplicationLedgerTabs activeTab={activeTab} onChange={selectTab} />
+      <ApplicationSummary summary={summary} loading={summaryLoading} error={summaryError} onRetry={refreshSummary} />
+      <div className="application-results-meta" aria-live="polite">
+        <div className="stat-card"><span>Total matching</span><strong>{listError || loading ? '—' : pagination.totalCount}</strong></div>
+        <p>{listError ? 'Results unavailable until the request succeeds' : loading ? 'Loading matching results…' : pagination.totalCount === 0 ? 'No matching records' : `Showing ${(pagination.page - 1) * pagination.pageSize + 1}–${(pagination.page - 1) * pagination.pageSize + applications.length} of ${pagination.totalCount} records`}</p>
       </div>
 
       <div className="export-bar">
@@ -400,11 +487,11 @@ export default function Applications() {
           <option value="json">JSON</option>
         </select>
         <select value={exportScope} onChange={(e) => setExportScope(e.target.value)}>
-          <option value="all">All rows</option>
+          <option value="all">All rows across this account</option>
           <option value="filtered">Filtered rows</option>
           <option value="selected">Selected rows</option>
           <option value="applied">Ever applied (matching filters)</option>
-          <option value="followups">Follow-ups due</option>
+          <option value="followups">Follow-ups due (all account)</option>
         </select>
         <button className="btn btn-grey" onClick={handleExport} disabled={loading}>Download</button>
       </div>
@@ -466,19 +553,25 @@ export default function Applications() {
         </div>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap" id="application-ledger-results" role="tabpanel" aria-label={`${activeTab === 'applied' ? 'Ever Applied' : activeTab === 'followups' ? 'Follow-ups Due' : 'All Tracked'} results`}>
         {loading ? (
           <div className="empty-state">
             <div className="loading-spinner" />
             <p>Loading applications...</p>
           </div>
+        ) : listError ? (
+          <div className="empty-state" role="alert">
+            <h3>Applications unavailable</h3>
+            <p>{listError}</p>
+            <button type="button" className="btn btn-blue" onClick={() => refresh()}>Retry applications</button>
+          </div>
         ) : applications.length === 0 ? (
           <div className="empty-state">
-            <h3>No applications yet</h3>
-            <p>Open job links from the Dashboard to start tracking applications.</p>
+            <h3>{applicationEmptyState(activeTab, Object.entries(filters).some(([key, value]) => !['appliedOnly', 'followUpDue'].includes(key) && Boolean(value))).title}</h3>
+            <p>{applicationEmptyState(activeTab, Object.entries(filters).some(([key, value]) => !['appliedOnly', 'followUpDue'].includes(key) && Boolean(value))).body}</p>
           </div>
         ) : (
-          <table>
+          <table className="applications-table">
             <thead><tr>
               <th className="row-select-cell">
                 <input
@@ -505,6 +598,7 @@ export default function Applications() {
                         className="inline-input"
                         ref={(node) => { fieldRefs.current[draftKey(app.id, 'company')] = node }}
                         value={draftValue(app, 'company', app.company || '')}
+                        placeholder="Unknown company"
                         aria-invalid={Boolean(fieldErrors[app.id]?.company)}
                         aria-describedby={fieldErrors[app.id]?.company ? `app-${app.id}-company-error` : undefined}
                         disabled={pendingRows.has(app.id)}
@@ -522,7 +616,7 @@ export default function Applications() {
                       {fieldErrors[app.id]?.company && <p id={`app-${app.id}-company-error`} className="error-msg" role="alert">{fieldErrors[app.id].company}</p>}
                     </td>
                   )}
-                  {!hiddenColumns.includes('title') && <td>{app.title}</td>}
+                  {!hiddenColumns.includes('title') && <td>{app.title || 'Unknown role'}</td>}
                   {!hiddenColumns.includes('status') && (
                     <td>
                       <select
@@ -542,6 +636,7 @@ export default function Applications() {
                       {fieldErrors[app.id]?.status && <p id={`app-${app.id}-status-error`} className="error-msg" role="alert">{fieldErrors[app.id].status}</p>}
                     </td>
                   )}
+                  {!hiddenColumns.includes('updated_at') && <td>{formatDateTime(app.updated_at) || 'Not recorded'}</td>}
                   {!hiddenColumns.includes('ats_group') && <td>{app.ats_group}</td>}
                   {!hiddenColumns.includes('search_bucket') && <td>{app.search_bucket}</td>}
                   {!hiddenColumns.includes('resume_match_score') && <td>{app.resume_match_score}</td>}
@@ -566,11 +661,11 @@ export default function Applications() {
                             }
                           }}
                         />
-                        {app.applied_at && (
-                          <button className="btn btn-grey btn-sm" type="button" onClick={() => setExpandedTrackId(app.id)}>
+                        {app.applied_at ? (
+                          <button className="btn btn-grey btn-sm" type="button" onClick={() => { if (expandedTrackId !== app.id) toggleDetails(app.id) }}>
                             Correct with reason
                           </button>
-                        )}
+                        ) : <span className="application-date-hint">Date not recorded</span>}
                       </div>
                       {fieldErrors[app.id]?.applied_at && <p id={`app-${app.id}-applied-error`} className="error-msg" role="alert">{fieldErrors[app.id].applied_at}</p>}
                     </td>
@@ -635,12 +730,17 @@ export default function Applications() {
                     <button className="btn btn-grey" style={{ marginLeft: 6 }} disabled={pendingRows.has(app.id)} onClick={() => addApplicationToToday(app)}>
                       Add to Today
                     </button>
+                    {app.company?.trim() && (
+                      <a className="btn btn-grey" style={{ marginLeft: 6 }} href={`/companies?company=${encodeURIComponent(app.company)}&track_id=${app.id}`}>
+                        Company history
+                      </a>
+                    )}
                     <button
                       className="btn btn-grey"
                       style={{ marginLeft: 6 }}
                       type="button"
                       aria-expanded={expandedTrackId === app.id}
-                      onClick={() => setExpandedTrackId((current) => current === app.id ? null : app.id)}
+                      onClick={() => toggleDetails(app.id)}
                     >
                       {expandedTrackId === app.id ? 'Hide details' : 'History, evidence & documents'}
                     </button>
