@@ -476,8 +476,8 @@ export default function Applications() {
       <ApplicationLedgerTabs activeTab={activeTab} onChange={selectTab} />
       <ApplicationSummary summary={summary} loading={summaryLoading} error={summaryError} onRetry={refreshSummary} />
       <div className="application-results-meta" aria-live="polite">
-        <div className="stat-card"><span>Total matching</span><strong>{pagination.totalCount}</strong></div>
-        <p>{pagination.totalCount === 0 ? 'No matching records' : `Showing ${(pagination.page - 1) * pagination.pageSize + 1}–${(pagination.page - 1) * pagination.pageSize + applications.length} of ${pagination.totalCount} records`}</p>
+        <div className="stat-card"><span>Total matching</span><strong>{listError || loading ? '—' : pagination.totalCount}</strong></div>
+        <p>{listError ? 'Results unavailable until the request succeeds' : loading ? 'Loading matching results…' : pagination.totalCount === 0 ? 'No matching records' : `Showing ${(pagination.page - 1) * pagination.pageSize + 1}–${(pagination.page - 1) * pagination.pageSize + applications.length} of ${pagination.totalCount} records`}</p>
       </div>
 
       <div className="export-bar">
