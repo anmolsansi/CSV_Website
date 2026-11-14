@@ -187,4 +187,28 @@ test.describe('JG-007 browser/export query parity', () => {
     await expect(page.getByText('Export failed. No file was downloaded. Please retry.')).toBeVisible();
     await expect(page.getByText('Export downloaded')).toHaveCount(0);
   });
+
+  test('Ever applied is independent of stage and exclusive with opened-not-applied', async ({ page }) => {
+    const firstRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      const qs = new URL(request.url()).searchParams;
+      return qs.get('applied_only') === 'true' && qs.get('status') === 'interview';
+    });
+
+    await page.goto('/applications?applied_only=true&status=interview');
+    const initial = new URL((await firstRequest).url()).searchParams;
+    expect(initial.get('applied_only')).toBe('true');
+    expect(initial.get('status')).toBe('interview');
+    await expect(page.getByLabel('Ever applied (any status)')).toBeChecked();
+    await expect(page.locator('.table-controls select').first()).toHaveValue('interview');
+
+    const switchRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      return new URL(request.url()).searchParams.get('opened_not_applied') === 'true';
+    });
+    await page.getByLabel('Opened, not applied').check();
+    const switched = new URL((await switchRequest).url()).searchParams;
+    expect(switched.get('applied_only')).toBe('false');
+    await expect(page.getByLabel('Ever applied (any status)')).not.toBeChecked();
+  });
 });
