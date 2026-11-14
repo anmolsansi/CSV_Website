@@ -658,7 +658,7 @@ export default function Applications() {
                           }}
                         />
                         {app.applied_at ? (
-                          <button className="btn btn-grey btn-sm" type="button" onClick={() => toggleDetails(app.id)}>
+                          <button className="btn btn-grey btn-sm" type="button" onClick={() => { if (expandedTrackId !== app.id) toggleDetails(app.id) }}>
                             Correct with reason
                           </button>
                         ) : <span className="application-date-hint">Date not recorded</span>}
