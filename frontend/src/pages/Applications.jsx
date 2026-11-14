@@ -305,7 +305,9 @@ export default function Applications() {
       params.rowIds = [...selectedIds]
     } else if (exportScope === 'applied') {
       params.scope = 'filtered'
-      Object.assign(params, { ...DEFAULT_FILTERS, status: 'applied' })
+      params.appliedOnly = true
+      params.status = ''
+      params.openedNotApplied = false
     } else if (exportScope === 'followups') {
       params.scope = 'filtered'
       Object.assign(params, { ...DEFAULT_FILTERS, followUpDue: true })
@@ -401,7 +403,7 @@ export default function Applications() {
           <option value="all">All rows</option>
           <option value="filtered">Filtered rows</option>
           <option value="selected">Selected rows</option>
-          <option value="applied">Applied only</option>
+          <option value="applied">Ever applied (matching filters)</option>
           <option value="followups">Follow-ups due</option>
         </select>
         <button className="btn btn-grey" onClick={handleExport} disabled={loading}>Download</button>
