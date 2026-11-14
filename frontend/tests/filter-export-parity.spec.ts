@@ -258,4 +258,15 @@ test.describe('JG-007 browser/export query parity', () => {
     expect(exported.has('page')).toBeFalsy();
     expect(exported.has('page_size')).toBeFalsy();
   });
+
+  test('Anmol view keeps the App Status column visible', async ({ page }) => {
+    await page.goto('/');
+    const preset = page.getByRole('button', { name: "Anmol's View" });
+    if (!await preset.isVisible().catch(() => false)) {
+      await page.getByRole('button', { name: /Show, hide, and rearrange columns/ }).click();
+    }
+    await expect(preset).toBeVisible();
+    await preset.click();
+    await expect(page.getByRole('columnheader', { name: 'App Status' })).toBeVisible();
+  });
 });
