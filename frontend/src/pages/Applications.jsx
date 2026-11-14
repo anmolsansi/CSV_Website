@@ -315,7 +315,7 @@ export default function Applications() {
     const message = 'Use History & evidence to correct an existing applied date with a reason.'
     setFieldErrors((prev) => ({ ...prev, [app.id]: { ...(prev[app.id] || {}), applied_at: message } }))
     setFocusTarget({ itemId: app.id, field: 'applied_at' })
-    setExpandedTrackId(app.id)
+    if (expandedTrackId !== app.id) toggleDetails(app.id)
     return null
   }
 
@@ -426,10 +426,20 @@ export default function Applications() {
   const clearNavigationError = () => {
     window.history.replaceState({}, '', window.location.pathname)
     setQueryError('')
+    setActiveTab('all')
     setSort({ field: 'opened_at', direction: 'desc' })
     setFilters(DEFAULT_FILTERS)
     setPagination(DEFAULT_PAGINATION)
-    refresh(DEFAULT_FILTERS, { field: 'opened_at', direction: 'desc' }, 1)
+    refresh(DEFAULT_FILTERS, { field: 'opened_at', direction: 'desc' }, 1, 'all')
+  }
+
+  const toggleDetails = (itemId) => {
+    const nextId = expandedTrackId === itemId ? null : itemId
+    const params = new URLSearchParams(window.location.search)
+    if (nextId) params.set('track_id', String(nextId))
+    else params.delete('track_id')
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params}`)
+    setExpandedTrackId(nextId)
   }
 
   const columns = [
@@ -717,7 +727,7 @@ export default function Applications() {
                       style={{ marginLeft: 6 }}
                       type="button"
                       aria-expanded={expandedTrackId === app.id}
-                      onClick={() => setExpandedTrackId((current) => current === app.id ? null : app.id)}
+                      onClick={() => toggleDetails(app.id)}
                     >
                       {expandedTrackId === app.id ? 'Hide details' : 'History, evidence & documents'}
                     </button>
