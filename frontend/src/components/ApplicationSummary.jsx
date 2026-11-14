@@ -25,7 +25,7 @@ export default function ApplicationSummary({ summary, loading, error, onRetry })
   return (
     <section aria-label="Account-wide application summary">
       <div className="application-summary-heading">
-        <h3>My Applications overview</h3>
+        <h3>Account overview</h3>
         <span>All-time and current-stage account metrics. Not affected by table filters.</span>
       </div>
       {error && (
