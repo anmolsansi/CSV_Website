@@ -211,4 +211,33 @@ test.describe('JG-007 browser/export query parity', () => {
     expect(switched.get('applied_only')).toBe('false');
     await expect(page.getByLabel('Ever applied (any status)')).not.toBeChecked();
   });
+
+  test('applied-date controls send UTC bounds separately from opened dates', async ({ page }) => {
+    await page.goto('/applications');
+    const lower = page.getByLabel('Applied from');
+    const upper = page.getByLabel('Applied before');
+    await expect(lower).toBeVisible();
+    await expect(upper).toBeVisible();
+
+    const since = '2026-09-15T09:30';
+    const fromRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      return new URL(request.url()).searchParams.has('date_applied_from');
+    });
+    await lower.fill(since);
+    const fromQuery = new URL((await fromRequest).url()).searchParams;
+    expect(fromQuery.get('date_applied_from')).toBe(new Date(since).toISOString());
+    expect(fromQuery.has('date_from')).toBeFalsy();
+
+    const before = '2026-10-01T12:00';
+    const toRequest = page.waitForRequest((request) => {
+      if (!request.url().includes('/crm/applications?')) return false;
+      return new URL(request.url()).searchParams.has('date_applied_to');
+    });
+    await upper.fill(before);
+    const toQuery = new URL((await toRequest).url()).searchParams;
+    expect(toQuery.get('date_applied_to')).toBe(new Date(before).toISOString());
+    expect(toQuery.get('date_applied_from')).toBe(new Date(since).toISOString());
+    await expect(page.getByLabel('Opened range')).toHaveValue('');
+  });
 });
