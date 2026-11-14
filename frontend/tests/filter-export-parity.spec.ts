@@ -240,4 +240,22 @@ test.describe('JG-007 browser/export query parity', () => {
     expect(toQuery.get('date_applied_from')).toBe(new Date(since).toISOString());
     await expect(page.getByLabel('Opened range')).toHaveValue('');
   });
+
+  test('ever-applied export preserves search and applied date while removing stage restriction', async ({ page }) => {
+    await page.goto('/applications?status=interview&company=Acme&date_applied_from=2026-09-15T09%3A00%3A00.000Z');
+    await expect(page.locator('.export-bar button', { hasText: 'Download' })).toBeEnabled();
+    await page.locator('.export-bar select').nth(1).selectOption('applied');
+
+    const exportRequest = page.waitForRequest((request) => request.url().includes('/crm/export/applications?'));
+    await page.locator('.export-bar button', { hasText: 'Download' }).click();
+    const exported = new URL((await exportRequest).url()).searchParams;
+
+    expect(exported.get('scope')).toBe('filtered');
+    expect(exported.get('applied_only')).toBe('true');
+    expect(exported.get('status')).toBeNull();
+    expect(exported.get('company')).toBe('Acme');
+    expect(exported.get('date_applied_from')).toBe('2026-09-15T09:00:00.000Z');
+    expect(exported.has('page')).toBeFalsy();
+    expect(exported.has('page_size')).toBeFalsy();
+  });
 });
