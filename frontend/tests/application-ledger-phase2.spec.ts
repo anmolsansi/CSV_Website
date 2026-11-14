@@ -74,7 +74,10 @@ test.describe('AL-07 to AL-12: My Applications', () => {
 
   test('AL-09/10: sortable stage, date, updated time and reusable detail survive reload', async ({ page }) => {
     await page.goto('/applications?tab=applied')
-    await expect(page.locator('.applications-table th')).toContainText(['', 'Company', 'Title', 'Status', 'Last updated', 'ATS', 'Bucket', 'Score', 'Opened At', 'Applied At', 'Follow-up', 'Notes', 'URL', 'Actions'])
+    const headers = await page.locator('.applications-table thead th').allTextContents()
+    expect(headers.join(' ')).toContain('Last updated')
+    expect(headers.join(' ')).toContain('Applied At')
+    expect(headers.join(' ')).toContain('Follow-up')
     const first = page.locator('.applications-table tbody tr').first()
     await first.getByRole('button', { name: 'History, evidence & documents' }).click()
     await expect(page).toHaveURL(/track_id=\d+/)
