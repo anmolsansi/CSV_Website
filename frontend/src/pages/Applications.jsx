@@ -80,6 +80,7 @@ export default function Applications() {
   const [pagination, setPagination] = useState({ ...DEFAULT_PAGINATION, page: initialNavigation.page, pageSize: initialNavigation.pageSize })
   const settledQueryRef = useRef(null)
   const requestSequenceRef = useRef(0)
+  const summaryRequestSequenceRef = useRef(0)
   const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
   const [listError, setListError] = useState('')
   const [summary, setSummary] = useState(null)
@@ -132,14 +133,18 @@ export default function Applications() {
   }
 
   const refreshSummary = () => {
+    const requestId = ++summaryRequestSequenceRef.current
     setSummaryLoading(true)
     setSummaryError('')
     return api.getAnalytics().then((data) => {
-      setSummary(data)
+      if (requestId === summaryRequestSequenceRef.current) setSummary(data)
     }).catch(() => {
+      if (requestId !== summaryRequestSequenceRef.current) return
       setSummary(null)
       setSummaryError('Could not load the account overview. Table results may still be available.')
-    }).finally(() => setSummaryLoading(false))
+    }).finally(() => {
+      if (requestId === summaryRequestSequenceRef.current) setSummaryLoading(false)
+    })
   }
 
   useEffect(() => {
