@@ -1762,6 +1762,18 @@ textarea:focus-visible {
 .application-date-hint { color: var(--color-text-secondary, #6b7280); font-size: 12px; }
 .applications-table { min-width: 1020px; }
 #application-ledger-results { max-width: 100%; overflow-x: auto; }
+#application-ledger-results .applications-table td:last-child {
+  min-width: 270px;
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+#application-ledger-results .applications-table td:last-child .btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+}
 @media (max-width: 768px) {
   #application-ledger-results table th:nth-child(n+6),
   #application-ledger-results table td:nth-child(n+6) { display: table-cell; }
