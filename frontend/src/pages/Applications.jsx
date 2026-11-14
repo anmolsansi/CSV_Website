@@ -5,6 +5,9 @@ import { useToast } from '../App'
 import ApplicationTimeline from '../components/ApplicationTimeline'
 import ApplicationDocuments from '../components/ApplicationDocuments'
 import JobAvailability from '../components/JobAvailability'
+import ApplicationLedgerTabs from '../components/ApplicationLedgerTabs'
+import ApplicationSummary from '../components/ApplicationSummary'
+import { applicationTabFromUrl, filtersForApplicationTab, applicationEmptyState } from '../utils/applicationLedgerViews'
 
 const STATUSES = ['opened', 'applied', 'follow_up', 'interview', 'rejected', 'offer', 'not_applying']
 
@@ -59,18 +62,26 @@ export default function Applications() {
     () => applicationNavigationState(window.location.search, { ...DEFAULT_FILTERS, sortBy: 'opened_at', sortDir: 'desc', page: 1, pageSize: 50 }),
     []
   )
-  const initialFilters = { ...DEFAULT_FILTERS, ...initialNavigation.filters }
+  const initialTab = applicationTabFromUrl(window.location.search, initialNavigation.filters)
+  const explicitTab = new URLSearchParams(window.location.search).has('tab')
+  const initialFilters = explicitTab
+    ? filtersForApplicationTab({ ...DEFAULT_FILTERS, ...initialNavigation.filters }, initialTab)
+    : { ...DEFAULT_FILTERS, ...initialNavigation.filters }
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [applications, setApplications] = useState([])
   const [filterOptions, setFilterOptions] = useState({ ats_groups: [], location_groups: [], decisions: [], sponsorship_statuses: [] })
   const [filters, setFilters] = useState(initialFilters)
   const [hiddenColumns, setHiddenColumns] = useState(['searchBucket'])
-  const [sort, setSort] = useState(initialNavigation.sort)
+  const [sort, setSort] = useState(() => initialTab === 'applied' && !new URLSearchParams(window.location.search).has('sort_by')
+    ? { field: 'applied_at', direction: 'desc' }
+    : initialNavigation.sort)
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [pagination, setPagination] = useState({ ...DEFAULT_PAGINATION, page: initialNavigation.page, pageSize: initialNavigation.pageSize })
   const settledQueryRef = useRef(null)
   const requestSequenceRef = useRef(0)
   const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
+  const [listError, setListError] = useState('')
   const [drafts, setDrafts] = useState({})
   const [fieldErrors, setFieldErrors] = useState({})
   const [focusTarget, setFocusTarget] = useState(null)
