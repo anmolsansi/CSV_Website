@@ -1,12 +1,23 @@
 # JobGrid Development Roadmap
 
 **Updated:** November 14, 2026  
-**Status:** Application Ledger 2.0 planned, no AL implementation complete  
+**Status:** AL Phase 1 implementation proposed in PR #205; repository CI and staging acceptance pending. Other AL phases remain planned.  
 **Repository:** [anmolsansi/CSV_Website](https://github.com/anmolsansi/CSV_Website)
 
 ## Current priority: Application Ledger 2.0
 
 **Product Requirements Document:** [`docs/PRD_APPLICATION_LEDGER_V2.md`](docs/PRD_APPLICATION_LEDGER_V2.md)
+
+**Phase 1 implementation review:** [PR #205](https://github.com/anmolsansi/CSV_Website/pull/205) · [tracking issue #204](https://github.com/anmolsansi/CSV_Website/issues/204) · [contract audit](docs/AL_PHASE1_APPLICATION_AUDIT.md)
+
+The branch `al-phase1-application-ledger` includes the Ever Applied filter,
+historical CSV/JSON export correction, separate opened/applied date controls,
+Anmol View status visibility, and backend/Playwright regressions.
+Implementation commits and passing individual checks do **not** authorize a
+production release. Keep AL-01–AL-06 checkboxes open until the focused CI gate,
+integration review, and approved staging verification are recorded. No
+production history was repaired or migrated.
+
 
 **Goal:** Make every explicitly confirmed job application discoverable for life, independent of its current stage, source CSV, or browser session. An opened or saved job is not an applied job.
 
