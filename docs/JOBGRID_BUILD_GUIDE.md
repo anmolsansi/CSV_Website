@@ -2,6 +2,83 @@
 
 This guide describes behavior implemented in the repository. It is not a copy of the future roadmap.
 
+## Application Ledger Phase 1: dated submission history (AL-01–AL-06)
+
+Phase 1 reuses the existing account-owned application model. It does not introduce
+a new database, migration, application-submission automation, or browser extension.
+Its code is on the AL Phase 1 branch until reviewed and merged. Implementation
+does not prove that a particular production account contains complete historical
+data.
+
+### Use the application history controls
+
+1. Open **Applications** and check **Ever applied (any status)**. This sends
+   `GET /crm/applications?applied_only=true` using the existing owner-scoped
+   `JobTrack.applied_at IS NOT NULL` predicate. **Status** is a separate filter,
+   so a previously submitted job remains in lifetime history when its current
+   stage becomes `interview`, `rejected`, `offer`, or `not_applying`.
+2. **Opened, not applied** and **Ever applied** are exclusive in the UI.
+   Opening/saving a job is not submission evidence.
+3. **Opened range**, **Opened from**, and **Opened before** compare `opened_at`.
+   **Applied from** and **Applied before** compare `applied_at`.
+   The latter are local browser wall-time inputs serialized to UTC ISO before
+   requests. Both upper-bound fields are exclusive. Use **All time** and blank
+   date fields to avoid accidentally excluding older submissions.
+4. To order by original application time, click the **Applied At** table header.
+   Server ordering uses `sort_by=applied_at`, with a stable track-ID tie-break.
+5. In **Export**, select **Ever applied (matching filters)** and CSV or JSON.
+   JobGrid sends `GET /crm/export/applications?scope=filtered&applied_only=true`,
+   retaining current company/search/application-date filters while removing
+   only a conflicting current-status or opened-not-applied restriction.
+   The filtered export is not limited to the currently visible page.
+   **Filtered rows** uses all current filters; **All rows** deliberately exports
+   the owner's full tracked list without filters.
+6. On **Job Links**, **Send to Applications** stores jobs for tracking but
+   does not confirm submission. **Mark applied** records explicit submission.
+   Both choices are available in selected-row actions, and the full **Job
+   actions** section exposes the mark-applied action. **App Status** is visible
+   even with the **Anmol's View** column preset active.
+
+### Contracts, anomalies and rollback
+
+The list and filtered export use `backend/app/services/row_queries.py` and
+the existing `ApplicationQuery` fields `applied_only`,
+`date_applied_from`, and `date_applied_to`. Frontend serialization stays in
+`frontend/src/api/queryParams.js`. No public API shape or database field is
+changed. `backend/app/services/lifecycle.py` preserves the first date on
+normal stage updates and records a first-applied event once.
+
+A legacy row with `status='applied'` and no `applied_at` is **not**
+retroactively considered a dated submission. No automatic data repair is
+performed. The existing authenticated
+`GET /crm/applications/validation-report` endpoint reports anomaly counts with
+`repair_mode='manual_only'`; reconcile real user data through an approved
+separate procedure. Unknown historical dates and repeat submissions are
+reserved for AL-19. See [AL audit](AL_PHASE1_APPLICATION_AUDIT.md) and
+[PRD](PRD_APPLICATION_LEDGER_V2.md).
+
+Test locally using a disposable database and test user:
+
+```sh
+cd backend
+pytest tests/test_application_ledger_phase1.py tests/test_application_memory.py tests/test_filtered_exports.py -q
+cd ../frontend
+npm run build
+npm run test:e2e -- tests/filter-export-parity.spec.ts
+```
+
+The new backend regressions cover stage transitions, CSV source deletion, one
+first-applied event, legacy/missing dates, owner isolation, half-open applied
+date bounds, stable page ordering, and CSV/JSON full-result parity. Browser
+regressions cover current-stage/lifetime filter independence, date conversion,
+applied-only export parameters, and the Anmol view status column.
+
+**Rollback:** Revert the frontend/test/docs branch changes without altering
+stored `JobTrack` records or lifecycle facts. There is no migration downgrade.
+Before production activation, normal repository CI must pass and staging must
+verify authenticated persistence, a rejected/interviewed applied job, owner
+isolation, and export parity. GitHub CI alone is not hosted staging acceptance.
+
 ## Backup implementation status
 
 JG-001 freezes and validates the portable backup **v2 record contract** in `backend/app/backup_schemas.py`.
