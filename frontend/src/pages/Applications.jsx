@@ -464,7 +464,7 @@ export default function Applications() {
       <div className="page-header-row">
         <div>
           <h2>Applications</h2>
-          <p>Track opened jobs, applied dates, follow-ups, notes, and statuses.</p>
+          <p>My Applications: confirmed submissions, saved jobs, current stages, follow-ups, and history.</p>
         </div>
         <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
       </div>
@@ -483,11 +483,11 @@ export default function Applications() {
           <option value="json">JSON</option>
         </select>
         <select value={exportScope} onChange={(e) => setExportScope(e.target.value)}>
-          <option value="all">All rows</option>
+          <option value="all">All rows across this account</option>
           <option value="filtered">Filtered rows</option>
           <option value="selected">Selected rows</option>
           <option value="applied">Ever applied (matching filters)</option>
-          <option value="followups">Follow-ups due</option>
+          <option value="followups">Follow-ups due (all account)</option>
         </select>
         <button className="btn btn-grey" onClick={handleExport} disabled={loading}>Download</button>
       </div>
@@ -567,7 +567,7 @@ export default function Applications() {
             <p>{applicationEmptyState(activeTab, Object.entries(filters).some(([key, value]) => !['appliedOnly', 'followUpDue'].includes(key) && Boolean(value))).body}</p>
           </div>
         ) : (
-          <table>
+          <table className="applications-table">
             <thead><tr>
               <th className="row-select-cell">
                 <input
