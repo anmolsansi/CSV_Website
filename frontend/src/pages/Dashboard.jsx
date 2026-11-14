@@ -264,16 +264,6 @@ export default function Dashboard() {
     [columnOrder, columns]
   )
 
-  const isAnmolView = useMemo(() => {
-    if (columns.length === 0) return false
-    const expectedVisible = ANMOL_VIEW_COLUMNS.filter((col) => columns.includes(col))
-    const actualVisible = columns.filter((col) => !hidden.includes(col))
-    return (
-      expectedVisible.length === actualVisible.length &&
-      expectedVisible.every((col) => actualVisible.includes(col))
-    )
-  }, [columns, hidden])
-
   const toggleDashboardSection = (sectionKey) => {
     setCollapsedSections((previous) => {
       const next = { ...previous, [sectionKey]: !previous[sectionKey] }
@@ -1096,7 +1086,7 @@ export default function Dashboard() {
             onRowClick={(row) => setDrawerRow(row)}
             pinnedColumns={pinnedColumns}
             density={density}
-            showAppStatus={!isAnmolView}
+            showAppStatus
             groupBy={filters.groupBy}
             groupCounts={groupCounts}
           />
