@@ -464,7 +464,7 @@ export default function Applications() {
       <div className="page-header-row">
         <div>
           <h2>Applications</h2>
-          <p>My Applications: confirmed submissions, saved jobs, current stages, follow-ups, and history.</p>
+          <p>Track opened jobs, applied dates, follow-ups, notes, and statuses. My Applications separates confirmed submissions from saved links.</p>
         </div>
         <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
       </div>
