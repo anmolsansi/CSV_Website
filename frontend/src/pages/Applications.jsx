@@ -4,7 +4,6 @@ import { applicationNavigationState, applicationStateQuery, queryValidationMessa
 import { useToast } from '../App'
 import ApplicationTimeline from '../components/ApplicationTimeline'
 import ApplicationDocuments from '../components/ApplicationDocuments'
-import ApplicationWorkspace from '../components/ApplicationWorkspace'
 import JobAvailability from '../components/JobAvailability'
 import ApplicationLedgerTabs from '../components/ApplicationLedgerTabs'
 import ApplicationSummary from '../components/ApplicationSummary'
@@ -743,7 +742,6 @@ export default function Applications() {
                     <td colSpan={columns.filter(([key]) => !hiddenColumns.includes(key)).length + 2}>
                       <JobAvailability trackId={app.id} />
                       <ApplicationDocuments application={app} />
-                      <ApplicationWorkspace application={app} />
                       <ApplicationTimeline
                         application={app}
                         onApplicationChanged={(updated) => {
