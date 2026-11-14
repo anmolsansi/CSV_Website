@@ -82,6 +82,9 @@ export default function Applications() {
   const requestSequenceRef = useRef(0)
   const [queryError, setQueryError] = useState(() => queryValidationMessage(initialNavigation))
   const [listError, setListError] = useState('')
+  const [summary, setSummary] = useState(null)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [summaryError, setSummaryError] = useState('')
   const [drafts, setDrafts] = useState({})
   const [fieldErrors, setFieldErrors] = useState({})
   const [focusTarget, setFocusTarget] = useState(null)
@@ -128,8 +131,20 @@ export default function Applications() {
     })
   }
 
+  const refreshSummary = () => {
+    setSummaryLoading(true)
+    setSummaryError('')
+    return api.getAnalytics().then((data) => {
+      setSummary(data)
+    }).catch(() => {
+      setSummary(null)
+      setSummaryError('Could not load the account overview. Table results may still be available.')
+    }).finally(() => setSummaryLoading(false))
+  }
+
   useEffect(() => {
     refresh()
+    refreshSummary()
   }, [])
 
   useEffect(() => {
@@ -268,6 +283,7 @@ export default function Applications() {
       )
       clearDraftFields(itemId, draftFields)
       await refresh()
+      refreshSummary()
       return updated
     } catch (error) {
       const formatted = formatApiError(error, 'Could not save this application. Correct the highlighted fields and retry.')
@@ -330,6 +346,7 @@ export default function Applications() {
       toast(`Marked ${selectedIds.size} as applied`, 'success')
       setSelectedIds(new Set())
       await refresh()
+      refreshSummary()
     } catch (error) {
       toast(formatApiError(error, 'Could not update the selected applications. Please retry.').message, 'error')
     } finally {
