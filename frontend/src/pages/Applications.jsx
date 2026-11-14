@@ -134,6 +134,8 @@ export default function Applications() {
 
   const updateFilter = (key, value) => {
     const nextFilters = { ...filters, [key]: value }
+    if (key === 'appliedOnly' && value) nextFilters.openedNotApplied = false
+    if (key === 'openedNotApplied' && value) nextFilters.appliedOnly = false
     setFilters(nextFilters)
     refresh(nextFilters, sort, 1)
   }
@@ -417,6 +419,7 @@ export default function Applications() {
         <div><label>Max score</label><input type="number" value={filters.maxScore} onChange={(e) => updateFilter('maxScore', e.target.value)} /></div>
         <div><label>Search</label><input value={filters.q} onChange={(e) => updateFilter('q', e.target.value)} placeholder="Title, company, URL" /></div>
         <div className="checkbox-filter">
+          <label><input type="checkbox" checked={filters.appliedOnly} onChange={(e) => updateFilter('appliedOnly', e.target.checked)} /> Ever applied (any status)</label>
           <label><input type="checkbox" checked={filters.openedNotApplied} onChange={(e) => updateFilter('openedNotApplied', e.target.checked)} /> Opened, not applied</label>
           <label><input type="checkbox" checked={filters.followUpDue} onChange={(e) => updateFilter('followUpDue', e.target.checked)} /> Follow-up due</label>
           <label><input type="checkbox" checked={filters.followUpToday} onChange={(e) => updateFilter('followUpToday', e.target.checked)} /> Follow-up today</label>
