@@ -956,8 +956,8 @@ export default function Dashboard() {
           <div className="sticky-toolbar">
             <span className="toolbar-count"><strong>{selectedRowIds.size}</strong> selected</span>
             <button className="btn btn-blue" onClick={openSelected}>Open selected</button>
-            <button className="btn btn-blue" onClick={sendToApplications}>Send to Applications</button>
-            <button className="btn btn-green" onClick={() => bulkStatusAction('applied')}>Mark applied</button>
+            <button className="btn btn-blue" onClick={sendToApplications} title="Track selected jobs without confirming submission">Send to Applications</button>
+            <button className="btn btn-green" onClick={() => bulkStatusAction('applied')} title="Confirm submission of selected jobs">Mark applied</button>
             <button className="btn btn-grey" onClick={() => bulkStatusAction('not_applying')}>Not applying</button>
             <button className="btn btn-grey" onClick={() => bulkStatusAction('follow_up')}>Follow-up</button>
             <button className="btn btn-grey" onClick={() => bulkStatusAction('rejected')}>Rejected</button>
@@ -985,7 +985,8 @@ export default function Dashboard() {
             </div>
             <button className="btn btn-blue" onClick={openSelected} disabled={selectedRowIds.size === 0}>Open selected</button>
             <button className="btn btn-blue" onClick={openNext5} disabled={openingBatch || loading}>{openingBatch ? 'Opening…' : 'Open top 5 unopened'}</button>
-            <button className="btn btn-blue" onClick={sendToApplications} disabled={selectedRowIds.size === 0}>Send selected to Applications</button>
+            <button className="btn btn-blue" onClick={sendToApplications} disabled={selectedRowIds.size === 0} title="Track selected jobs without confirming submission">Send selected to Applications</button>
+            <button className="btn btn-green" onClick={() => bulkStatusAction('applied')} disabled={selectedRowIds.size === 0} title="Confirm submission of selected jobs">Mark selected as applied</button>
             <button className="btn btn-blue" onClick={sendNext5ToApplications}>Send next 5 to Applications</button>
             <button className="btn btn-green" onClick={exportApplyPilot} disabled={selectedRowIds.size === 0}>Send 5 to ApplyPilot</button>
             <button className="btn btn-danger" onClick={deleteSelectedRows} disabled={selectedRowIds.size === 0}>Remove selected</button>
