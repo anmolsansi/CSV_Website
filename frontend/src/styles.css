@@ -1721,3 +1721,53 @@ textarea:focus-visible {
   color: var(--color-text, #172554);
 }
 .auth-email-links button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
+
+/* Application Ledger Phase 2: account metrics, lifetime tabs and detail links. */
+.application-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  padding-bottom: 10px;
+}
+.application-view-tab {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111827);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.application-view-tab:hover { background: var(--color-surface-hover, #f3f4f6); }
+.application-view-tab.active {
+  border-color: var(--color-accent, #2563eb);
+  color: var(--color-accent, #2563eb);
+  background: var(--color-surface-raised, #f8fafc);
+}
+.application-view-tab:focus-visible { outline: 3px solid var(--color-accent, #2563eb); outline-offset: 2px; }
+.application-summary-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.application-summary-heading h3 { margin: 0; font-size: 17px; }
+.application-summary-heading span, .application-stat-note { color: var(--color-text-secondary, #6b7280); font-size: 12px; }
+.application-stat-note { display: block; margin-top: 9px; line-height: 1.4; }
+.application-summary-error { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--color-text, #111827); }
+.application-results-meta { display: flex; gap: 16px; align-items: center; margin: 12px 0; }
+.application-results-meta .stat-card { min-width: 135px; }
+.application-results-meta p { margin: 0; color: var(--color-text-secondary, #6b7280); font-size: 13px; }
+.application-date-hint { color: var(--color-text-secondary, #6b7280); font-size: 12px; }
+.applications-table { min-width: 1020px; }
+#application-ledger-results { max-width: 100%; overflow-x: auto; }
+@media (max-width: 768px) {
+  #application-ledger-results table th:nth-child(n+6),
+  #application-ledger-results table td:nth-child(n+6) { display: table-cell; }
+}
+@media (max-width: 600px) {
+  .application-view-tabs { flex-direction: column; }
+  .application-view-tab { width: 100%; text-align: left; }
+  .application-results-meta { flex-wrap: wrap; }
+}
