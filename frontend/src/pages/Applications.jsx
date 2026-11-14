@@ -657,11 +657,11 @@ export default function Applications() {
                             }
                           }}
                         />
-                        {app.applied_at && (
-                          <button className="btn btn-grey btn-sm" type="button" onClick={() => setExpandedTrackId(app.id)}>
+                        {app.applied_at ? (
+                          <button className="btn btn-grey btn-sm" type="button" onClick={() => toggleDetails(app.id)}>
                             Correct with reason
                           </button>
-                        )}
+                        ) : <span className="application-date-hint">Date not recorded</span>}
                       </div>
                       {fieldErrors[app.id]?.applied_at && <p id={`app-${app.id}-applied-error`} className="error-msg" role="alert">{fieldErrors[app.id].applied_at}</p>}
                     </td>
@@ -743,6 +743,7 @@ export default function Applications() {
                     <td colSpan={columns.filter(([key]) => !hiddenColumns.includes(key)).length + 2}>
                       <JobAvailability trackId={app.id} />
                       <ApplicationDocuments application={app} />
+                      <ApplicationWorkspace application={app} />
                       <ApplicationTimeline
                         application={app}
                         onApplicationChanged={(updated) => {
