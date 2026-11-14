@@ -725,6 +725,11 @@ export default function Applications() {
                     <button className="btn btn-grey" style={{ marginLeft: 6 }} disabled={pendingRows.has(app.id)} onClick={() => addApplicationToToday(app)}>
                       Add to Today
                     </button>
+                    {app.company?.trim() && (
+                      <a className="btn btn-grey" style={{ marginLeft: 6 }} href={`/companies?company=${encodeURIComponent(app.company)}&track_id=${app.id}`}>
+                        Company history
+                      </a>
+                    )}
                     <button
                       className="btn btn-grey"
                       style={{ marginLeft: 6 }}
