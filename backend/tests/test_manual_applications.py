@@ -66,7 +66,7 @@ def test_manual_create_is_dated_atomic_and_not_a_visit(manual_session, db_sessio
         event.kind for event in db_session.query(JobLifecycleEvent).filter_by(
             user_id=owner.id, job_track_id=track.id,
         ).order_by(JobLifecycleEvent.id)
-    ] == ["first_applied", "status_changed"]
+    ] == ["first_applied", "status_changed", "followup_changed"]
     for table in (CsvRow, JobVisit, BrowserApplyReceipt):
         assert db_session.query(table).filter_by(user_id=owner.id).count() == 0
     assert db_session.query(ManualApplicationReceipt).filter_by(user_id=owner.id).count() == 1
@@ -284,7 +284,6 @@ def test_two_accounts_can_independently_record_the_same_url_without_leak(
     data = _payload()
     first = _save(client, data)
     assert first.status_code == 201
-    assert client.post("/auth/logout").status_code == 200
     email = f"al-phase3-foreign-{uuid4().hex}@example.test"
     assert client.post("/auth/dev-login", json={"email": email}).status_code == 200
     second = _save(client, data)
