@@ -1,12 +1,14 @@
 # Product Requirements Document: JobGrid Application Ledger 2.0
 
-**Document status:** Proposed, implementation not started
+**Document status:** Living PRD. Phases 1 and 2 merged in PRs #205 and #207. Phase 3 implementation is under CI/review in [PR #209](https://github.com/anmolsansi/CSV_Website/pull/209). Phase 4 remains planned; no production rollout is claimed.
 **Version:** 1.0
 **Prepared:** November 14, 2026
 **Owner:** JobGrid
 **Workstream:** AL-01 through AL-22
 **Execution tracker:** [development.md](../development.md)
 **Prior related contracts:** [Application memory plan](application-memory-plan.md), [JobGrid build guide](JOBGRID_BUILD_GUIDE.md), [Extension pilot README](../extension/README.md)
+
+**Phase 3 engineering contract:** [Manual submit ADR](AL_PHASE3_MANUAL_APPLICATION_CONTRACT.md) and [implementation guide](AL_PHASE3_IMPLEMENTATION.md). The preimplementation gap statements below describe the 2026-11-14 baseline; check the [current development roadmap](../development.md) for completed code work.
 
 ## 1. Problem and outcome
 
