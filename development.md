@@ -1,7 +1,7 @@
 # JobGrid Development Roadmap
 
 **Updated:** November 15, 2026  
-**Status:** AL Phase 1 implementation merged in PR #205. AL Phase 2 implementation AL-07–AL-12 is CI-verified in PR #207 and awaits review/merge and authorized hosted staging acceptance. Phases 3 and 4 remain planned.  
+**Status:** AL Phase 1 merged in PR #205; AL Phase 2 merged in PR #207. Phase 3 AL-13–AL-17 implementation is in PR #209, pending complete CI, review and separate authorized staging acceptance. Phase 4 remains planned.  
 **Repository:** [anmolsansi/CSV_Website](https://github.com/anmolsansi/CSV_Website)
 
 ## Current priority: Application Ledger 2.0
