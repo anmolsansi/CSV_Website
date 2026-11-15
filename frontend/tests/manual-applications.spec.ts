@@ -99,7 +99,7 @@ test.describe('AL-13–AL-17: explicit manual Add Application', () => {
     await page.getByLabel('Job title').fill('Backend Engineer')
     await expect(page.getByText('No matching confirmed applications were found')).toBeVisible()
     await page.getByRole('button', { name: 'Review application details' }).click()
-    await expect(page.getByRole('alert')).toContainText('date and time')
+    await expect(page.locator('#manual-applied-date + .error-msg')).toContainText('date and time')
     await expect(page.getByTestId('manual-apply-review')).toHaveCount(0)
   })
 })
