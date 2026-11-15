@@ -98,9 +98,9 @@ function normalizeValue(value, type, key) {
   return String(value)
 }
 
-function normalizeQuery(input, fields, { allowMeta = true } = {}) {
+function normalizeQuery(input, fields, { allowMeta = true, metaKeys = [] } = {}) {
   const record = toRecord(input)
-  const allowed = new Set(allowMeta ? ['view'] : [])
+  const allowed = new Set(allowMeta ? ['view', ...metaKeys] : [])
   const descriptors = new Map()
   for (const [canonical, wire, type] of fields) {
     descriptors.set(canonical, [canonical, wire, type])
@@ -214,7 +214,7 @@ export function dashboardNavigationState(search, defaults = {}) {
 }
 
 export function applicationNavigationState(search, defaults = {}) {
-  const result = normalizeApplicationQuery(search, { allowMeta: true })
+  const result = normalizeApplicationQuery(search, { allowMeta: true, metaKeys: ['tab', 'track_id'] })
   const values = { ...defaults, ...result.values }
   return {
     sort: {

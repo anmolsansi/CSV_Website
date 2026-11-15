@@ -1,7 +1,7 @@
 # JobGrid Development Roadmap
 
-**Updated:** November 14, 2026  
-**Status:** AL Phase 1 implementation proposed in PR #205; repository CI and staging acceptance pending. Other AL phases remain planned.  
+**Updated:** November 15, 2026  
+**Status:** AL Phase 1 implementation merged in PR #205. AL Phase 2 implementation AL-07–AL-12 is CI-verified in PR #207 and awaits review/merge and authorized hosted staging acceptance. Phases 3 and 4 remain planned.  
 **Repository:** [anmolsansi/CSV_Website](https://github.com/anmolsansi/CSV_Website)
 
 ## Current priority: Application Ledger 2.0
@@ -19,11 +19,13 @@ integration review, and approved staging verification are recorded. No
 production history was repaired or migrated.
 
 
+**Phase 2 implementation:** [PR #207](https://github.com/anmolsansi/CSV_Website/pull/207) · [issue #206](https://github.com/anmolsansi/CSV_Website/issues/206) · [architecture](docs/AL_PHASE2_ARCHITECTURE.md) · [UI guide](docs/AL_PHASE2_UI_GUIDE.md) · [passed CI evidence](docs/AL_PHASE2_VALIDATION.md). AL-07–AL-12 are implementation-checked, not production-accepted. Authenticated staging and deployment require separate approval.
+
 **Goal:** Make every explicitly confirmed job application discoverable for life, independent of its current stage, source CSV, or browser session. An opened or saved job is not an applied job.
 
-**Why:** JobGrid already stores `JobTrack` state, `applied_at`, first-applied lifecycle events, company history, and export data, but the Applied-only UI export filters current `status='applied'`. That omits previously submitted jobs now in Interview, Rejected, or Offer. The Dashboard's Anmol's View also hides App Status. The existing Chrome extension is not an active production submission tracker.
+**Why:** Phase 1 corrected the old export mistake where status='applied' excluded applications that progressed to Interview, Rejected, or Offer, and restored status visibility in Anmol's View. Phase 2 makes lifetime history discoverable through views, counts and details. The Chrome extension is still not an active production submission tracker.
 
-**Implementation boundary:** This is a documentation-only roadmap. No production mutation, data backfill, deployment, or active Chrome release is authorized here. Preserve existing historical facts, owner isolation, and compatibility.
+**Implementation boundary:** This roadmap records actual shipped-to-branch implementation and CI validation, not a production rollout. No production mutation, backfill, deployment, or active Chrome release is authorized here. Preserve history, owner isolation, and compatibility.
 
 ### Delivery order
 
@@ -48,12 +50,12 @@ production history was repaired or migrated.
 
 #### P2 · My Applications user experience
 
-- [ ] **AL-07 — Build My Applications views:** Provide Ever Applied, All Tracked, and Follow-ups views with stable URLs, pagination, search, and accessible empty/error states.
-- [ ] **AL-08 — Add accurate summary cards:** Show lifetime applied, interview, offer, and due-follow-up counts using documented semantics; reconcile with analytics without double counting.
-- [ ] **AL-09 — Design application list:** Show company, role, first applied date, latest stage, last update, and follow-up; sort predictably and show unknown values explicitly.
-- [ ] **AL-10 — Improve detail and history:** Reuse existing timeline/evidence, follow-up, and company history components; preserve deep links and date corrections requiring reasons.
-- [ ] **AL-11 — Unify filters and export:** Keep saved-view query serialization, full-results filtering, and selected/filtered/lifetime exports consistent under pagination.
-- [ ] **AL-12 — Complete UI acceptance:** Run keyboard, narrow-screen, browser, stale request, error, and server pagination tests; verify no regressions to Dashboard.
+- [x] **AL-07 — Build My Applications views:** Provide Ever Applied, All Tracked, and Follow-ups views with stable URLs, pagination, search, and accessible empty/error states.
+- [x] **AL-08 — Add accurate summary cards:** Show lifetime applied, interview, offer, and due-follow-up counts using documented semantics; reconcile with analytics without double counting.
+- [x] **AL-09 — Design application list:** Show company, role, first applied date, latest stage, last update, and follow-up; sort predictably and show unknown values explicitly.
+- [x] **AL-10 — Improve detail and history:** Reuse existing timeline/evidence, follow-up, and company history components; preserve deep links and date corrections requiring reasons.
+- [x] **AL-11 — Unify filters and export:** Keep saved-view query serialization, full-results filtering, and selected/filtered/lifetime exports consistent under pagination.
+- [x] **AL-12 — Complete UI acceptance:** Run keyboard, narrow-screen, browser, stale request, error, and server pagination tests; verify no regressions to Dashboard.
 
 #### P3 · Manual application submission
 
@@ -96,4 +98,4 @@ Before production release, prove: applied to interview/rejected/offer stays in l
 - [Existing Chrome extension acceptance and release gates](extension/README.md)
 - [Prior large `development.md` snapshot before the November 14 reset](https://github.com/anmolsansi/CSV_Website/blob/20424e540c4dbe6479da237f8df77abf37fb76a6/development.md)
 
-**Backlog status:** 0/22 AL items complete. All IDs and planned PR groupings are defined here, not yet assigned to implementation commits.
+**Backlog status:** 6/22 AL items (AL-07–AL-12) CI-verified and marked implemented in PR #207. AL-01–AL-06 have merged implementation in PR #205 but remain unchecked pending their separate hosted acceptance. AL-13–AL-22 are unimplemented. **No AL phase is certified as deployed or production-accepted.**
