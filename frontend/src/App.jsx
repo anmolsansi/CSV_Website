@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Archive from './pages/Archive'
 import Today from './pages/Today'
 import Applications from './pages/Applications'
+import AddApplication from './pages/AddApplication'
 import Documents from './pages/Documents'
 import Analytics from './pages/Analytics'
 import Pipeline from './pages/Pipeline'
@@ -90,6 +91,7 @@ function AuthenticatedApp({ user, onLogout }) {
                 <Route path="/archive" element={<Archive />} />
                 <Route path="/today" element={<Today />} />
                 <Route path="/applications" element={<Applications />} />
+                <Route path="/applications/new" element={<AddApplication />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/pipeline" element={<Pipeline />} />

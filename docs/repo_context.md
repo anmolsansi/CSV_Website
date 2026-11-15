@@ -202,6 +202,10 @@ A historical `COMPLETED` label is not enough to claim release completion. Use cu
 - Do not treat mocked tests, dev login, queued email, or green local CI as live staging/production evidence.
 - Do not silently upgrade a provider to a paid plan to solve a free-tier limitation.
 
+## Application Ledger Phase 3 (pending CI and review, November 15, 2026)
+
+The Phase 3 work branch adds `POST /crm/applications` for explicit, dated manual recording without source CSV rows. It uses `backend/app/services/manual_applications.py`, owner-scoped `ManualApplicationReceipt` records from additive Alembic revision 022, and a review-first `/applications/new` page. Status, first-applied facts, canonical duplicate boundaries, replay identity, and portable JobTrack backup semantics remain separate from browser extension application memory. Implementation and constraints: [AL Phase 3 contract](AL_PHASE3_MANUAL_APPLICATION_CONTRACT.md) and [manual application guide](AL_PHASE3_IMPLEMENTATION.md). The branch is **not production-accepted or deployed**; full CI, staging and rollout are separate gates.
+
 ## Where to start for future work
 
 ### Chrome extension implementation and acceptance — 2026-11-05

@@ -147,6 +147,9 @@ export const api = {
   getApplications: (params = {}) => client.get('/crm/applications', {
     params: serializeApplicationQuery(params, { includePagination: true, includeFalse: true }),
   }).then((r) => r.data),
+  createManualApplication: (payload, requestKey) => client.post('/crm/applications', payload, {
+    headers: { 'Idempotency-Key': requestKey },
+  }).then((r) => r.data),
   updateApplication: (itemId, payload) => client.patch(`/crm/applications/${itemId}`, payload).then((r) => r.data),
   createApplicationFromRow: (rowId) => client.post(`/crm/from-row/${rowId}`).then((r) => r.data),
   bulkUpdateApplications: (ids, patch) => client.patch('/crm/applications/bulk', { ids, patch }).then((r) => r.data),

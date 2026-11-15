@@ -178,6 +178,9 @@ class User(Base):
     browser_apply_receipts = relationship(
         "BrowserApplyReceipt", back_populates="user", cascade="all, delete-orphan"
     )
+    manual_application_receipts = relationship(
+        "ManualApplicationReceipt", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class JobVisit(Base):
@@ -200,6 +203,30 @@ class JobVisit(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "canonical_url_hash", name="uq_job_visits_user_hash"),
         Index("ix_job_visits_user_first_visited", "user_id", "first_visited_at"),
+    )
+
+
+class ManualApplicationReceipt(Base):
+    """Owner-scoped, bounded replay evidence for explicit manual submissions."""
+
+    __tablename__ = "manual_application_receipts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    request_key = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    response_json = Column(JSON, nullable=False)
+    created_at = Column(
+        DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    user = relationship("User", back_populates="manual_application_receipts")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "request_key", name="uq_manual_application_receipts_user_key"),
+        Index("ix_manual_application_receipts_user_created", "user_id", "created_at"),
     )
 
 

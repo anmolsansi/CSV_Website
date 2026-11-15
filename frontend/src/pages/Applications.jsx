@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { api, apiFieldErrors, formatApiError } from '../api/client'
 import { applicationNavigationState, applicationStateQuery, queryValidationMessage, serializeApplicationQuery } from '../api/queryParams'
 import { useToast } from '../App'
@@ -470,7 +471,10 @@ export default function Applications() {
           <h2>Applications</h2>
           <p>Track opened jobs, applied dates, follow-ups, notes, and statuses. My Applications separates confirmed submissions from saved links.</p>
         </div>
-        <button className="btn btn-blue" onClick={() => refresh()}>Refresh</button>
+        <div className="capture-actions">
+          <Link className="btn btn-blue" to="/applications/new">Add application</Link>
+          <button className="btn btn-grey" onClick={() => refresh()}>Refresh</button>
+        </div>
       </div>
 
       <ApplicationLedgerTabs activeTab={activeTab} onChange={selectTab} />
