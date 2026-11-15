@@ -59,6 +59,8 @@ production history was repaired or migrated.
 
 #### P3 · Manual application submission
 
+**Phase 3 implementation branch:** [`al-phase3-manual-applications`](https://github.com/anmolsansi/CSV_Website/tree/al-phase3-manual-applications) · [tracking issue #208](https://github.com/anmolsansi/CSV_Website/issues/208) · [frozen ADR](docs/AL_PHASE3_MANUAL_APPLICATION_CONTRACT.md) · [implementation guide](docs/AL_PHASE3_IMPLEMENTATION.md). Owner-scoped manual submit API, additive receipt migration and review-first UI have been committed. **Pending independent CI, integration review and approved staging smoke.** Do not treat commits as a production rollout.
+
 - [ ] **AL-13 — Specify manual submission contract:** Add explicit submission confirmation using a valid job URL, company, title, application date, and account ownership, separate from Capture.
 - [ ] **AL-14 — Implement safe application create API:** Add owner-scoped POST /crm/applications with validated fields and stable request idempotency; write JobTrack and first_applied fact atomically.
 - [ ] **AL-15 — Prevent duplicate or destructive edits:** Reuse exact/canonical lookup, show company-level possible matches, return conflicts for uncertain matches, and never silently overwrite a prior date.
