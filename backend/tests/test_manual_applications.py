@@ -167,3 +167,136 @@ def test_failure_after_lifecycle_rolls_back_track_event_and_receipt(
     assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 0
     assert db_session.query(JobLifecycleEvent).filter_by(user_id=owner.id).count() == 0
     assert db_session.query(ManualApplicationReceipt).filter_by(user_id=owner.id).count() == 0
+
+
+
+def test_exact_applied_refused_even_with_another_request_key(
+    manual_session, db_session,
+):
+    client, owner = manual_session
+    payload = _payload()
+    first = _save(client, payload)
+    assert first.status_code == 201, first.text
+    second = _save(client, payload)
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "already_applied"
+    assert second.json()["detail"]["matches"][0]["track_id"] == first.json()["application_id"]
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
+
+
+def test_canonical_variant_refused_for_existing_applied_and_unapplied(
+    manual_session, db_session,
+):
+    client, owner = manual_session
+    url = f"https://jobs.example.test/role/{uuid4().hex}?req=123&utm_source=one"
+    variant = url.replace("utm_source=one", "utm_source=other")
+    base = _payload(url)
+    assert _save(client, base).status_code == 201
+    conflict = _save(client, _payload(variant))
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "canonical_duplicate"
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
+
+    other = f"https://jobs.example.test/role/{uuid4().hex}?req=555&utm_campaign=original"
+    saved = JobTrack(
+        user_id=owner.id, url=other, company="Acme", title="Engineer",
+        status="opened", open_count=0,
+    )
+    apply_persisted_job_identity(saved)
+    db_session.add(saved)
+    db_session.commit()
+    conflict = _save(client, _payload(other.replace("utm_campaign=original", "utm_campaign=other")))
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "canonical_duplicate"
+    assert saved.applied_at is None
+
+
+def test_possible_company_title_match_requires_explicit_acknowledgement(
+    manual_session, db_session,
+):
+    client, owner = manual_session
+    assert _save(client, _payload()).status_code == 201
+    second = _payload()
+    blocked = _save(client, second)
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["detail"]["code"] == "possible_duplicate"
+    assert blocked.json()["detail"]["matches"][0]["confidence"] == "possible"
+    confirmed = _save(client, {**second, "acknowledge_possible_match": True})
+    assert confirmed.status_code == 201, confirmed.text
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 2
+
+
+def test_identical_request_replay_preserves_response_and_does_not_change_stage(
+    manual_session, db_session,
+):
+    client, owner = manual_session
+    payload = _payload()
+    key = str(uuid4())
+    first = _save(client, payload, key)
+    assert first.status_code == 201
+    track_id = first.json()["application_id"]
+    assert client.patch(
+        f"/crm/applications/{track_id}", json={"status": "interview"},
+    ).status_code == 200
+    replay = _save(client, payload, key)
+    assert replay.status_code == 200
+    assert replay.json() == {**first.json(), "replayed": True}
+    db_session.expire_all()
+    track = db_session.query(JobTrack).filter_by(user_id=owner.id, id=track_id).one()
+    assert track.status == "interview"
+    assert track.applied_at == datetime(2026, 10, 1, 7)
+    assert db_session.query(ManualApplicationReceipt).filter_by(user_id=owner.id).count() == 1
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=owner.id, kind="first_applied",
+    ).count() == 1
+
+
+def test_reused_key_with_new_payload_conflicts_without_mutation(
+    manual_session, db_session,
+):
+    client, owner = manual_session
+    original = _payload()
+    key = str(uuid4())
+    assert _save(client, original, key).status_code == 201
+    different = {**original, "title": "Different role"}
+    failed = _save(client, different, key)
+    assert failed.status_code == 409
+    assert failed.json()["detail"]["code"] == "idempotency_conflict"
+    assert db_session.query(JobTrack).filter_by(user_id=owner.id).count() == 1
+
+
+def test_two_keys_same_job_cannot_create_two_first_applied_events(
+    manual_session, db_session,
+):
+    client, owner = manual_session
+    data = _payload()
+    assert _save(client, data).status_code == 201
+    assert _save(client, data).status_code == 409
+    assert db_session.query(JobLifecycleEvent).filter_by(
+        user_id=owner.id, kind="first_applied",
+    ).count() == 1
+
+
+def test_two_accounts_can_independently_record_the_same_url_without_leak(
+    manual_session, db_session,
+):
+    client, first_owner = manual_session
+    data = _payload()
+    first = _save(client, data)
+    assert first.status_code == 201
+    assert client.post("/auth/logout").status_code == 200
+    email = f"al-phase3-foreign-{uuid4().hex}@example.test"
+    assert client.post("/auth/dev-login", json={"email": email}).status_code == 200
+    second = _save(client, data)
+    assert second.status_code == 201, second.text
+    assert second.json()["application_id"] != first.json()["application_id"]
+    owner2 = db_session.query(User).filter_by(email=email).one()
+    assert db_session.query(JobTrack).filter_by(user_id=first_owner.id).count() == 1
+    assert db_session.query(JobTrack).filter_by(user_id=owner2.id).count() == 1
+    matches = client.post("/crm/application-matches", json={
+        "url": data["url"], "company": data["company"], "title": data["title"],
+    })
+    assert matches.status_code == 200
+    assert [m["track_id"] for m in matches.json()["matches"]] == [
+        second.json()["application_id"],
+    ]
