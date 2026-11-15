@@ -1,7 +1,7 @@
 # JobGrid Development Roadmap
 
 **Updated:** November 15, 2026  
-**Status:** AL Phase 1 merged in PR #205; AL Phase 2 merged in PR #207. Phase 3 AL-13–AL-17 implementation is in PR #209, pending complete CI, review and separate authorized staging acceptance. Phase 4 remains planned.  
+**Status:** AL Phase 1 merged in PR #205; AL Phase 2 merged in PR #207. Phase 3 AL-13–AL-17 code and tests are CI-verified in PR #209, awaiting review/merge and separate authorized staging acceptance. Phase 4 remains planned.  
 **Repository:** [anmolsansi/CSV_Website](https://github.com/anmolsansi/CSV_Website)
 
 ## Current priority: Application Ledger 2.0
@@ -59,13 +59,13 @@ production history was repaired or migrated.
 
 #### P3 · Manual application submission
 
-**Phase 3 implementation branch:** [`al-phase3-manual-applications`](https://github.com/anmolsansi/CSV_Website/tree/al-phase3-manual-applications) · [tracking issue #208](https://github.com/anmolsansi/CSV_Website/issues/208) · [frozen ADR](docs/AL_PHASE3_MANUAL_APPLICATION_CONTRACT.md) · [implementation guide](docs/AL_PHASE3_IMPLEMENTATION.md). Owner-scoped manual submit API, additive receipt migration and review-first UI have been committed. **Pending independent CI, integration review and approved staging smoke.** Do not treat commits as a production rollout.
+**Phase 3 implementation branch:** [`al-phase3-manual-applications`](https://github.com/anmolsansi/CSV_Website/tree/al-phase3-manual-applications) · [tracking issue #208](https://github.com/anmolsansi/CSV_Website/issues/208) · [frozen ADR](docs/AL_PHASE3_MANUAL_APPLICATION_CONTRACT.md) · [implementation guide](docs/AL_PHASE3_IMPLEMENTATION.md). Owner-scoped manual submit API, additive receipt migration and review-first UI are committed. **Implementation verified on branch**: [CI (PostgreSQL/backend, frontend, Playwright)](https://github.com/anmolsansi/CSV_Website/actions/runs/43714682752), [SQLite Release](https://github.com/anmolsansi/CSV_Website/actions/runs/43714682743), and [Browser Timezones](https://github.com/anmolsansi/CSV_Website/actions/runs/43714682810) all passed at `3f80b2d5`. **Review/merge and authorized hosted staging smoke remain separate.** Do not treat green CI as a production rollout.
 
-- [ ] **AL-13 — Specify manual submission contract:** Add explicit submission confirmation using a valid job URL, company, title, application date, and account ownership, separate from Capture.
-- [ ] **AL-14 — Implement safe application create API:** Add owner-scoped POST /crm/applications with validated fields and stable request idempotency; write JobTrack and first_applied fact atomically.
-- [ ] **AL-15 — Prevent duplicate or destructive edits:** Reuse exact/canonical lookup, show company-level possible matches, return conflicts for uncertain matches, and never silently overwrite a prior date.
-- [ ] **AL-16 — Ship Add Application UI:** Support manual entry without CSV, date/time zone handling, clear validation, pending/unknown results, and explicit save receipt.
-- [ ] **AL-17 — Verify manual-entry behavior:** Test new and existing links, auth isolation, retries, conflicting writes, no synthetic click/visit, and audit/backup parity.
+- [x] **AL-13 — Specify manual submission contract:** Add explicit submission confirmation using a valid job URL, company, title, application date, and account ownership, separate from Capture.
+- [x] **AL-14 — Implement safe application create API:** Add owner-scoped POST /crm/applications with validated fields and stable request idempotency; write JobTrack and first_applied fact atomically.
+- [x] **AL-15 — Prevent duplicate or destructive edits:** Reuse exact/canonical lookup, show company-level possible matches, return conflicts for uncertain matches, and never silently overwrite a prior date.
+- [x] **AL-16 — Ship Add Application UI:** Support manual entry without CSV, date/time zone handling, clear validation, pending/unknown results, and explicit save receipt.
+- [x] **AL-17 — Verify manual-entry behavior:** Test new and existing links, auth isolation, retries, conflicting writes, no synthetic click/visit, and audit/backup parity.
 
 #### P4 · Historical backfill and recovery
 
