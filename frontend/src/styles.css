@@ -1783,3 +1783,14 @@ textarea:focus-visible {
   .application-view-tab { width: 100%; text-align: left; }
   .application-results-meta { flex-wrap: wrap; }
 }
+
+/* AL Phase 3: explicit manual application review and match acknowledgement. */
+.manual-apply-acknowledge { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0; font-size: 13px; line-height: 1.45; }
+.manual-apply-acknowledge input { margin-top: 2px; }
+.manual-apply-review { margin: 16px 0; }
+.manual-apply-review dl { display: grid; grid-template-columns: minmax(100px, 150px) 1fr; gap: 8px 12px; overflow-wrap: anywhere; }
+.manual-apply-review dt { font-weight: 700; }
+.manual-apply-review dd { margin: 0; }
+@media (max-width: 520px) {
+  .manual-apply-review dl { grid-template-columns: 1fr; }
+}
