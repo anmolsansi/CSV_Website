@@ -1,6 +1,6 @@
 # Application Ledger 2.0 Phase 2: My Applications UI
 
-**Implementation branch:** `al-phase2-my-applications`. **Scope:** AL-07–AL-12. **Release state:** code review and CI only until separate staging/production approval. **No migrations or new APIs.**
+**Implementation branch:** `al-phase2-my-applications`. **Scope:** AL-07–AL-12. **Validation:** [CI verification](AL_PHASE2_VALIDATION.md) passed, staging/production approval remains open. **No migrations or new APIs.**
 
 ## How to use
 
@@ -10,7 +10,7 @@
 4. Search and refine current stage, employer, ATS, sponsorship, score, opened-time and applied-time dates using the existing filter controls. The current tab controls its default lifetime/due predicate. Clear filters keeps the current tab.
 5. Use **Export** to choose all account records, matching filtered records, page-selected records, Ever Applied matching filters, or all due follow-ups. CSV and JSON queries run against the backend's complete matching result, not just the current page.
 6. Each row shows employer, role, current stage, last updated timestamp, opened time, first applied date (when recorded), follow-up and notes. Sort with headers. Unknown metadata is displayed as unknown, not fabricated.
-7. Choose **History, evidence & documents** to open existing job availability, linked documents, people/interview workspace and the authenticated application timeline. The URL gains `track_id`. Date corrections with an already recorded first date require a reason in this panel. Use **Company history** to open the company directory focused on that role.
+7. Choose **History, evidence & documents** to open existing job availability, linked documents and the authenticated application timeline. The Company history link opens the existing people/interview workspace. The URL gains `track_id`. Date corrections with an already recorded first date require a reason in this panel. Use **Company history** to open the company directory focused on that role.
 8. The four account-wide summary cards report **lifetime first-applied events**, **current interview-stage tracks**, **current offer-stage tracks**, and **currently due follow-ups** from `GET /crm/analytics`. The cards do not change with table filters or pagination. `Total matching` represents the active tab and current filter query, not the analytics total.
 9. If the list or overview fails, use their separate Retry controls. The list never silently treats a failed fetch as an empty successful result.
 
