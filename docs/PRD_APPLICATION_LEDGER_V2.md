@@ -157,12 +157,12 @@ Each AL item is a small reviewable commit with a targeted test or evidence artif
 - [ ] **AL-04 | P1 | Separate application and open dates:** Support applied_at date filtering and sorting, preserve opened_at filters, clarify quick-range meanings, and default My Applications to all-time.
 - [ ] **AL-05 | P1 | Show status in Anmol's View:** Remove the preset-specific showAppStatus suppression and keep bulk Mark applied vs Send to Applications actions clear.
 - [ ] **AL-06 | P1 | Protect historical truth with tests:** Add PostgreSQL/SQLite and browser regressions for transitions, replays, deletion, auth, and list/export parity.
-- [ ] **AL-07 | P2 | Build My Applications views:** Provide Ever Applied, All Tracked, and Follow-ups views with stable URLs, pagination, search, and accessible empty/error states.
-- [ ] **AL-08 | P2 | Add accurate summary cards:** Show lifetime applied, interview, offer, and due-follow-up counts using documented semantics; reconcile with analytics without double counting.
-- [ ] **AL-09 | P2 | Design application list:** Show company, role, first applied date, latest stage, last update, and follow-up; sort predictably and show unknown values explicitly.
-- [ ] **AL-10 | P2 | Improve detail and history:** Reuse existing timeline/evidence, follow-up, and company history components; preserve deep links and date corrections requiring reasons.
-- [ ] **AL-11 | P2 | Unify filters and export:** Keep saved-view query serialization, full-results filtering, and selected/filtered/lifetime exports consistent under pagination.
-- [ ] **AL-12 | P2 | Complete UI acceptance:** Run keyboard, narrow-screen, browser, stale request, error, and server pagination tests; verify no regressions to Dashboard.
+- [x] **AL-07 | P2 | Build My Applications views:** Provide Ever Applied, All Tracked, and Follow-ups views with stable URLs, pagination, search, and accessible empty/error states.
+- [x] **AL-08 | P2 | Add accurate summary cards:** Show lifetime applied, interview, offer, and due-follow-up counts using documented semantics; reconcile with analytics without double counting.
+- [x] **AL-09 | P2 | Design application list:** Show company, role, first applied date, latest stage, last update, and follow-up; sort predictably and show unknown values explicitly.
+- [x] **AL-10 | P2 | Improve detail and history:** Reuse existing timeline/evidence, follow-up, and company history components; preserve deep links and date corrections requiring reasons.
+- [x] **AL-11 | P2 | Unify filters and export:** Keep saved-view query serialization, full-results filtering, and selected/filtered/lifetime exports consistent under pagination.
+- [x] **AL-12 | P2 | Complete UI acceptance:** Run keyboard, narrow-screen, browser, stale request, error, and server pagination tests; verify no regressions to Dashboard.
 - [ ] **AL-13 | P3 | Specify manual submission contract:** Add explicit submission confirmation using a valid job URL, company, title, application date, and account ownership, separate from Capture.
 - [ ] **AL-14 | P3 | Implement safe application create API:** Add owner-scoped POST /crm/applications with validated fields and stable request idempotency; write JobTrack and first_applied fact atomically.
 - [ ] **AL-15 | P3 | Prevent duplicate or destructive edits:** Reuse exact/canonical lookup, show company-level possible matches, return conflicts for uncertain matches, and never silently overwrite a prior date.
@@ -176,7 +176,7 @@ Each AL item is a small reviewable commit with a targeted test or evidence artif
 
 Every task must include a code or evidence change, a focused test command/result, owner and date-safety assessment, scoped diff review, docs update when contracts change, and a Git commit. For PR completion, require applicable backend PostgreSQL/SQLite suites, frontend production build, Playwright E2E, release-contract tests, a staging verification report, and explicit rollback instructions. CI-green is not evidence of a real Chrome session or live external submission.
 
-## 11. Scenario-based acceptance matrix
+**Phase 2 implementation disposition, November 15, 2026:** AL-07–AL-12 are checked for code completion and automated CI validation at [PR #207](https://github.com/anmolsansi/CSV_Website/pull/207), with exact build and browser verification in [AL Phase 2 validation](AL_PHASE2_VALIDATION.md). This is **not** a production/staging acceptance or approval to deploy. AL-01–AL-06 retain their separate hosted acceptance gate, and AL-13–AL-22 remain planned.\n\n## 11. Scenario-based acceptance matrix
 
 | Test | Expected result |
 | --- | --- |
