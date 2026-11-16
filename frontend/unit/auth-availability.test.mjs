@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { emailAuth429Message, isRenderHibernationThrottle, readRetryAfter, sessionCheckProblem } from '../src/api/authAvailability.js'
+import { classifyRequestFailure, emailAuth429Message, isRenderHibernationThrottle, readRetryAfter, sessionCheckProblem } from '../src/api/authAvailability.js'
 
 const failure = (status, headers = {}, data = null) => ({ response: { status, headers, data } })
 
@@ -45,4 +45,33 @@ test('retry-after only accepts bounded positive seconds and never arbitrary text
   assert.equal(readRetryAfter({ 'retry-after': 'tomorrow' }), null)
   assert.equal(readRetryAfter({}), null)
   assert.equal(readRetryAfter({ 'retry-after': '5\nX-Secret: token' }), null)
+})
+
+test('global classification distinguishes Render, application, and unknown 429s', () => {
+  const render = classifyRequestFailure(failure(429, { 'x-render-routing': 'hibernate-rate-limited', 'retry-after': '8' }))
+  assert.equal(render.kind, 'hosting_throttle')
+  assert.equal(render.globalNotice, true)
+  assert.equal(render.retryAfter, 8)
+
+  const auth = classifyRequestFailure(failure(429, {}, { detail: 'Too many attempts. Try again later.' }))
+  assert.equal(auth.kind, 'auth_attempt_limit')
+  assert.equal(auth.globalNotice, false)
+  assert.equal(classifyRequestFailure(failure(429)).kind, 'unknown_throttle')
+})
+
+test('global classification handles connectivity, 5xx and expected validation separately', () => {
+  assert.equal(classifyRequestFailure(failure(503)).kind, 'service_unavailable')
+  assert.equal(classifyRequestFailure(failure(500)).kind, 'server_failure')
+  assert.equal(classifyRequestFailure({}).kind, 'network_failure')
+  assert.equal(classifyRequestFailure({ code: 'ERR_CANCELED' }), null)
+  assert.equal(classifyRequestFailure(failure(422)), null)
+  assert.equal(classifyRequestFailure(failure(401)), null)
+})
+
+test('Retry-After also accepts bounded HTTP dates without arbitrary text', () => {
+  const date = new Date(Date.now() + 90_000).toUTCString()
+  const seconds = readRetryAfter({ 'retry-after': date })
+  assert.ok(seconds >= 88 && seconds <= 90, String(seconds))
+  assert.equal(readRetryAfter({ 'retry-after': new Date(Date.now() - 60_000).toUTCString() }), null)
+  assert.equal(readRetryAfter({ 'retry-after': new Date(Date.now() + 3_700_000).toUTCString() }), null)
 })

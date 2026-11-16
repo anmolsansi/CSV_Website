@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
-import { emailAuth429Message, readRetryAfter } from '../api/authAvailability'
+import { classifyRequestFailure, emailAuth429Message, readRetryAfter } from '../api/authAvailability'
 
 const DEV_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 const EMAIL_PASSWORD_ENABLED = import.meta.env.VITE_ENABLE_EMAIL_PASSWORD_AUTH === 'true'
@@ -96,7 +96,7 @@ export default function Login({ returnTo = null }) {
         setCooldownSeconds(retry)
         setFormError(emailAuth429Message(error) + ' Try again in ' + retry + ' seconds.')
       } else {
-        setFormError(message || 'Unable to continue. Please try again.')
+        setFormError(classifyRequestFailure(error)?.message || message || 'Unable to continue. Please try again.')
       }
     } finally {
       submitInFlight.current = false
