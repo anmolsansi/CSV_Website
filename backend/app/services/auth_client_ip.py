@@ -47,8 +47,14 @@ def resolve_auth_client_ip(request: Request, trusted_proxy_cidrs: Sequence[str])
         return peer
 
     normalized_peer = socket_address.compressed
-    networks = _trusted_networks(trusted_proxy_cidrs)
-    is_trusted = lambda addr: any(addr in net for net in networks)
+    try:
+        networks = _trusted_networks(trusted_proxy_cidrs)
+    except ValueError:
+        # Misconfiguration must never make arbitrary XFF addresses authoritative.
+        return normalized_peer
+
+    def is_trusted(address):
+        return any(address in network for network in networks)
 
     if not is_trusted(socket_address):
         return normalized_peer
