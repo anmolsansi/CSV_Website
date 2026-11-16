@@ -245,6 +245,9 @@ class Settings:
     TEST_AUTH = os.getenv("TEST_AUTH", "false").lower() == "true"
     # Email/password routes require verified SMTP delivery and explicit activation.
     EMAIL_PASSWORD_AUTH_ENABLED = os.getenv("EMAIL_PASSWORD_AUTH_ENABLED", "false").lower() == "true"
+    # Only set to independently verified, exact ingress proxy CIDRs.
+    # Empty means forwarded headers are ignored for auth rate limiting.
+    EMAIL_AUTH_TRUSTED_PROXY_CIDRS = _split_env_list(os.getenv("EMAIL_AUTH_TRUSTED_PROXY_CIDRS"))
 
     # Verified email/password auth transport. Free Render blocks SMTP ports,
     # so select "brevo" for HTTPS API delivery in that environment.

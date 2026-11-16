@@ -119,7 +119,9 @@ def test_render_blueprint_enforces_zero_dollar_durable_storage_and_safe_workers(
     assert "plan: free" in blueprint
     assert "plan: 0.5c-512mb" not in blueprint
     assert "healthCheckPath: /health" in blueprint
-    assert "startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT" in blueprint
+    assert "startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-proxy-headers" in blueprint
+    assert "FORWARDED_ALLOW_IPS=*" in blueprint  # mentioned only as an unsafe platform default
+    assert "plan: free" in blueprint  # billing is separately gated
     assert "numInstances: 1" in blueprint
     assert "disk:" not in blueprint
     assert "mountPath:" not in blueprint

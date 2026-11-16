@@ -4763,3 +4763,13 @@ The owner selected the existing Render Free service `srv-dalu7u3l550s73ch5lu0` a
 Render's prior `x-render-routing: hibernate-rate-limited` 429 came from its routing layer. `frontend/src/App.jsx` now treats `/auth/me` 429 as **unknown session status**, showing a manual retry connection state rather than incorrectly logging out the user. `frontend/src/pages/Login.jsx` prevents overlapping login POSTs and enforces a bounded, visible 429 retry delay, without automatic POST replay. `frontend/src/api/authAvailability.js` owns the safe classification helpers. Render Free idle spin-down and provider rate limits remain, so these changes **mitigate** repeated failed logins but do not guarantee no more provider 429s.
 
 Tests: `cd frontend && node --test unit/auth-availability.test.mjs && npm run build`. Playwright browser regression: `frontend/tests/render-free-session-recovery.spec.ts`, under the existing disposable local test stack. Read the [P0 Render Free runbook](P0_RENDER_EDGE_THROTTLING.md) before release. This code is not proof of deployed production acceptance; confirm the correct Render workspace and run the live sign-in smoke before closing issue #210.
+
+## Email-auth client IP and reverse-proxy trust
+
+For a deployment behind Vercel and Render, use the operator guide
+[AUTH_PROXY_RATE_LIMIT.md](AUTH_PROXY_RATE_LIMIT.md). Uvicorn disables automatic
+proxy-header trust in the Render Blueprint; the optional
+`EMAIL_AUTH_TRUSTED_PROXY_CIDRS` setting must be populated only with verified
+Render ingress networks. With no verified proxy source, auth rate limiting
+uses the direct socket peer and retains both original SQL caps. No schema,
+frontend API, or payment change is part of this hardening.
