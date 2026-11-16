@@ -39,7 +39,9 @@ client.interceptors.response.use(
 
 export function formatApiError(error, fallback = 'Request failed. Please retry.') {
   const problem = classifyRequestFailure(error)
-  if (problem) {
+  // Preserve existing server-provided field errors, including the Snooze
+  // dialog's 500 failure contract. The app-wide banner still reports outages.
+  if (problem && problem.kind !== 'server_failure') {
     return {
       code: problem.kind,
       fields: [{ field: 'non_field', message: problem.message }],
