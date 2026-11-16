@@ -6,7 +6,9 @@ services:
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-proxy-headers
+    # Render Python sets FORWARDED_ALLOW_IPS=*. Never implicitly trust XFF.
+    # The auth peer resolver accepts headers only from explicit ingress CIDRs.
     # Keep the provider liveness probe lightweight. C-09 release acceptance
     # separately exercises /ready, which verifies database + durable storage.
     healthCheckPath: /health
