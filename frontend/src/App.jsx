@@ -171,9 +171,9 @@ export default function App() {
     const secondsLeft = Math.max(0, Math.ceil((sessionFailure.retryUntil - retryClock) / 1000))
     return (
       <div className="auth-page">
-        <section className="auth-card" role="alert">
+        <section className="auth-card">
           <h1>JobGrid connection unavailable</h1>
-          <p>{sessionFailure.message}</p>
+          <p role="alert">{sessionFailure.message}</p>
           {secondsLeft > 0 && <p>Retry is available in {secondsLeft} seconds. No login attempt has been submitted.</p>}
           <button
             className="auth-primary-button"
