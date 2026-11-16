@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { api } from './api/client'
+import { sessionCheckProblem } from './api/authAvailability'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Archive from './pages/Archive'
@@ -115,6 +116,9 @@ function AuthenticatedApp({ user, onLogout }) {
 export default function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [sessionFailure, setSessionFailure] = useState(null)
+  const [sessionCheckVersion, setSessionCheckVersion] = useState(0)
+  const [retryClock, setRetryClock] = useState(Date.now())
 
   useEffect(() => {
     try {
@@ -132,10 +136,57 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    api.me().then(setUser).catch(() => setUser(null)).finally(() => setLoading(false))
-  }, [])
+    let active = true
+    setLoading(true)
+    api.me()
+      .then((nextUser) => {
+        if (!active) return
+        setUser(nextUser)
+        setSessionFailure(null)
+      })
+      .catch((error) => {
+        if (!active) return
+        const problem = sessionCheckProblem(error)
+        if (problem) {
+          const seconds = problem.kind === 'rate_limited' ? (problem.retryAfter ?? 60) : 0
+          setSessionFailure({ ...problem, retryUntil: Date.now() + seconds * 1000 })
+          setRetryClock(Date.now())
+        } else {
+          setUser(null)
+          setSessionFailure(null)
+        }
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [sessionCheckVersion])
+
+  useEffect(() => {
+    if (!sessionFailure || sessionFailure.kind !== 'rate_limited') return undefined
+    const timer = window.setInterval(() => setRetryClock(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [sessionFailure])
 
   if (loading) return <div className="loading-screen"><div className="loading-spinner" /><span>Loading JobGrid...</span></div>
+  if (sessionFailure) {
+    const secondsLeft = Math.max(0, Math.ceil((sessionFailure.retryUntil - retryClock) / 1000))
+    return (
+      <div className="auth-page">
+        <section className="auth-card" role="alert">
+          <h1>JobGrid connection unavailable</h1>
+          <p>{sessionFailure.message}</p>
+          {secondsLeft > 0 && <p>Retry is available in {secondsLeft} seconds. No login attempt has been submitted.</p>}
+          <button
+            className="auth-primary-button"
+            type="button"
+            disabled={secondsLeft > 0}
+            onClick={() => setSessionCheckVersion((previous) => previous + 1)}
+          >
+            Retry connection
+          </button>
+        </section>
+      </div>
+    )
+  }
   if (!user) {
     const params = new URLSearchParams(window.location.search)
     const returnTo = window.location.pathname === '/capture'
