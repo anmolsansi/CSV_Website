@@ -206,3 +206,54 @@ def test_brevo_transport_network_error_does_not_leak_credentials(monkeypatch):
     with pytest.raises(BrevoDeliveryError) as exc:
         send_via_brevo("recipient@example.test", "Subject", "<p>Message</p>")
     assert "private-test-api-key" not in str(exc.value)
+
+
+def test_peer_rate_guard_separates_trusted_client_ips_without_weakening_limits(
+    db_session, monkeypatch,
+):
+    """Two clients behind one ingress have different 80-attempt buckets."""
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    from app.routers.email_auth import _rate_guard
+
+    monkeypatch.setattr(settings, "EMAIL_AUTH_TRUSTED_PROXY_CIDRS", ["10.3.0.0/16"])
+
+    def request_for(forwarded):
+        return Request({
+            "type": "http",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/auth/email/login",
+            "query_string": b"",
+            "server": ("example.test", 80),
+            "client": ("10.3.4.5", 1234),
+            "headers": [(b"x-forwarded-for", forwarded.encode("ascii"))],
+        })
+
+    from pytest import raises
+
+    first = request_for("198.51.100.10")
+    second = request_for("198.51.100.11")
+    for attempt in range(80):
+        _rate_guard(db_session, first, "peer-isolation-regression",
+                    f"unique-client-a-{attempt}@example.test")
+
+    with raises(HTTPException) as limited:
+        _rate_guard(db_session, first, "peer-isolation-regression",
+                    "unique-client-a-extra@example.test")
+    assert limited.value.status_code == 429
+    assert int(limited.value.headers["Retry-After"]) >= 1
+
+    # Shared Render ingress must not consume the second client's bucket.
+    _rate_guard(db_session, second, "peer-isolation-regression",
+                "unique-client-b@example.test")
+
+    # A single mailbox is still restricted to five attempts across clients.
+    for attempt in range(5):
+        req = first if attempt % 2 else second
+        _rate_guard(db_session, req, "shared-email-regression",
+                    "common-target@example.test")
+    with raises(HTTPException) as email_limited:
+        _rate_guard(db_session, second, "shared-email-regression",
+                    "common-target@example.test")
+    assert email_limited.value.status_code == 429
