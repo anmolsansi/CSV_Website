@@ -1,62 +1,71 @@
-# P0: Render edge throttling on the JobGrid login path
+# P0: Render Free login-throttling recovery ($0)
 
-**Status (2026-11-16):** Diagnosis and a bounded, read-only probe are prepared. **Provider remediation and live acceptance are blocked**, not complete. Primary tracking: [GitHub issue #210](https://github.com/anmolsansi/CSV_Website/issues/210).
+**Decision:** On November 16, 2026, the owner explicitly selected **$0** and the existing [JobGrid Render service](https://dashboard.render.com/web/srv-dalu7u3l550s73ch5lu0), ID `srv-dalu7u3l550s73ch5lu0`. This supersedes the paid-compute proposal in the previous version of this runbook. No hosting upgrade, paid service, keepalive monitor, origin change, or database migration is authorized.
 
-## Failure boundary and evidence
+**Scope:** Reduce accidental traffic and keep Render gateway throttling from being misrepresented as an incorrect password or a logout. **This cannot eliminate provider-generated 429s on Render Free.** The service will still sleep after 15 minutes without inbound traffic and may take around a minute to wake. Render documents lower inbound rate limits on Free, and it can reject requests to mitigate abuse. See https://render.com/docs/free and https://render.com/docs/troubleshooting-deploys.
 
-The production browser uses `https://csv-website-steel.vercel.app/api/*`. `frontend/vercel.json` rewrites this to `https://jobgrid-api.onrender.com/*`. The backend is the existing FastAPI service `jobgrid-api`, Render service ID `srv-dalu7u3l550s73ch5lu0` in workspace **Job Grid**, Singapore. `render.yaml` currently declares `plan: free` and `numInstances: 1`. `backend/tests/test_c09_staging_readiness.py` deliberately enforces this zero-dollar contract.
+## Current architecture and evidence
 
-The reported login failure was HTTP 429 on `POST /api/auth/email/login`, and an unauthenticated `GET /api/auth/me` also failed with 429. A prior response recorded `x-render-routing: hibernate-rate-limited` and `content-type: text/plain; charset=utf-8`. That header is evidence of Render routing throttling on **that response**. It does not prove that every subsequent 429 has the same cause. The FastAPI email-login limiter does **not** guard `/auth/me`.
+- Vercel frontend: `https://csv-website-steel.vercel.app`; `frontend/vercel.json` rewrites `/api/:path*` to `https://jobgrid-api.onrender.com/:path*`.
+- Render backend: `jobgrid-api` Free service in **Job Grid** workspace, Singapore, service ID `srv-dalu7u3l550s73ch5lu0`.
+- Database: PostgreSQL on Supabase; private document storage via existing gateway.
+- `render.yaml` retains `plan: free`, disabled background jobs, one instance and existing health check. `backend/tests/test_c09_staging_readiness.py` continues enforcing $0.
+- A previous login 429 had `x-render-routing: hibernate-rate-limited`, a Render routing-layer signal for **that** response. A simultaneous `/api/auth/me` 429 cannot be caused by the backend email-login rate guard because `/auth/me` does not use it.
+- The GitHub/Render connector has access to a different Render workspace. Attempting to read this actual service ID yields 404. **A dashboard URL by itself does not grant API access**, so live provider settings are not verified. Do not modify an unrelated service.
 
-Render documents 15-minute idle spin-down for Free web services, roughly minute-long spin-up, and lower inbound request-rate limits than paid compute. Render's general abuse/DDoS protections can still produce 429 on paid plans. See [Free limitations](https://render.com/docs/free), [429 troubleshooting](https://render.com/docs/troubleshooting-deploys), and [Blueprint plan IDs](https://render.com/docs/blueprint-spec).
+## Code behavior for the Free tier
 
-**Access blocker:** the currently connected Render workspace is not `Job Grid`; reading service `srv-dalu7u3l550s73ch5lu0` returned 404. Do not create another service or modify the similarly named services in the accessible account.
+### Initial session check
 
-## Architect decision and alternatives
+`frontend/src/App.jsx` calls `api.me()` to establish session state. Previously all failures were treated as a logout, which could push people into login while Render was rejecting requests. After this change:
 
-**Needs Architect Decision:** The existing [C-09 deployment record](C09_STAGING_OPERATIONS.md) explicitly requires *zero-dollar-first* infrastructure and forbids silent upgrades. A permanent solution to the Free compute idle behavior and lower limits requires the owner to authorize a recurring compute cost or approve a different provider architecture.
+- HTTP 401/403: treat as logged out and show existing login screen.
+- HTTP 429: do **not** mark the user logged out. Show a separate accessible service-connection screen, a visible retry delay, and a **manual** Retry connection control.
+- Other failed session checks/network failures: show service unavailable, leaving account state unknown.
+- Retry is never automatic. When Render provides a valid `Retry-After` up to 3600 seconds, honor it. With no valid header, the UI applies a 60-second manual retry cooldown on session 429. When the user clicks, make **one GET** for `/auth/me`. Cancel stale UI updates if the component effect is cleaned up.
 
-| Option | Benefits | Limitations | Status |
-| --- | --- | --- | --- |
-| Upgrade existing Render web service to `0.5c-512mb` (often called Starter) | No origin, OAuth, cookie, database, or storage gateway migration; paid services don't spin down on idle and have higher inbound capacity | Ongoing bill, still subject to platform abuse controls; requires access to Job Grid | **Recommended after cost approval** |
-| Migrate backend to an alternative always-on provider | Potentially different cost/reliability tradeoff | Needs new deployment, routing, cookies, callbacks, secret and recovery review | Not chosen |
-| Stay on Render Free and add retries, keepalive pings, or higher app login limits | No direct paid-plan cost | Cannot guarantee preventing provider-level 429; keepalives are not a durable solution | Rejected as P0 closure |
+### Email login requests
 
-Render lists entry paid compute at approximately **$7/month** at review time. Verify the workspace quote, billing terms, and taxes: https://render.com/pricing. No paid plan, redeploy, or billing setting was changed in this preparation PR.
+`frontend/src/pages/Login.jsx` prevents concurrent form submissions via a ref guard. A 429 disables the sign-in button for bounded `Retry-After` seconds, or 60 seconds if no valid header. The app never auto-retries any email-login, registration, password-reset, or other authentication POST. The error text distinguishes the specific `hibernate-rate-limited` signal, the backend's known JSON password-attempt limit, and an unattributed 429. No credentials are logged.
 
-## Safe diagnostic and verification
+`frontend/src/api/authAvailability.js` owns the pure classification helpers, with zero added dependencies.
 
-Run from the repository root on a machine with network access:
+### Explicit non-goals
+
+No bypassing Render's limits, unauthorized keepalive pings, polling, paid compute, altered database data, changed rate-guard security limits, new service or backup, Vercel route change, credential exposure, OAuth redirect change, and no claim of always-on hosting.
+
+## Safe diagnostics
+
+From the repository root, once per investigation:
 
 ```bash
 python3 scripts/render_edge_probe.py
 python3 -m unittest discover -s scripts/tests -p 'test_render_edge_probe.py' -v
+cd frontend
+node --test unit/auth-availability.test.mjs
+npm run build
 ```
 
-The probe makes **exactly one unauthenticated GET** each to direct Render `/health` and Vercel `/api/health`, with a bounded timeout. It does not submit credentials, POST, retry, poll, save response bodies, or print cookies or secrets. Output includes timestamp, status, selected capped response headers, and classification. Exit codes: `0` for both currently healthy, `2` when any 429 occurs, `3` otherwise inconclusive/unhealthy. A healthy point-in-time probe does **not** prove that login is fixed. Avoid aggressive repetition.
+The first command makes exactly one anonymous GET to direct Render `/health` and one to Vercel `/api/health`. It does not POST, poll, log credentials, or read response bodies. A 200 does not certify login. Do not repeat it rapidly.
 
-| Observed result | Meaning |
+| Result | Interpretation |
 | --- | --- |
-| 429 with `x-render-routing: hibernate-rate-limited` | Render-edge throttling confirmed for that response |
-| 429 without that signature | Source not proven; inspect provider request logs and headers |
-| Both health endpoints 200 | Basic routing healthy at that time, not authenticated acceptance |
-| Direct 200, proxied non-200 | Investigate Vercel rewrite/proxy |
-| 503 or network failure | Investigate cold-start or upstream failure; do not label as auth throttling |
+| 429 and `x-render-routing: hibernate-rate-limited` | Render routing throttling for this response |
+| 429 without this header | Source unknown; inspect response and provider events |
+| JSON `detail: Too many attempts. Try again later.` | Application email-auth limit, independent of provider |
+| Health 200 | One point-in-time routing check, not always-on or login proof |
+| 503/timeouts | Investigate startup, deployment, or upstream dependencies |
 
-## Paid-compute release runbook (explicit owner approval required)
+## Acceptance and operations at $0
 
-1. Obtain access to **Job Grid** Render workspace. Inspect service `srv-dalu7u3l550s73ch5lu0`, confirming the linked repository, existing hostname, region, environment, deployed SHA, current plan, and whether its Blueprint synchronizes `render.yaml`. **Stop** if any identifier differs.
-2. Capture non-secret baseline: `/health`, `/ready`, recent 429 headers, provider events, current Vercel routing, current plan, and reversibility. Do not put cookies, passwords, session tokens or API secrets in issues.
-3. Obtain **explicit recurring-spend approval** based on the current provider quote, and record an architecture decision superseding C-09's zero-dollar assertion.
-4. In an approved release branch, change `render.yaml` from `plan: free` to the Blueprint plan ID `plan: 0.5c-512mb`. Update `backend/tests/test_c09_staging_readiness.py`, `docs/repo_context.md`, C-09 cost notes and this runbook in the same controlled change. Keep region, instance count, URLs, secrets, Supabase storage gateway, CORS, OAuth, and disabled schedulers unchanged. The old zero-dollar test **will fail** until updated through this approved contract change.
-5. Upgrade the **existing** Render service with verified Dashboard or Blueprint sync. Do not create a replacement service. Confirm the running plan, Render URL and billing activation time. Reconcile source and dashboard to avoid configuration drift.
-6. Verify direct Render `/health` and `/ready` return HTTP 200, then Vercel `/api/health` and `/api/ready` return HTTP 200. Readiness must include database and private storage.
-7. With only an authorized test account, verify one email sign-in, `/api/auth/me`, logout, and existing OAuth callback flow. Do not share credentials or stress-test login limits.
-8. After at least 20 minutes without intentional inbound traffic, verify the backend remained running, then repeat a single authorized smoke. Capture any renewed provider-generated 429 with headers, and observe normal traffic for a target of 24 hours before accepting P0. Don't fabricate live results.
-9. Close [issue #210](https://github.com/anmolsansi/CSV_Website/issues/210) only after hosted plan, routing, login, monitor evidence, and rollback readiness are independently verified.
+1. Access the owner's **Job Grid** Render workspace and check [the exact service](https://dashboard.render.com/web/srv-dalu7u3l550s73ch5lu0) remains Free, linked to the expected repository, branch, region and URL. In Billing > Monthly Included Usage, examine Free instance hours and bandwidth/pipeline usage. Confirm no quota-based suspension. Do not share credentials or secrets.
+2. For one actual failed sign-in, save only status, content-type, `x-render-routing`, `retry-after`, `cf-cache-status`, provider request timestamp and sanitized event entries. Never paste email/password/session cookie into issues.
+3. Run the Node helper tests and existing backend probe tests. Run `npm run build`, Playwright `frontend/tests/render-free-session-recovery.spec.ts`, and normal required GitHub CI. Tests must demonstrate the UI does not mark 429 as logout or auto-repeat login POST.
+4. Deploy through an approved PR/production release. The repository can auto-deploy `main` to Vercel and Render, so **review both provider auto-deploy gates** before merging, even though this change is frontend-only. Keep the service, `plan: free` and every secret unchanged.
+5. After deployment, test a legitimate account once through Vercel. If Render returns 429, verify the UI displays a connection issue, honors a bounded manual retry delay, and eventually lets the user log in when the upstream becomes available. Test 401 still displays normal login.
+6. Observe normal traffic for an agreed window. Check hosting status, failed-request headers and whether calls are rejected by Render or the app. If Free capacity remains insufficient, document an **unresolved platform limitation** and decide whether accepting occasional failures is compatible with a $0 budget. Do not mark that as fixed or promise zero future 429s.
+7. Rollback frontend changes to the previous verified deployment/commit if new UI introduces a regression; retain backend/database/objects. Rollback restores old UX, not Free-plan capacity.
 
-## Rollback and scope boundaries
+## Constraints and user-facing expectation
 
-If the paid instance causes a regression, determine whether it's a code deploy or compute issue. Revert the compute plan via the verified provider path, and reconcile `render.yaml`, tests and docs. **Returning to Free restores the original throttling risk**, so it's a financial rollback, not a reliability fix. Deploy the previous compatible backend commit as needed. Do not downgrade PostgreSQL, delete private documents, move the URL, or change OAuth callback hosts.
-
-This P0 does not change email/password attempt limits, `frontend/src/pages/Login.jsx`, the Vercel rewrite, user data, database migrations, or background jobs. Proxy-aware auth rate limits and UI error states belong to separate follow-ups. The diagnostic is **not** a hosting workaround.
+Render Free is appropriate for a personal project or demo with occasional cold-start delays. **No honest no-cost plan can promise all legitimate logins will always succeed on the first request or that Render 429s will never occur.** The deliverable is recovery, less request pressure, correct diagnosis, and preserved $0 compute. Provider-account access and actual production smoke evidence are still mandatory before closing [P0 #210](https://github.com/anmolsansi/CSV_Website/issues/210).
