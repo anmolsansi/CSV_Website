@@ -9,6 +9,16 @@ export const API_AVAILABILITY_EVENT = 'jobgrid:api-availability'
 const SAFE_RESOURCES = new Set([
   'auth', 'crm', 'rows', 'upload', 'preferences', 'health', 'ready',
 ])
+// Only fixed, known app routes. Dynamic paths and query values are never logged.
+const SAFE_ROUTES = new Set([
+  '/', '/login', '/archive', '/today', '/applications', '/applications/new',
+  '/documents', '/analytics', '/pipeline', '/sessions', '/saved-views',
+  '/applypilot', '/duplicates', '/companies', '/capture', '/import',
+])
+function safePage() {
+  const path = typeof window !== 'undefined' ? window.location?.pathname : null
+  return SAFE_ROUTES.has(path) ? path : 'other'
+}
 
 function safeResource(url) {
   if (typeof url !== 'string') return 'other'
@@ -22,8 +32,9 @@ function safeMethod(method) {
 }
 
 function emit(level, data) {
-  if (level === 'error') console.error('[JobGrid diagnostic]', data)
-  else console.warn('[JobGrid diagnostic]', data)
+  const record = { ...data, page: safePage() }
+  if (level === 'error') console.error('[JobGrid diagnostic]', record)
+  else console.warn('[JobGrid diagnostic]', record)
 }
 
 export function logApiFailure(error, problem) {
