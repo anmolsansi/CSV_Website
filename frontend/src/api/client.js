@@ -1,5 +1,7 @@
 import axios from 'axios'
 import { serializeApplicationQuery, serializeDashboardQuery } from './queryParams'
+import { classifyRequestFailure } from './authAvailability'
+import { API_AVAILABILITY_EVENT, logApiFailure } from './diagnostics'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -20,11 +22,31 @@ client.interceptors.response.use(
         window.location.href = `/login${returnTo}`
       }
     }
+    const problem = classifyRequestFailure(error)
+    logApiFailure(error, problem)
+    if (problem?.globalNotice && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(API_AVAILABILITY_EVENT, {
+        detail: {
+          kind: problem.kind,
+          message: problem.message,
+          retryAfter: problem.retryAfter,
+        },
+      }))
+    }
     return Promise.reject(error)
   }
 )
 
 export function formatApiError(error, fallback = 'Request failed. Please retry.') {
+  const problem = classifyRequestFailure(error)
+  if (problem) {
+    return {
+      code: problem.kind,
+      fields: [{ field: 'non_field', message: problem.message }],
+      message: problem.message,
+      retryAfter: problem.retryAfter,
+    }
+  }
   const detail = error?.response?.data?.detail
   const status = error?.response?.status
   const code = typeof detail?.code === 'string'
