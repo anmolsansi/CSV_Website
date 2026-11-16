@@ -4755,3 +4755,11 @@ with that real store item. No item, publisher registration, signing key, store
 upload or paid resource was created by choosing this sequence. The deployment
 pilot target/accounts remain pending as the user confirmed, so observation and
 final release acceptance still cannot start.
+
+## Render edge throttling incident: P0 (preparation only)
+
+When login and `/auth/me` both return 429, inspect the actual response headers before changing application authentication. The prior `x-render-routing: hibernate-rate-limited` signature came from the Render routing layer and is distinct from the FastAPI email-login rate guard. JobGrid's production Vercel `/api` rewrite currently targets a Render Free service, which can sleep on idle and has lower inbound limits. Source manifest and C-09 tests intentionally retain `plan: free` under the existing zero-dollar-first contract.
+
+The bounded, read-only operator probe lives in `scripts/render_edge_probe.py` and has offline tests in `scripts/tests/test_render_edge_probe.py`. Run `python3 scripts/render_edge_probe.py` once to collect health response statuses and safe header metadata. This cannot certify login success or a permanent fix.
+
+**Runbook and current blocker:** [P0 Render edge throttling](P0_RENDER_EDGE_THROTTLING.md). A move to the paid `0.5c-512mb` instance on the existing production service needs explicit cost approval, correct `Job Grid` workspace access, manifest/test contract changes, hosted login verification, and observation. No paid upgrade or production change has been made by the diagnostic branch.

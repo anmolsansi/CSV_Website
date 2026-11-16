@@ -230,3 +230,7 @@ This context describes implementation boundaries and preserves external release 
 3. Inspect the actual router/service/model/schema/frontend/tests/provider evidence before editing.
 4. Reuse existing implementation and conventions.
 5. Make the smallest coherent change and run the complete affected release gates.
+
+## P0 Render edge incident boundary (2026-11-16)
+
+The existing zero-dollar infrastructure contract remains active: `render.yaml` and `backend/tests/test_c09_staging_readiness.py` enforce Render Free. Issue [#210](https://github.com/anmolsansi/CSV_Website/issues/210) tracks confirmed prior Render `hibernate-rate-limited` evidence and a proposed future paid-compute remediation. The target Render service is `srv-dalu7u3l550s73ch5lu0` under a workspace called `Job Grid`; it is **not available** in the current connected Render account. No production state or billing has been modified. The bounded GET-only diagnostic is `scripts/render_edge_probe.py`; tests are in `scripts/tests/test_render_edge_probe.py`; release approval and rollback steps are in [the P0 runbook](P0_RENDER_EDGE_THROTTLING.md). **Needs Architect Decision:** approve recurring compute charges or an alternate hosting design before updating the zero-dollar manifest/test contract or touching production.
