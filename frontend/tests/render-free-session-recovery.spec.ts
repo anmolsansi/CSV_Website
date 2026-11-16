@@ -1,0 +1,44 @@
+import { test, expect } from '@playwright/test'
+
+test('Render 429 on session check does not impersonate a logout or flood the API', async ({ page }) => {
+  let checks = 0
+  await page.route('**/auth/me', async (route) => {
+    checks += 1
+    if (checks === 1) {
+      await route.fulfill({
+        status: 429,
+        headers: { 'x-render-routing': 'hibernate-rate-limited', 'retry-after': '2' },
+        contentType: 'text/plain',
+        body: 'Too Many Requests',
+      })
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 1, email: 'test@jobgrid.dev' }),
+      })
+    }
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'JobGrid connection unavailable' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Log in or sign up' })).toHaveCount(0)
+  const retry = page.getByRole('button', { name: 'Retry connection' })
+  await expect(retry).toBeDisabled()
+  await page.waitForTimeout(500)
+  expect(checks).toBe(1)
+  await expect(retry).toBeEnabled({ timeout: 5000 })
+  expect(checks).toBe(1) // No automatic retry
+  await retry.click()
+  await expect(page.getByText('test@jobgrid.dev', { exact: true })).toBeVisible()
+  expect(checks).toBe(2) // Exactly one user-directed retry
+})
+
+test('real unauthenticated session still renders the normal login flow', async ({ page }) => {
+  await page.route('**/auth/me', async (route) => {
+    await route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Not authenticated"}' })
+  })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Log in or sign up' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'JobGrid connection unavailable' })).toHaveCount(0)
+})
