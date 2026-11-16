@@ -61,13 +61,13 @@ export default function Login({ returnTo = null }) {
   const submitEmail = async (event) => {
     event.preventDefault()
     if (submitInFlight.current || cooldownSeconds > 0) return
-    submitInFlight.current = true
     setFormError('')
     setNotice('')
     if ((mode === 'register' || mode === 'reset') && password !== confirmPassword) {
       setFormError('Passwords do not match.')
       return
     }
+    submitInFlight.current = true
     setSubmitting(true)
     try {
       if (mode === 'login') {
