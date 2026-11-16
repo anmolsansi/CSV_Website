@@ -89,7 +89,7 @@ function AuthenticatedApp({ user, onLogout, serviceIssue, onDismissServiceIssue,
           <BulkActionStatus />
           <main id="main-content" tabIndex={-1}>
             {serviceIssue && (
-              <section className="card" role="alert" data-testid="global-service-warning" style={{ margin: '16px 24px', padding: 16 }}>
+              <section className="card" role="status" aria-live="polite" data-testid="global-service-warning" style={{ margin: '16px 24px', padding: 16 }}>
                 <h2 style={{ fontSize: '1rem' }}>JobGrid service issue</h2>
                 <p>{serviceIssue.message}</p>
                 {serviceIssue.retryUntil > retryClock && (
