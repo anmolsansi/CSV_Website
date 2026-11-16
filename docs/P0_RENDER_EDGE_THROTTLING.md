@@ -69,3 +69,11 @@ The first command makes exactly one anonymous GET to direct Render `/health` and
 ## Constraints and user-facing expectation
 
 Render Free is appropriate for a personal project or demo with occasional cold-start delays. **No honest no-cost plan can promise all legitimate logins will always succeed on the first request or that Render 429s will never occur.** The deliverable is recovery, less request pressure, correct diagnosis, and preserved $0 compute. Provider-account access and actual production smoke evidence are still mandatory before closing [P0 #210](https://github.com/anmolsansi/CSV_Website/issues/210).
+
+## Separate backend client-identity hardening
+
+The email-auth SQL limiter has a separate security concern from Render edge
+throttling. See [AUTH_PROXY_RATE_LIMIT.md](AUTH_PROXY_RATE_LIMIT.md) for
+trusted ingress CIDRs, `--no-proxy-headers`, the fail-closed default,
+targeted tests and a separately gated paid-hosting option. This does not
+change the $0 decision or solve upstream Render Free limits.
