@@ -23,6 +23,7 @@ from ..config import cookie_security_options, settings
 from ..database import get_db
 from ..models import EmailActionToken, EmailAuthRateLimit, PasswordCredential, User
 from ..services.email_transport import render_html_email, send_via_brevo, send_via_smtp
+from ..services.auth_client_ip import resolve_auth_client_ip
 
 router = APIRouter(prefix="/auth/email", tags=["auth"])
 _hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
@@ -88,7 +89,7 @@ def _rate_guard(db: Session, request: Request, action: str, email: str) -> None:
     """Postgres/SQLite atomic shared counters, not an in-memory worker limit."""
     now = datetime.utcnow()
     window = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
-    peer = request.client.host if request.client else "unknown"
+    peer = resolve_auth_client_ip(request, settings.EMAIL_AUTH_TRUSTED_PROXY_CIDRS)
     for identifier, limit in ((f"peer:{peer}", 80), (f"email:{email}", 5)):
         key_hash = hashlib.sha256(f"{action}:{identifier}".encode()).hexdigest()
         count = db.execute(
