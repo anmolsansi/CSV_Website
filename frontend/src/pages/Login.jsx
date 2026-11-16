@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
+import { emailAuth429Message, readRetryAfter } from '../api/authAvailability'
 
 const DEV_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
 const EMAIL_PASSWORD_ENABLED = import.meta.env.VITE_ENABLE_EMAIL_PASSWORD_AUTH === 'true'
@@ -29,6 +30,8 @@ export default function Login({ returnTo = null }) {
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const submitInFlight = useRef(false)
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
   const [devLoginError, setDevLoginError] = useState('')
   const [devLoginLoading, setDevLoginLoading] = useState(false)
 
@@ -36,6 +39,12 @@ export default function Login({ returnTo = null }) {
     // One-time tokens live in the fragment, not in server/CDN request logs.
     if (linkToken) window.history.replaceState(null, '', window.location.pathname + window.location.search)
   }, [linkToken])
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return undefined
+    const timer = window.setTimeout(() => setCooldownSeconds((seconds) => Math.max(0, seconds - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldownSeconds])
 
   const chooseMode = (next) => {
     setMode(next)
@@ -51,12 +60,14 @@ export default function Login({ returnTo = null }) {
 
   const submitEmail = async (event) => {
     event.preventDefault()
+    if (submitInFlight.current || cooldownSeconds > 0) return
     setFormError('')
     setNotice('')
     if ((mode === 'register' || mode === 'reset') && password !== confirmPassword) {
       setFormError('Passwords do not match.')
       return
     }
+    submitInFlight.current = true
     setSubmitting(true)
     try {
       if (mode === 'login') {
@@ -81,14 +92,14 @@ export default function Login({ returnTo = null }) {
       const detail = error?.response?.data?.detail
       const message = typeof detail === 'string' ? detail : detail?.message
       if (error?.response?.status === 429) {
-        const retry = Number(error.response.headers?.['retry-after'])
-        setFormError(Number.isFinite(retry) && retry > 0
-          ? 'Too many attempts. Try again in ' + Math.ceil(retry / 60) + ' minute(s).'
-          : 'Too many attempts. Please try again later.')
+        const retry = readRetryAfter(error.response.headers) ?? 60
+        setCooldownSeconds(retry)
+        setFormError(emailAuth429Message(error) + ' Try again in ' + retry + ' seconds.')
       } else {
         setFormError(message || 'Unable to continue. Please try again.')
       }
     } finally {
+      submitInFlight.current = false
       setSubmitting(false)
     }
   }
@@ -181,8 +192,8 @@ export default function Login({ returnTo = null }) {
                   />
                 </label>
               )}
-              <button className="auth-primary-button" type="submit" disabled={submitting}>
-                {submitting ? 'Working...' : actionName}
+              <button className="auth-primary-button" type="submit" disabled={submitting || cooldownSeconds > 0}>
+                {submitting ? 'Working...' : cooldownSeconds > 0 ? 'Retry in ' + cooldownSeconds + 's' : actionName}
               </button>
             </form>
             <div className="auth-email-links">

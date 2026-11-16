@@ -4756,10 +4756,10 @@ upload or paid resource was created by choosing this sequence. The deployment
 pilot target/accounts remain pending as the user confirmed, so observation and
 final release acceptance still cannot start.
 
-## Render edge throttling incident: P0 (preparation only)
+## Render Free login recovery ($0, P0)
 
-When login and `/auth/me` both return 429, inspect the actual response headers before changing application authentication. The prior `x-render-routing: hibernate-rate-limited` signature came from the Render routing layer and is distinct from the FastAPI email-login rate guard. JobGrid's production Vercel `/api` rewrite currently targets a Render Free service, which can sleep on idle and has lower inbound limits. Source manifest and C-09 tests intentionally retain `plan: free` under the existing zero-dollar-first contract.
+The owner selected the existing Render Free service `srv-dalu7u3l550s73ch5lu0` and **$0** compute. The previous paid upgrade proposal is superseded. Keep `render.yaml` at `plan: free`; preserve Vercel `/api`, cookie/OAuth routing, Supabase, background job flags, and auth rate-limit security.
 
-The bounded, read-only operator probe lives in `scripts/render_edge_probe.py` and has offline tests in `scripts/tests/test_render_edge_probe.py`. Run `python3 scripts/render_edge_probe.py` once to collect health response statuses and safe header metadata. This cannot certify login success or a permanent fix.
+Render's prior `x-render-routing: hibernate-rate-limited` 429 came from its routing layer. `frontend/src/App.jsx` now treats `/auth/me` 429 as **unknown session status**, showing a manual retry connection state rather than incorrectly logging out the user. `frontend/src/pages/Login.jsx` prevents overlapping login POSTs and enforces a bounded, visible 429 retry delay, without automatic POST replay. `frontend/src/api/authAvailability.js` owns the safe classification helpers. Render Free idle spin-down and provider rate limits remain, so these changes **mitigate** repeated failed logins but do not guarantee no more provider 429s.
 
-**Runbook and current blocker:** [P0 Render edge throttling](P0_RENDER_EDGE_THROTTLING.md). A move to the paid `0.5c-512mb` instance on the existing production service needs explicit cost approval, correct `Job Grid` workspace access, manifest/test contract changes, hosted login verification, and observation. No paid upgrade or production change has been made by the diagnostic branch.
+Tests: `cd frontend && node --test unit/auth-availability.test.mjs && npm run build`. Playwright browser regression: `frontend/tests/render-free-session-recovery.spec.ts`, under the existing disposable local test stack. Read the [P0 Render Free runbook](P0_RENDER_EDGE_THROTTLING.md) before release. This code is not proof of deployed production acceptance; confirm the correct Render workspace and run the live sign-in smoke before closing issue #210.
