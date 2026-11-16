@@ -17,7 +17,7 @@ test('API logging reports safe metadata without URLs, bodies, headers or credent
     assert.equal(captured.length, 1)
     assert.deepEqual(captured[0][1], {
       event: 'api_failure', kind: 'hosting_throttle', status: 429,
-      method: 'POST', resource: 'crm', retryAfterSeconds: 12,
+      method: 'POST', resource: 'crm', retryAfterSeconds: 12, page: 'other',
     })
     assert.doesNotMatch(JSON.stringify(captured), /private|example.com|password|secret/)
   } finally {
@@ -80,5 +80,25 @@ test('global browser handlers capture all uncaught errors with redacted metadata
     if (oldWindow === undefined) delete globalThis.window
     else globalThis.window = oldWindow
     console.error = oldError
+  }
+})
+
+test('page context uses a fixed route allowlist, never dynamic user data', () => {
+  const oldWindow = globalThis.window
+  const oldWarn = console.warn
+  const logs = []
+  globalThis.window = { location: { pathname: '/applications/secret@example.com' } }
+  console.warn = (...args) => logs.push(args[1])
+  try {
+    logUiFeedback('warning')
+    assert.equal(logs[0].page, 'other')
+    globalThis.window.location.pathname = '/applications'
+    logUiFeedback('warning')
+    assert.equal(logs[1].page, '/applications')
+    assert.doesNotMatch(JSON.stringify(logs), /secret@example.com/)
+  } finally {
+    if (oldWindow === undefined) delete globalThis.window
+    else globalThis.window = oldWindow
+    console.warn = oldWarn
   }
 })
