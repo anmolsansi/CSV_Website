@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { api } from './api/client'
 import { sessionCheckProblem } from './api/authAvailability'
+import { API_AVAILABILITY_EVENT, logUiFeedback } from './api/diagnostics'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Archive from './pages/Archive'
@@ -36,6 +37,7 @@ export function useToast() {
 function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
   const addToast = useCallback((message, type = 'info') => {
+    logUiFeedback(type)
     const id = Date.now() + Math.random()
     setToasts((prev) => [...prev, { id, message, type }])
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000)
@@ -52,7 +54,7 @@ function ToastProvider({ children }) {
   )
 }
 
-function AuthenticatedApp({ user, onLogout }) {
+function AuthenticatedApp({ user, onLogout, serviceIssue, onDismissServiceIssue, retryClock }) {
   const [cmdOpen, setCmdOpen] = useState(false)
 
   useEffect(() => {
@@ -86,6 +88,27 @@ function AuthenticatedApp({ user, onLogout }) {
           <ActiveSessionBar />
           <BulkActionStatus />
           <main id="main-content" tabIndex={-1}>
+            {serviceIssue && (
+              <section className="card" role="alert" data-testid="global-service-warning" style={{ margin: '16px 24px', padding: 16 }}>
+                <h2 style={{ fontSize: '1rem' }}>JobGrid service issue</h2>
+                <p>{serviceIssue.message}</p>
+                {serviceIssue.retryUntil > retryClock && (
+                  <p>Try again in {Math.ceil((serviceIssue.retryUntil - retryClock) / 1000)} seconds.</p>
+                )}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-grey btn-sm"
+                    disabled={serviceIssue.retryUntil > retryClock}
+                    onClick={() => window.location.reload()}
+                  >
+                    Reload page
+                  </button>
+                  <button type="button" className="btn btn-grey btn-sm" onClick={onDismissServiceIssue}>Dismiss warning</button>
+                </div>
+                <p style={{ marginTop: 8 }}>Before retrying a save or other change, check whether it already completed. JobGrid will not automatically repeat the request.</p>
+              </section>
+            )}
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Dashboard user={user} onLogout={onLogout} />} />
@@ -119,6 +142,23 @@ export default function App() {
   const [sessionFailure, setSessionFailure] = useState(null)
   const [sessionCheckVersion, setSessionCheckVersion] = useState(0)
   const [retryClock, setRetryClock] = useState(Date.now())
+  const [serviceIssue, setServiceIssue] = useState(null)
+
+  useEffect(() => {
+    const reportServiceIssue = (event) => {
+      const detail = event.detail
+      if (!detail?.message) return
+      const seconds = detail.retryAfter ?? (detail.kind?.includes('throttle') ? 60 : 0)
+      const now = Date.now()
+      setServiceIssue((current) => {
+        if (current?.kind === detail.kind && current.retryUntil > now) return current
+        return { ...detail, retryUntil: now + seconds * 1000 }
+      })
+      setRetryClock(now)
+    }
+    window.addEventListener(API_AVAILABILITY_EVENT, reportServiceIssue)
+    return () => window.removeEventListener(API_AVAILABILITY_EVENT, reportServiceIssue)
+  }, [])
 
   useEffect(() => {
     try {
@@ -161,10 +201,10 @@ export default function App() {
   }, [sessionCheckVersion])
 
   useEffect(() => {
-    if (!sessionFailure || sessionFailure.kind !== 'rate_limited') return undefined
+    if (sessionFailure?.kind !== 'rate_limited' && !serviceIssue) return undefined
     const timer = window.setInterval(() => setRetryClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [sessionFailure])
+  }, [sessionFailure, serviceIssue])
 
   if (loading) return <div className="loading-screen"><div className="loading-spinner" /><span>Loading JobGrid...</span></div>
   if (sessionFailure) {
@@ -194,5 +234,5 @@ export default function App() {
       : isSafeCaptureReturnPath(params.get('return_to'))
     return <Login returnTo={returnTo} />
   }
-  return <AuthenticatedApp user={user} onLogout={() => setUser(null)} />
+  return <AuthenticatedApp user={user} onLogout={() => setUser(null)} serviceIssue={serviceIssue} onDismissServiceIssue={() => setServiceIssue(null)} retryClock={retryClock} />
 }
