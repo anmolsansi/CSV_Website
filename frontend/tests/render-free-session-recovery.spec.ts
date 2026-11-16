@@ -24,6 +24,10 @@ test('Render 429 on session check does not impersonate a logout or flood the API
     } else {
       await route.fulfill({
         status: 200,
+        headers: {
+          'access-control-allow-origin': 'http://localhost:5173',
+          'access-control-allow-credentials': 'true',
+        },
         contentType: 'application/json',
         body: JSON.stringify({ id: 1, email: 'test@jobgrid.dev' }),
       })
