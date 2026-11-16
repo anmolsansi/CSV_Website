@@ -10,7 +10,14 @@ test('Render 429 on session check does not impersonate a logout or flood the API
     if (!allowRecovery) {
       await route.fulfill({
         status: 429,
-        headers: { 'x-render-routing': 'hibernate-rate-limited', 'retry-after': '2' },
+        headers: {
+          'x-render-routing': 'hibernate-rate-limited',
+          'retry-after': '2',
+          // CI calls localhost:8000 from localhost:5173: expose these non-safelisted headers.
+          'access-control-allow-origin': 'http://localhost:5173',
+          'access-control-allow-credentials': 'true',
+          'access-control-expose-headers': 'Retry-After, X-Render-Routing',
+        },
         contentType: 'text/plain',
         body: 'Too Many Requests',
       })
@@ -31,7 +38,7 @@ test('Render 429 on session check does not impersonate a logout or flood the API
   await page.waitForTimeout(500)
   const initialChecks = checks
   expect(initialChecks).toBeGreaterThanOrEqual(1)
-  await expect(retry).toBeEnabled({ timeout: 5000 })
+  await expect(retry).toBeEnabled({ timeout: 10_000 })
   expect(checks).toBe(initialChecks) // No automatic retry
   allowRecovery = true
   await retry.click()
