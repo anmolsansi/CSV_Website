@@ -15,7 +15,7 @@ original rejection to each caller. No caller gets a silently repeated request.
 | 429 with exact FastAPI `detail: Too many attempts. Try again later.` | Application email-auth limit. Keep it on the login form, not in the global outage banner. |
 | Other 429 | Unknown throttle. Do not attribute it to Render or the app. |
 | 408 / 502 / 503 / 504 | Temporary unavailability. |
-| 500+ | Server failure. |
+| 500+ | Server failure in the global warning and diagnostic log. Existing component-specific backend detail messages remain available to affected dialogs. |
 | Network error without a response | Connection failure, not a definite outage of Render. |
 | HTTP 401/403 | Preserve existing redirect/auth-state behavior. These aren't operational outages. |
 | Validation 4xx | Preserve the page's existing field-level feedback. |
