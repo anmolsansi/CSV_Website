@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 
 const cors = {
   'access-control-allow-origin': 'http://localhost:5173',
+  'access-control-allow-credentials': 'true',
   'access-control-expose-headers': 'Retry-After',
 }
 
