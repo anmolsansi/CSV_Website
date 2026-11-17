@@ -4,6 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CSV URL Tracker</title>
+    <script>
+      // Start exactly one anonymous wake request before the React module runs.
+      // This is visit-triggered only: no timer, polling, or automatic retries.
+      (() => {
+        const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+        const isProduction = window.location.hostname === 'csv-website-steel.vercel.app'
+        if (!isLocal && !isProduction) {
+          const skipped = { ok: true, skipped: true }
+          window.__jobgridBootstrapHealth = {
+            initial: Promise.resolve(skipped),
+            check: () => Promise.resolve(skipped),
+          }
+          return
+        }
+
+        const endpoint = isLocal
+          ? 'http://localhost:8000/health'
+          : 'https://jobgrid-api.onrender.com/health'
+
+        const check = () => {
+          const controller = new AbortController()
+          // Render Free cold starts may take around a minute.
+          const deadline = window.setTimeout(() => controller.abort(), 90000)
+          return fetch(endpoint, {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            cache: 'no-store',
+            signal: controller.signal,
+          }).then((response) => ({
+            ok: response.status === 200,
+            status: response.status,
+            retryAfter: response.headers.get('retry-after'),
+          })).catch(() => ({
+            ok: false,
+            status: null,
+            retryAfter: null,
+          })).finally(() => window.clearTimeout(deadline))
+        }
+
+        window.__jobgridBootstrapHealth = { initial: check(), check }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
