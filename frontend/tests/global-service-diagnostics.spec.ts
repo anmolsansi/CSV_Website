@@ -7,6 +7,7 @@ const cors = {
 }
 
 test('Render 429 on Archive shows an app-wide warning without retrying requests', async ({ page }) => {
+  await page.clock.install()
   let requests = 0
   const consoleWarnings: string[] = []
   page.on('console', (message) => {
@@ -29,10 +30,12 @@ test('Render 429 on Archive shows an app-wide warning without retrying requests'
   await expect(banner).toBeVisible()
   await expect(banner).toContainText('hosting service is temporarily limiting requests')
   await expect(banner.getByRole('button', { name: 'Reload page' })).toBeDisabled()
-  await page.waitForTimeout(650)
+  await expect(banner.getByTestId('retry-countdown')).toContainText('02:00')
   const initialRequests = requests
   expect(initialRequests).toBeGreaterThanOrEqual(1)
-  await page.waitForTimeout(700)
+  await page.clock.fastForward(120_000)
+  await expect(banner.getByTestId('retry-countdown')).toContainText('00:00')
+  await expect(banner.getByRole('button', { name: 'Reload page' })).toBeEnabled()
   expect(requests).toBe(initialRequests) // No implicit GET retries
   expect(consoleWarnings.length).toBeGreaterThanOrEqual(1)
   await banner.getByRole('button', { name: 'Dismiss warning' }).click()
@@ -40,6 +43,7 @@ test('Render 429 on Archive shows an app-wide warning without retrying requests'
 })
 
 test('server 503 on Analytics renders a meaningful unavailable warning', async ({ page }) => {
+  await page.clock.install()
   await page.route(/\/crm\/analytics(?:\?|$)/, (route) => route.fulfill({
     status: 503,
     headers: cors,
@@ -50,5 +54,6 @@ test('server 503 on Analytics renders a meaningful unavailable warning', async (
   const banner = page.getByTestId('global-service-warning')
   await expect(banner).toBeVisible()
   await expect(banner).toContainText('temporarily unavailable')
-  await expect(banner.getByRole('button', { name: 'Reload page' })).toBeEnabled()
+  await expect(banner.getByTestId('retry-countdown')).toContainText('02:00')
+  await expect(banner.getByRole('button', { name: 'Reload page' })).toBeDisabled()
 })
