@@ -26,12 +26,21 @@ browser-console diagnostics.
 
 - HTTP 200: mount the app, then perform the existing authenticated session
   check and normal navigation.
-- HTTP 429: show a dedicated backend startup screen, preserve unknown session
-  state, and offer **manual retry** after a valid bounded `Retry-After`, or
-  60 seconds when absent.
-- Non-200 and network/CORS/timeout failure: keep the app gated. Show a
-  meaningful unverified connection message and offer manual retry after a
-  short 15-second cooldown.
+- The startup screen displays a **02:00 → 00:00 countdown** measured
+  from the earliest HTML health request, updating once a second. On HTTP 200
+  the app proceeds immediately, without waiting for the countdown.
+- HTTP 429: show the backend startup screen, preserve unknown session state,
+  and allow **manual retry** at the end of the 120-second window. A longer
+  visible `Retry-After` takes precedence.
+- Non-200 and network/CORS/timeout failure: keep the app gated with a
+  meaningful unverified connection message. Its retry button follows the
+  same 120-second window, even when the health probe timed out after 90 seconds.
+- The `/auth/me` connection-retry page and the authenticated app-wide
+  **Reload page** warning display the same countdown from **02:00 to 00:00**
+  before enabling their buttons. These windows start when the failures occur.
+- The countdown is calculated against a fixed timestamp and does not reset
+  if the tab is backgrounded. Reaching zero **never** causes an automatic
+  retry, reload, login, or extra Render request.
 - React `StrictMode` double-mount cannot duplicate the initial wake GET:
   the HTML creates the promise exactly once, and the React gate observes it.
 - The existing `/auth/me` error UI and its manual recovery remain unchanged.
@@ -57,8 +66,9 @@ npx playwright test tests/backend-startup.spec.ts tests/render-free-session-reco
 ```
 
 The focused browser suite verifies exact request ordering, one initial GET,
-no session request during wake, bounded manual 429 recovery, and no flood
-on an unreachable endpoint. The full Playwright suite and standard GitHub
+no session request during wake, a visible 120-second countdown, manual 429
+recovery, and no flood on an unreachable endpoint. The frontend unit suite
+covers formatting, zero-floor behavior, and longer provider Retry-After windows. The full Playwright suite and standard GitHub
 CI remain release gates.
 
 ## Operational boundaries
