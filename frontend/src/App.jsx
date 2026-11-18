@@ -26,6 +26,8 @@ import CommandPalette from './components/CommandPalette'
 import DarkModeToggle from './components/DarkModeToggle'
 import SkipToContent from './components/SkipToContent'
 import ErrorBoundary from './components/ErrorBoundary'
+import RetryCountdown from './components/RetryCountdown'
+import { recoveryDeadline, secondsUntil } from './utils/retryCountdown'
 import { ingestCaptureFragment, isSafeCaptureReturnPath } from './utils/captureDraft'
 
 const ToastContext = createContext(null)
@@ -92,9 +94,7 @@ function AuthenticatedApp({ user, onLogout, serviceIssue, onDismissServiceIssue,
               <section className="card" role="status" aria-live="polite" data-testid="global-service-warning" style={{ margin: '16px 24px', padding: 16 }}>
                 <h2 style={{ fontSize: '1rem' }}>JobGrid service issue</h2>
                 <p>{serviceIssue.message}</p>
-                {serviceIssue.retryUntil > retryClock && (
-                  <p>Try again in {Math.ceil((serviceIssue.retryUntil - retryClock) / 1000)} seconds.</p>
-                )}
+                <RetryCountdown label={serviceIssue.retryUntil > retryClock ? 'Reload available in:' : 'Ready to reload:'} seconds={secondsUntil(serviceIssue.retryUntil, retryClock)} />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
@@ -148,11 +148,10 @@ export default function App() {
     const reportServiceIssue = (event) => {
       const detail = event.detail
       if (!detail?.message) return
-      const seconds = detail.retryAfter ?? (detail.kind?.includes('throttle') ? 60 : 0)
       const now = Date.now()
       setServiceIssue((current) => {
         if (current?.kind === detail.kind && current.retryUntil > now) return current
-        return { ...detail, retryUntil: now + seconds * 1000 }
+        return { ...detail, retryUntil: recoveryDeadline(now, now, detail.retryAfter) }
       })
       setRetryClock(now)
     }
@@ -188,9 +187,9 @@ export default function App() {
         if (!active) return
         const problem = sessionCheckProblem(error)
         if (problem) {
-          const seconds = problem.kind === 'rate_limited' ? (problem.retryAfter ?? 60) : 0
-          setSessionFailure({ ...problem, retryUntil: Date.now() + seconds * 1000 })
-          setRetryClock(Date.now())
+          const now = Date.now()
+          setSessionFailure({ ...problem, retryUntil: recoveryDeadline(now, now, problem.retryAfter) })
+          setRetryClock(now)
         } else {
           setUser(null)
           setSessionFailure(null)
@@ -201,20 +200,21 @@ export default function App() {
   }, [sessionCheckVersion])
 
   useEffect(() => {
-    if (sessionFailure?.kind !== 'rate_limited' && !serviceIssue) return undefined
+    if (!sessionFailure && !serviceIssue) return undefined
     const timer = window.setInterval(() => setRetryClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [sessionFailure, serviceIssue])
 
   if (loading) return <div className="loading-screen"><div className="loading-spinner" /><span>Loading JobGrid...</span></div>
   if (sessionFailure) {
-    const secondsLeft = Math.max(0, Math.ceil((sessionFailure.retryUntil - retryClock) / 1000))
+    const secondsLeft = secondsUntil(sessionFailure.retryUntil, retryClock)
     return (
       <div className="auth-page">
         <section className="auth-card">
           <h1>JobGrid connection unavailable</h1>
           <p role="alert">{sessionFailure.message}</p>
-          {secondsLeft > 0 && <p>Retry is available in {secondsLeft} seconds. No login attempt has been submitted.</p>}
+          <RetryCountdown label={secondsLeft > 0 ? 'Retry available in:' : 'Ready to retry:'} seconds={secondsLeft} />
+          <p>No login attempt has been submitted.</p>
           <button
             className="auth-primary-button"
             type="button"
