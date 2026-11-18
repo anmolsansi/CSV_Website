@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import RetryCountdown from './components/RetryCountdown.jsx'
 import { readRetryAfter } from './api/authAvailability.js'
 import { installBrowserDiagnostics } from './api/diagnostics.js'
+import { recoveryDeadline, secondsUntil } from './utils/retryCountdown.js'
 import './styles.css'
 
 installBrowserDiagnostics()
 
 function BackendStartupGate() {
   const [attempt, setAttempt] = useState(0)
+  const [startedAt, setStartedAt] = useState(() => window.__jobgridBootstrapHealth?.startedAt ?? Date.now())
   const [startup, setStartup] = useState({ kind: 'checking' })
   const [clock, setClock] = useState(Date.now())
 
@@ -18,7 +21,9 @@ function BackendStartupGate() {
     const bootstrap = window.__jobgridBootstrapHealth
     const probe = attempt === 0 ? bootstrap?.initial : bootstrap?.check()
     if (!probe) {
-      setStartup({ kind: 'unavailable', status: null, retryUntil: Date.now() + 15000 })
+      const now = Date.now()
+      setClock(now)
+      setStartup({ kind: 'unavailable', status: null, retryUntil: recoveryDeadline(startedAt) })
       return () => { active = false }
     }
 
@@ -29,7 +34,6 @@ function BackendStartupGate() {
         return
       }
       const retryAfter = readRetryAfter({ 'retry-after': result?.retryAfter })
-      const seconds = retryAfter ?? (result?.status === 429 ? 60 : 15)
       const status = Number.isInteger(result?.status) ? result.status : null
       console.warn('[JobGrid diagnostic]', {
         event: 'backend_health_failure',
@@ -39,22 +43,22 @@ function BackendStartupGate() {
       })
       const now = Date.now()
       setClock(now)
-      setStartup({ kind: 'unavailable', status, retryUntil: now + seconds * 1000 })
+      setStartup({ kind: 'unavailable', status, retryUntil: recoveryDeadline(startedAt, now, retryAfter) })
     })
     return () => { active = false }
-  }, [attempt])
+  }, [attempt, startedAt])
 
   useEffect(() => {
-    if (startup.kind !== 'unavailable') return undefined
+    if (startup.kind === 'ready') return undefined
+    // The clock is display-only. It never schedules a health request.
     const interval = window.setInterval(() => setClock(Date.now()), 1000)
     return () => window.clearInterval(interval)
   }, [startup.kind])
 
   if (startup.kind === 'ready') return <App />
 
-  const secondsRemaining = startup.kind === 'unavailable'
-    ? Math.max(0, Math.ceil((startup.retryUntil - clock) / 1000))
-    : 0
+  const retryDeadline = startup.retryUntil ?? recoveryDeadline(startedAt)
+  const secondsRemaining = secondsUntil(retryDeadline, clock)
 
   return (
     <div className="auth-page" data-testid="backend-startup">
@@ -63,6 +67,7 @@ function BackendStartupGate() {
           <>
             <h1>Starting JobGrid</h1>
             <p role="status">Checking the Render backend before loading your session. A Free service may take about a minute to wake up.</p>
+            <RetryCountdown label="Startup countdown:" seconds={secondsRemaining} />
             <div className="loading-spinner" aria-hidden="true" />
           </>
         ) : (
@@ -76,12 +81,17 @@ function BackendStartupGate() {
                   : 'The backend health check returned an error. JobGrid has not attempted to check your session.'}
             </p>
             {startup.status !== null && <p>Health response: HTTP {startup.status}.</p>}
-            {secondsRemaining > 0 && <p>Retry available in {secondsRemaining} seconds.</p>}
+            <RetryCountdown label={secondsRemaining > 0 ? 'Retry available in:' : 'Ready to retry:'} seconds={secondsRemaining} />
             <button
               className="auth-primary-button"
               type="button"
               disabled={secondsRemaining > 0}
-              onClick={() => setAttempt((previous) => previous + 1)}
+              onClick={() => {
+                const now = Date.now()
+                setStartedAt(now)
+                setClock(now)
+                setAttempt((previous) => previous + 1)
+              }}
             >
               Retry backend connection
             </button>
