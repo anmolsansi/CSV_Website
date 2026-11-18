@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 test('Render 429 on session check does not impersonate a logout or flood the API', async ({ page }) => {
+  await page.clock.install()
   let checks = 0
   let allowRecovery = false
   await page.route('**/auth/me', async (route) => {
@@ -39,10 +40,15 @@ test('Render 429 on session check does not impersonate a logout or flood the API
   await expect(page.getByRole('heading', { name: 'Log in or sign up' })).toHaveCount(0)
   const retry = page.getByRole('button', { name: 'Retry connection' })
   await expect(retry).toBeDisabled()
-  await page.waitForTimeout(500)
+  await expect(page.getByTestId('retry-countdown')).toContainText('02:00')
   const initialChecks = checks
   expect(initialChecks).toBeGreaterThanOrEqual(1)
-  await expect(retry).toBeEnabled({ timeout: 10_000 })
+  await page.clock.fastForward(60_000)
+  await expect(page.getByTestId('retry-countdown')).toContainText('01:00')
+  await expect(retry).toBeDisabled()
+  await page.clock.fastForward(60_000)
+  await expect(page.getByTestId('retry-countdown')).toContainText('00:00')
+  await expect(retry).toBeEnabled()
   expect(checks).toBe(initialChecks) // No automatic retry
   allowRecovery = true
   await retry.click()

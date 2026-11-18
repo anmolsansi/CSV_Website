@@ -7,6 +7,7 @@ const cors = {
 }
 
 test('health request starts before auth and holds session loading until 200', async ({ page }) => {
+  await page.clock.install()
   let releaseHealth: (() => void) | null = null
   let healthCount = 0
   let authCount = 0
@@ -36,6 +37,9 @@ test('health request starts before auth and holds session loading until 200', as
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Starting JobGrid' })).toBeVisible()
+  await expect(page.getByTestId('retry-countdown')).toContainText('02:00')
+  await page.clock.fastForward(3000)
+  await expect(page.getByTestId('retry-countdown')).toContainText('01:57')
   expect(healthCount).toBe(1)
   expect(authCount).toBe(0)
   releaseHealth?.()
@@ -47,6 +51,7 @@ test('health request starts before auth and holds session loading until 200', as
 })
 
 test('health 429 prevents session calls and requires a manual retry', async ({ page }) => {
+  await page.clock.install()
   let healthCount = 0
   let authCount = 0
   let allowRecovery = false
@@ -79,10 +84,14 @@ test('health 429 prevents session calls and requires a manual retry', async ({ p
   await expect(page.getByText('Health response: HTTP 429.')).toBeVisible()
   const retry = page.getByRole('button', { name: 'Retry backend connection' })
   await expect(retry).toBeDisabled()
-  await page.waitForTimeout(450)
+  await expect(page.getByTestId('retry-countdown')).toContainText('02:00')
+  await page.clock.fastForward(60_000)
+  await expect(page.getByTestId('retry-countdown')).toContainText('01:00')
   expect(healthCount).toBe(1)
   expect(authCount).toBe(0)
-  await expect(retry).toBeEnabled({ timeout: 10_000 })
+  await page.clock.fastForward(60_000)
+  await expect(page.getByTestId('retry-countdown')).toContainText('00:00')
+  await expect(retry).toBeEnabled()
   expect(healthCount).toBe(1) // No automatic retry or keepalive
   allowRecovery = true
   await retry.click()
@@ -105,6 +114,7 @@ test('unverifiable cross-origin health response does not trigger auth or a retry
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'JobGrid backend not ready' })).toBeVisible()
   await expect(page.getByText(/could not confirm the backend is healthy/i)).toBeVisible()
+  await expect(page.getByTestId('retry-countdown')).toContainText('02:00')
   await page.waitForTimeout(600)
   expect(healthCount).toBe(1)
   expect(authCount).toBe(0)
