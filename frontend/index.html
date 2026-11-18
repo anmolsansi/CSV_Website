@@ -8,6 +8,7 @@
       // Start exactly one anonymous wake request before the React module runs.
       // This is visit-triggered only: no timer, polling, or automatic retries.
       (() => {
+        const startedAt = Date.now()
         const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname)
         const isProduction = window.location.hostname === 'csv-website-steel.vercel.app'
         if (!isLocal && !isProduction) {
@@ -15,6 +16,7 @@
           window.__jobgridBootstrapHealth = {
             initial: Promise.resolve(skipped),
             check: () => Promise.resolve(skipped),
+            startedAt,
           }
           return
         }
@@ -44,7 +46,7 @@
           })).finally(() => window.clearTimeout(deadline))
         }
 
-        window.__jobgridBootstrapHealth = { initial: check(), check }
+        window.__jobgridBootstrapHealth = { initial: check(), check, startedAt }
       })()
     </script>
   </head>
